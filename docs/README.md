@@ -33,6 +33,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-3-budget.md`](m1-3-budget.md) | M1.3 | `BudgetState` (seven-category ratio struct: administration, military, education, welfare, intelligence, infrastructure, industry) embedded in `CountryState`. JSON schema with nested `budget` object, range validation per category but **no sum-to-1 enforcement**, save-format **v4** bump. Drive-by `CountryId::underlying_type` fix in `faction_from_json`. **No economy tick** at this stage. |
 | [`m1-4-policy-data.md`](m1-4-policy-data.md) | M1.4 | `PolicyData` + `PolicyEffect{target, op, value}`. Ten policy fixtures spanning RFC-010 §2.6 categories. Save-format **v5** bump (v4 saves rejected). **Shared JSON helpers** finally extracted into `src/leviathan/systems/internal/json_helpers.hpp` under namespace `leviathan::systems::detail`; both DataLoader and SaveSystem now go through it. **No effect application** at this stage — M1.5 interprets target / op. |
 | [`m1-5-policy-system.md`](m1-5-policy-system.md) | M1.5 | **First real gameplay effect.** `leviathan::systems::policy::apply_policy_effects(state, actor, policy)`. Resolves `country.<field>` / `country.budget.<cat>` / `faction:<type>.<field>` targets; ops `add` / `set`; ratio fields clamped to `[0, 1]` post-op. **Atomic via pre-flight**: any unresolvable effect fails the whole call and leaves state untouched. No duration queue, no AI, no runner integration yet. |
+| [`m1-6-faction-reactions.md`](m1-6-faction-reactions.md) | M1.6 | **First faction-side dynamics.** `leviathan::systems::faction::react(state, country)`: two linear-toward-equilibrium rules — `loyalty` drifts toward `country.stability` at rate 0.10, `support` drifts toward `country.legitimacy` at rate 0.05. Clamped to `[0, 1]`. `influence` / `radicalism` / `resources` / identity fields untouched. Drive-by: pre-flight `std::isfinite` check on `PolicyEffect.value`. No tick, no AI, no type-specific reactions yet. |
 
 ## Reading order
 
@@ -43,8 +44,8 @@ If you're new to the codebase:
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
-   → M1.2 → M1.3 → M1.4 → M1.5). They build on each other and each
-   one tries to call out the rules a future contributor must not
+   → M1.2 → M1.3 → M1.4 → M1.5 → M1.6). They build on each other and
+   each one tries to call out the rules a future contributor must not
    silently break.
 
 ## When to add a new file

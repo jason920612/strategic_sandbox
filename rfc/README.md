@@ -45,8 +45,12 @@ M0 / M1 中落地，部分仍是未來工作：
   PR：`apply_policy_effects` 支援 `country.<field>` /
   `country.budget.<cat>` / `faction:<type>.<field>` 三類 target、
   `add` / `set` 兩種 op，並且在 pre-flight 失敗時保證 state 不變。
+  **M1.6（FactionSystem react）** 為 M1 第一個 faction-side 行為：
+  兩條 linear-toward-equilibrium reaction rules（loyalty drift toward
+  stability at 0.10、support drift toward legitimacy at 0.05），
+  明確呼叫，沒有 monthly tick / AI / 事件 / type-specific 行為。
   RFC-080 §3 §4 §5 的公式（GDP 成長、稅收、穩定度月結）仍未實作 ——
-  待後續子階段。
+  M1.7 / M1.8 候選。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
