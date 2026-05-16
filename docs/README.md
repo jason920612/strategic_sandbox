@@ -26,6 +26,7 @@ Per-milestone design notes and PR description drafts.
 | [`m0-7-data-loader.md`](m0-7-data-loader.md) | M0.7 | nlohmann/json v3.11.3 pinning. Simulation + country JSON schemas. Error-message format. The "no GameState mutation, no time/RNG side effects, loggable but not coupled" architectural rules. |
 | [`m0-8-save-load.md`](m0-8-save-load.md) | M0.8 | Full save-file schema. `save_version` / `rng_algorithm_version` strict-equality gates. The "session resume, NOT deterministic replay" distinction (and why `rng.counter` is preserved anyway). |
 | [`m0-9-runner.md`](m0-9-runner.md) | M0.9 | Headless CLI: flag table, defaults, the determinism property (same seed → byte-identical save + log), the two-layer `parse_args` / `run` split. |
+| [`m0-10-diagnostics.md`](m0-10-diagnostics.md) | M0.10 | `systems::diagnostics`: observation-only `snapshot`, byte-stable CSV format, `sanity_check` (invalid date, invalid / duplicate CountryId). The `--summary-csv` flag and how snapshot cadence interacts with month-boundary logs. |
 
 ## Reading order
 
@@ -35,7 +36,7 @@ If you're new to the codebase:
    and test instructions.
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
-3. Read the milestone notes here **in order** (M0.2 → M0.9). They
+3. Read the milestone notes here **in order** (M0.2 → M0.10). They
    build on each other and each one tries to call out the rules a
    future contributor must not silently break.
 

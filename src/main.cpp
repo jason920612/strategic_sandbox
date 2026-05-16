@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << kProjectName << " " << kProjectVersion << "\n"
-              << "Milestone 0.9 - headless runner.\n";
+              << "Milestone 0.10 - headless runner with diagnostics.\n";
 
     auto run_r = runner::run(opts);
     if (!run_r) {
@@ -46,12 +46,18 @@ int main(int argc, char** argv) {
     const auto& outcome = run_r.value();
 
     std::cout << "\n--- Run summary ---\n"
-              << "Start date    : " << outcome.start_date.to_string() << "\n"
-              << "End date      : " << outcome.end_date.to_string()   << "\n"
-              << "Days advanced : " << outcome.days_advanced          << "\n"
-              << "Log entries   : " << outcome.log_count              << "\n"
-              << "Save file     : " << outcome.save_path.string()     << "\n"
-              << "Log file      : " << outcome.log_path.string()      << "\n";
+              << "Start date          : " << outcome.start_date.to_string() << "\n"
+              << "End date            : " << outcome.end_date.to_string()   << "\n"
+              << "Days advanced       : " << outcome.days_advanced          << "\n"
+              << "Log entries         : " << outcome.log_count              << "\n"
+              << "Sanity issues       : " << outcome.sanity_issues_logged   << "\n"
+              << "Save file           : " << outcome.save_path.string()     << "\n"
+              << "Log file            : " << outcome.log_path.string()      << "\n";
+    if (outcome.summary_csv_path.has_value()) {
+        std::cout
+              << "Summary CSV file    : " << outcome.summary_csv_path.value().string() << "\n"
+              << "Summary CSV rows    : " << outcome.summary_rows                       << "\n";
+    }
 
     return EXIT_SUCCESS;
 }

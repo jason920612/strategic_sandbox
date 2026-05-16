@@ -41,6 +41,7 @@ struct RunnerOptions {
     std::filesystem::path                output_dir  = "out";
     std::optional<std::filesystem::path> save_path;           // defaults to output_dir/save.json
     std::optional<std::filesystem::path> log_path;            // defaults to output_dir/events.jsonl
+    std::optional<std::filesystem::path> summary_csv_path;    // unset = no CSV written
     bool                                 show_help   = false;
 };
 
@@ -66,6 +67,9 @@ struct RunOutcome {
     std::size_t            log_count;
     std::filesystem::path  save_path;
     std::filesystem::path  log_path;
+    std::optional<std::filesystem::path> summary_csv_path;
+    std::size_t            summary_rows         = 0;
+    std::size_t            sanity_issues_logged = 0;
 };
 
 // Execute one simulation run.

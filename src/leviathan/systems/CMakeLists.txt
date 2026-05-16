@@ -30,6 +30,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 add_library(leviathan_systems STATIC
     data_loader.cpp
+    diagnostics.cpp
     logging_system.cpp
     random_service.cpp
     runner.cpp

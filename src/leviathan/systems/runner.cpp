@@ -13,6 +13,7 @@
 #include "leviathan/core/log_entry.hpp"
 #include "leviathan/core/simulation_config.hpp"
 #include "leviathan/systems/data_loader.hpp"
+#include "leviathan/systems/diagnostics.hpp"
 #include "leviathan/systems/logging_system.hpp"
 #include "leviathan/systems/save_system.hpp"
 #include "leviathan/systems/time_system.hpp"
@@ -94,16 +95,20 @@ std::string usage_text() {
         "Usage: leviathan [options]\n"
         "\n"
         "Options:\n"
-        "  --config PATH    Simulation config JSON to load.\n"
-        "                   Defaults to data/config/simulation.json.\n"
-        "  --days N         How many days to advance. REQUIRED. N >= 0.\n"
-        "  --seed N         Override the seed from the config. uint64.\n"
-        "  --output DIR     Directory for output artefacts. Created if\n"
-        "                   missing. Defaults to out/.\n"
-        "  --save PATH      Save file path. Defaults to <output>/save.json.\n"
-        "  --log PATH       JSONL log file path. Defaults to\n"
-        "                   <output>/events.jsonl.\n"
-        "  --help           Show this help and exit.\n";
+        "  --config PATH       Simulation config JSON to load.\n"
+        "                      Defaults to data/config/simulation.json.\n"
+        "  --days N            How many days to advance. REQUIRED. N >= 0.\n"
+        "  --seed N            Override the seed from the config. uint64.\n"
+        "  --output DIR        Directory for output artefacts. Created if\n"
+        "                      missing. Defaults to out/.\n"
+        "  --save PATH         Save file path. Defaults to <output>/save.json.\n"
+        "  --log PATH          JSONL log file path. Defaults to\n"
+        "                      <output>/events.jsonl.\n"
+        "  --summary-csv PATH  Write a per-snapshot CSV summary to PATH.\n"
+        "                      Snapshots are taken at start, each month\n"
+        "                      boundary, and after sanity checks at the end.\n"
+        "                      If omitted, no CSV is written.\n"
+        "  --help              Show this help and exit.\n";
 }
 
 // ===========================================================================
@@ -165,6 +170,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.log_path = std::filesystem::path(std::string(v.value()));
             ++i;
+        } else if (a == "--summary-csv") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.summary_csv_path = std::filesystem::path(std::string(v.value()));
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -187,6 +197,7 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     namespace lg = leviathan::systems::logging;
     namespace dl = leviathan::systems::data_loader;
     namespace ss = leviathan::systems::save_system;
+    namespace dg = leviathan::systems::diagnostics;
 
     if (opts.days < 0) {
         return core::Result<RunOutcome>::failure("--days must be >= 0");
@@ -206,11 +217,21 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     auto state = core::make_game_state(cfg);
     const core::GameDate start_date = state.current_date;
 
+    // Snapshot buffer for --summary-csv. We collect rows in-memory and
+    // dump them at the end; long enough runs that this matters can
+    // stream later. Empty buffer = no CSV requested.
+    std::vector<dg::SummaryRow> summary_rows;
+    const bool want_csv = opts.summary_csv_path.has_value();
+
     // Initial log. Metadata is intentionally path-independent so two
     // runs with the same options produce byte-identical event logs.
     lg::log_info(state, "lifecycle", "runner", "simulation start",
                  {{"days_requested", std::to_string(opts.days)},
                   {"seed",           std::to_string(cfg.seed)}});
+
+    if (want_csv) {
+        summary_rows.push_back(dg::snapshot(state));
+    }
 
     // ---- Tick -------------------------------------------------------------
     for (int i = 0; i < opts.days; ++i) {
@@ -221,10 +242,27 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         if (r.year_changed) {
             lg::log_info(state, "time", "runner", "year rolled over");
         }
+        if (want_csv && r.month_changed) {
+            summary_rows.push_back(dg::snapshot(state));
+        }
     }
 
     lg::log_info(state, "lifecycle", "runner", "simulation end",
                  {{"days_advanced", std::to_string(opts.days)}});
+
+    // ---- Sanity checks ---------------------------------------------------
+    // Run AFTER the end log but BEFORE the final snapshot, so any
+    // issues become part of the log stream and are reflected in the
+    // final CSV row's log_count.
+    const auto issues = dg::sanity_check(state);
+    for (const auto& iss : issues) {
+        lg::log_error(state, "diagnostics", "runner", iss.message,
+                      {{"code", iss.code}});
+    }
+
+    if (want_csv) {
+        summary_rows.push_back(dg::snapshot(state));
+    }
 
     // ---- Resolve output paths --------------------------------------------
     const auto save_path = opts.save_path.value_or(opts.output_dir / "save.json");
@@ -244,14 +282,30 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         return core::Result<RunOutcome>::failure(std::move(log_w.error()));
     }
 
+    // ---- Write summary CSV (if requested) --------------------------------
+    if (want_csv) {
+        std::ostringstream csv;
+        dg::write_csv_header(csv);
+        for (const auto& row : summary_rows) {
+            dg::write_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(opts.summary_csv_path.value(), csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
+
     // ---- Outcome ----------------------------------------------------------
     RunOutcome outcome;
-    outcome.start_date    = start_date;
-    outcome.end_date      = state.current_date;
-    outcome.days_advanced = opts.days;
-    outcome.log_count     = state.logs.size();
-    outcome.save_path     = save_path;
-    outcome.log_path      = log_path;
+    outcome.start_date           = start_date;
+    outcome.end_date             = state.current_date;
+    outcome.days_advanced        = opts.days;
+    outcome.log_count            = state.logs.size();
+    outcome.save_path            = save_path;
+    outcome.log_path             = log_path;
+    outcome.summary_csv_path     = opts.summary_csv_path;
+    outcome.summary_rows         = summary_rows.size();
+    outcome.sanity_issues_logged = issues.size();
     return core::Result<RunOutcome>::success(std::move(outcome));
 }
 
