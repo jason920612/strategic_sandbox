@@ -35,6 +35,7 @@ add_library(leviathan_systems STATIC
     internal/json_helpers.cpp
     logging_system.cpp
     faction_system.cpp
+    monthly_pipeline.cpp
     policy_system.cpp
     random_service.cpp
     runner.cpp

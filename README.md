@@ -7,7 +7,13 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.8 — economy month-end tick (minimal)**
+- Latest shipped sub-milestone: **M1.9 — monthly pipeline (minimal)**
+  — explicit-call composition of `faction::react` + `stability::tick`
+  + `economy::tick` in canonical order. No runner wiring yet.
+- Next sub-milestone: **M1.10** — wire
+  `monthly::tick_all_countries` to `TickResult.month_changed` from
+  the M0.9 runner so `leviathan --days N` runs the monthly chain
+  automatically.
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -26,8 +32,23 @@ Two runs with the same options produce byte-identical save, log,
 and summary-CSV files. M0 closes with a full end-to-end integration
 test (`tests/integration/m0_end_to_end_test.cpp`) that loads three
 country JSON files, ticks 365 days, saves, loads back, and verifies
-the round-trip. **Milestone 1 (single-country internal politics
-prototype, RFC-090 §M1) is the next phase.**
+the round-trip.
+
+**Milestone 1** (single-country internal politics prototype,
+RFC-090 §M1) is in progress. Nine sub-milestones merged so far:
+M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
+(seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
+PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
+gameplay effect, atomic via pre-flight); M1.6 FactionSystem `react`
+(linear-toward-equilibrium loyalty / support drift); M1.7
+StabilitySystem `tick` (first country-side dynamic, stripped-down
+RFC-080 §5); M1.8 EconomySystem `tick` (RFC-080 §3 tax revenue,
+expenditure = `gdp × sum_budget × 0.20`, stripped-down RFC-080 §4
+GDP growth); **M1.9 MonthlyPipeline `tick_country` /
+`tick_all_countries` — first composition sub-milestone**
+(canonical order `faction::react → stability::tick → economy::tick`,
+pinned by exact-arithmetic order-proof test). Pipeline is explicit-
+call only — runner wiring deferred to M1.10.
 
 ## Repository layout
 
@@ -139,19 +160,19 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.8 there are **307 doctest cases**. M0 contributed 179;
+As of M1.9 there are **318 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
-added 24; M1.6 added 17; M1.7 added 16; M1.8 adds 19 covering the
-**second country-side dynamic**: EconomySystem `tick` with three
-formulas. Tests pin exact tax-revenue arithmetic (RFC-080 §3),
-exact expenditure (`gdp × sum_budget × 0.20`), exact GDP-growth
-arithmetic with every term exercised, all eight constants against
-spec, recession case (`growth_rate = −0.010`), 12-tick annual
-compounding, gdp=0 edge case, country filter, untouched fields
-(eleven CountryState fields verified unchanged), faction state
-untouched, and every invalid-id path. Each `TEST_CASE` is
-registered with CTest individually, so e.g.
-`ctest -R "economy"` runs just the M1.8 cases.
+added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9
+adds 11 covering the **first composition sub-milestone**:
+`monthly::tick_country` and `monthly::tick_all_countries`. The
+key test (`"tick_country runs faction -> stability -> economy in
+canonical order"`) builds a state where any reordering of the three
+sub-systems produces a different result, and pins the canonical
+chain with exact arithmetic. Other cases pin country filter,
+vector-order iteration, empty state, invalid-id paths, and the
+"no date / log / RNG / save-schema side effect" invariants. Each
+`TEST_CASE` is registered with CTest individually, so e.g.
+`ctest -R "tick_country"` runs just the M1.9 cases.
 
 ## Build options
 

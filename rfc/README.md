@@ -63,6 +63,16 @@ M0 / M1 中落地，部分仍是未來工作：
   / WarDamage 與 RFC-080 §5 的 WelfareSatisfaction / EconomicGrowth /
   InequalityProxy / WarWeariness / BudgetCrisis 仍未實作 —— 待
   monthly pipeline 與後續通膨 / 戰爭 / 福利系統補上。
+  **M1.9（MonthlyPipeline）** 為 M1 的第一個 composition
+  sub-milestone：將 M1.6 / M1.7 / M1.8 三個明確呼叫 free function
+  合成單一 caller。`monthly::tick_country(state, country)` 依固定
+  順序執行 `faction::react` → `stability::tick` → `economy::tick`；
+  `monthly::tick_all_countries(state)` 依 `state.countries` vector
+  順序逐國呼叫並 fail-fast。順序是「可觀察」的（exact-arithmetic
+  測試證明任何重新排序會產生不同結果）。對應 RFC-090 §M1 task
+  1.15。**M1.9 不做** policy enactment scheduler / active-policy
+  container / runner 整合 / log / RNG / save schema 變更 / `last_gdp_growth_rate`
+  新欄位 —— 這些保留給 M1.10+。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
