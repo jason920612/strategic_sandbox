@@ -30,6 +30,7 @@ Per-milestone design notes and PR description drafts.
 | [`milestone-0-result.md`](milestone-0-result.md) | **M0 exit report** | What M0 ships (every sub-milestone), what is deliberately deferred (entity behaviour, events, AI, replay), recommendations for M1, and the architectural invariants every M1+ milestone must preserve. |
 | [`m1-1-country-state.md`](m1-1-country-state.md) | M1.1 | `CountryState` runtime numeric fields (gdp, tax_revenue, budget_balance, legal_tax_burden, fiscal_capacity, administrative_efficiency, central_control, corruption, stability, legitimacy, military_power, threat_perception). JSON schema, range validation, save-format v2 bump, old-v1-rejection behaviour. **No simulation logic** at this stage. |
 | [`m1-2-faction-state.md`](m1-2-faction-state.md) | M1.2 | `FactionState` runtime fields (id_code, country_id_code, type, support, influence, radicalism, loyalty, resources, preferred_policies). JSON schema, range validation, save-format **v3** bump (with reasoning for not relying on the M0.8 "reserved-empty-array" forward-compat note), integration test loads three factions and verifies round-trip. **No reaction logic** at this stage. |
+| [`m1-3-budget.md`](m1-3-budget.md) | M1.3 | `BudgetState` (seven-category ratio struct: administration, military, education, welfare, intelligence, infrastructure, industry) embedded in `CountryState`. JSON schema with nested `budget` object, range validation per category but **no sum-to-1 enforcement**, save-format **v4** bump. Drive-by `CountryId::underlying_type` fix in `faction_from_json`. **No economy tick** at this stage. |
 
 ## Reading order
 
@@ -40,8 +41,8 @@ If you're new to the codebase:
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
-   → M1.2). They build on each other and each one tries to call out
-   the rules a future contributor must not silently break.
+   → M1.2 → M1.3). They build on each other and each one tries to
+   call out the rules a future contributor must not silently break.
 
 ## When to add a new file
 

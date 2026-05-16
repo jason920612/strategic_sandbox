@@ -175,7 +175,16 @@ const std::string kCanonicalCountryJson = R"({
     "corruption":                0.25,
     "legitimacy":                0.55,
     "military_power":            0.50,
-    "threat_perception":         0.30
+    "threat_perception":         0.30,
+    "budget": {
+        "administration":  0.25,
+        "military":        0.35,
+        "education":       0.10,
+        "welfare":         0.10,
+        "intelligence":    0.05,
+        "infrastructure":  0.10,
+        "industry":        0.05
+    }
 })";
 
 std::string replace_first(std::string s, std::string_view needle,
@@ -209,6 +218,14 @@ TEST_CASE("parse_country: full RFC-070 + M1.1 shape") {
     CHECK(c.legitimacy                == doctest::Approx(0.55));
     CHECK(c.military_power            == doctest::Approx(0.50));
     CHECK(c.threat_perception         == doctest::Approx(0.30));
+    // M1.3 budget block.
+    CHECK(c.budget.administration  == doctest::Approx(0.25));
+    CHECK(c.budget.military        == doctest::Approx(0.35));
+    CHECK(c.budget.education       == doctest::Approx(0.10));
+    CHECK(c.budget.welfare         == doctest::Approx(0.10));
+    CHECK(c.budget.intelligence    == doctest::Approx(0.05));
+    CHECK(c.budget.infrastructure  == doctest::Approx(0.10));
+    CHECK(c.budget.industry        == doctest::Approx(0.05));
     // The numeric id stays at its invalid default - assignment is the
     // caller's responsibility.
     CHECK_FALSE(c.id.valid());
@@ -330,6 +347,95 @@ TEST_CASE("parse_country: ratio below 0.0 is rejected") {
     CHECK(r.error().find("[0, 1]")          != std::string::npos);
 }
 
+// ---------------------------------------------------------------------
+// Country - M1.3 budget block
+// ---------------------------------------------------------------------
+
+TEST_CASE("parse_country: missing budget block is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        ",\n    \"budget\": {\n"
+        "        \"administration\":  0.25,\n"
+        "        \"military\":        0.35,\n"
+        "        \"education\":       0.10,\n"
+        "        \"welfare\":         0.10,\n"
+        "        \"intelligence\":    0.05,\n"
+        "        \"infrastructure\":  0.10,\n"
+        "        \"industry\":        0.05\n"
+        "    }",
+        "");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("missing")  != std::string::npos);
+    CHECK(r.error().find("'budget'") != std::string::npos);
+}
+
+TEST_CASE("parse_country: budget with wrong type is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"budget\": {\n"
+        "        \"administration\":  0.25,\n"
+        "        \"military\":        0.35,\n"
+        "        \"education\":       0.10,\n"
+        "        \"welfare\":         0.10,\n"
+        "        \"intelligence\":    0.05,\n"
+        "        \"infrastructure\":  0.10,\n"
+        "        \"industry\":        0.05\n"
+        "    }",
+        "\"budget\": 42");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("budget") != std::string::npos);
+    CHECK(r.error().find("JSON object") != std::string::npos);
+}
+
+TEST_CASE("parse_country: missing budget.military is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"military\":        0.35,\n        ", "");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    // Error must point at the budget sub-context so the user knows
+    // it's not the top-level "military_power" field.
+    CHECK(r.error().find("budget")   != std::string::npos);
+    CHECK(r.error().find("military") != std::string::npos);
+}
+
+TEST_CASE("parse_country: budget category above 1.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"administration\":  0.25,",
+        "\"administration\":  1.5,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("budget")          != std::string::npos);
+    CHECK(r.error().find("administration")  != std::string::npos);
+    CHECK(r.error().find("[0, 1]")          != std::string::npos);
+}
+
+TEST_CASE("parse_country: budget category below 0.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"welfare\":         0.10,",
+        "\"welfare\":         -0.1,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("welfare") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")  != std::string::npos);
+}
+
+TEST_CASE("parse_country: budget that sums to less than 1.0 is accepted") {
+    // The M1.3 loader does NOT enforce sum = 1; that's an
+    // economy-tick concern. Authors can under-allocate the budget.
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"administration\":  0.25,",
+        "\"administration\":  0.00,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.ok());
+    CHECK(r.value().budget.administration == doctest::Approx(0.0));
+}
+
 TEST_CASE("parse_country: initial_stability above 1.0 is rejected") {
     const std::string text = replace_first(
         kCanonicalCountryJson,
@@ -382,6 +488,14 @@ TEST_CASE("load_country: canonical data/countries/germany.json") {
     CHECK(c.legitimacy                == doctest::Approx(0.55));
     CHECK(c.military_power            == doctest::Approx(0.50));
     CHECK(c.threat_perception         == doctest::Approx(0.30));
+    // M1.3 budget block (sums to exactly 1.0 for Germany).
+    CHECK(c.budget.administration  == doctest::Approx(0.25));
+    CHECK(c.budget.military        == doctest::Approx(0.35));
+    CHECK(c.budget.education       == doctest::Approx(0.10));
+    CHECK(c.budget.welfare         == doctest::Approx(0.10));
+    CHECK(c.budget.intelligence    == doctest::Approx(0.05));
+    CHECK(c.budget.infrastructure  == doctest::Approx(0.10));
+    CHECK(c.budget.industry        == doctest::Approx(0.05));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

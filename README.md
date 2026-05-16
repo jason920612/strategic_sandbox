@@ -7,7 +7,7 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.2 — `FactionState` real fields**
+- Current sub-milestone: **M1.3 — budget and economy baseline**
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -138,14 +138,13 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.2 there are **205 doctest cases**. M0's 179 cases all still
-pass; M1.1 added 9 new ones (`CountryState` field set, range checks,
-v1→v2 rejection); M1.2 added 17 more covering the new `FactionState`
-field set (parse happy / errors / range, round-trip via save file,
-the `v2 → v3` save-format rejection regression, faction loading in
-the M0.11 integration test). Each `TEST_CASE` is registered with
-CTest individually, so e.g. `ctest -R "parse_faction"` runs just the
-faction parser cases.
+As of M1.3 there are **214 doctest cases**. M0 contributed 179; M1.1
+added 9 (`CountryState` field set); M1.2 added 17 (`FactionState` +
+v2→v3 save-format rejection); M1.3 adds 9 more (`BudgetState`
+parsing, range checks per category, missing-budget rejection,
+round-trip including budget, v3→v4 save-format rejection). Each
+`TEST_CASE` is registered with CTest individually, so e.g.
+`ctest -R "budget"` runs just the budget-related cases.
 
 ## Build options
 

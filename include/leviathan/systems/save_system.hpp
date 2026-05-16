@@ -47,7 +47,9 @@ namespace leviathan::systems::save_system {
 //                binary would have lost factions silently, so we bump
 //                rather than rely on the reserved-empty-array
 //                "forward-compat" assumption from the M0.8 design note.
-inline constexpr std::uint32_t kSaveFormatVersion   = 3;
+//   v4 (M1.3)  - CountryState gained a nested BudgetState (7-category
+//                budget allocation). v3 saves miss the budget block.
+inline constexpr std::uint32_t kSaveFormatVersion   = 4;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

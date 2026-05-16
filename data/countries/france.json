@@ -11,5 +11,14 @@
   "corruption":                0.20,
   "legitimacy":                0.65,
   "military_power":            0.55,
-  "threat_perception":         0.40
+  "threat_perception":         0.40,
+  "budget": {
+    "administration":  0.25,
+    "military":        0.30,
+    "education":       0.15,
+    "welfare":         0.15,
+    "intelligence":    0.04,
+    "infrastructure":  0.06,
+    "industry":        0.05
+  }
 }
