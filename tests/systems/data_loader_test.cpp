@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -96,6 +98,34 @@ TEST_CASE("parse_simulation_config: seed wrong type") {
     CHECK(r.error().find("simulation.seed") != std::string::npos);
 }
 
+TEST_CASE("parse_simulation_config: accepts uint64 max seed") {
+    // SimulationConfig::seed is uint64_t; the loader must not silently
+    // truncate values in the upper half of the range. Regression for
+    // PR #7 review feedback.
+    const auto r = dl::parse_simulation_config(R"({
+        "simulation": {
+            "start_date": "1930-01-01",
+            "seed": 18446744073709551615
+        }
+    })");
+    REQUIRE(r.ok());
+    CHECK(r.value().seed == std::numeric_limits<std::uint64_t>::max());
+}
+
+TEST_CASE("parse_simulation_config: accepts a seed above INT64_MAX") {
+    // 2^63 sits just past the signed-int64 boundary. A loader that
+    // routes everything through int64_t would either truncate or reject
+    // this value; the correct behaviour is to accept it.
+    const auto r = dl::parse_simulation_config(R"({
+        "simulation": {
+            "start_date": "1930-01-01",
+            "seed": 9223372036854775808
+        }
+    })");
+    REQUIRE(r.ok());
+    CHECK(r.value().seed == (static_cast<std::uint64_t>(1) << 63));
+}
+
 TEST_CASE("parse_simulation_config: negative seed rejected") {
     const auto r = dl::parse_simulation_config(R"({
         "simulation": { "start_date": "1930-01-01", "seed": -1 }
@@ -187,9 +217,13 @@ TEST_CASE("parse_country: initial_gdp wrong type") {
     CHECK(r.error().find("number") != std::string::npos);
 }
 
-TEST_CASE("parse_country: non-finite numeric rejected") {
-    // JSON does not natively support NaN/Inf; nlohmann parses such
-    // tokens as null, which fails the number type-check.
+TEST_CASE("parse_country: NaN literal makes the document malformed") {
+    // Strict JSON does not permit NaN / Infinity literals, so nlohmann
+    // rejects the whole document at parse time - the loader sees a
+    // "malformed JSON" error, not a "non-finite number" error.
+    // The std::isfinite check inside require_number is therefore
+    // defensive (in case a future API change ever produces a
+    // non-finite parse result), not exercisable through valid input.
     const auto r = dl::parse_country(R"({
         "id":   "GER",
         "name": "Germany",
@@ -197,6 +231,7 @@ TEST_CASE("parse_country: non-finite numeric rejected") {
         "initial_stability": 0.55
     })");
     REQUIRE(r.failed());
+    CHECK(r.error().find("JSON parse error") != std::string::npos);
 }
 
 TEST_CASE("parse_country: source label appears in error message") {

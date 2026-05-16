@@ -161,17 +161,24 @@ core::Result<core::SimulationConfig> parse_simulation_config(
     }
 
     if (const json* v = navigate(root, "simulation.seed"); v != nullptr) {
-        if (!v->is_number_unsigned() && !v->is_number_integer()) {
+        if (v->is_number_unsigned()) {
+            // The full uint64_t range is valid - take the raw value.
+            // This branch covers seeds in (INT64_MAX, UINT64_MAX] that
+            // would silently truncate if forced through int64_t.
+            cfg.seed = v->get<std::uint64_t>();
+        } else if (v->is_number_integer()) {
+            // Signed integer literal; permit it only if non-negative.
+            const auto seed_signed = v->get<std::int64_t>();
+            if (seed_signed < 0) {
+                return core::Result<core::SimulationConfig>::failure(
+                    fmt_err(source_label, "'simulation.seed' is negative"));
+            }
+            cfg.seed = static_cast<std::uint64_t>(seed_signed);
+        } else {
             return core::Result<core::SimulationConfig>::failure(
                 fmt_err(source_label,
                         "'simulation.seed' has wrong type (expected unsigned integer)"));
         }
-        const auto seed_signed = v->get<std::int64_t>();
-        if (seed_signed < 0) {
-            return core::Result<core::SimulationConfig>::failure(
-                fmt_err(source_label, "'simulation.seed' is negative"));
-        }
-        cfg.seed = static_cast<std::uint64_t>(seed_signed);
     }
 
     if (const json* v = navigate(root, "simulation.daily_tick"); v != nullptr) {
