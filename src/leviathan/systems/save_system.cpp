@@ -445,7 +445,7 @@ core::Result<core::PolicyData> policy_from_json(const json& j,
         return core::Result<core::PolicyData>::failure(std::move(duration.error()));
     }
     constexpr std::uint64_t kIntMax =
-        static_cast<std::uint64_t>(2147483647);
+        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
     if (duration.value() > kIntMax) {
         return core::Result<core::PolicyData>::failure(
             ctx + ": 'duration_days' exceeds INT_MAX (got " +

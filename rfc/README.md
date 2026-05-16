@@ -40,9 +40,13 @@ M0 / M1 中落地，部分仍是未來工作：
   RFC-060 §3 / RFC-010 §2.4 `BudgetState`（七類別預算分配，作為巢狀
   欄位嵌在 `CountryState`）；M1.4 落實 RFC-060 §3 / RFC-070 §3
   `PolicyData` 與 `PolicyEffect`（含 RFC-010 §2.6 列出的政策類別與
-  十個範例 policy fixture），但**尚未套用效果**。RFC-080 §3 §4 §5
-  的公式本體仍未實作 —— M1.5（PolicySystem apply effects）才會接上
-  真正改變 country / faction 數值的程式碼。
+  十個範例 policy fixture），但**尚未套用效果**。**M1.5（PolicySystem
+  apply effects）** 為 M1 第一個真正改變 country / faction 數值的
+  PR：`apply_policy_effects` 支援 `country.<field>` /
+  `country.budget.<cat>` / `faction:<type>.<field>` 三類 target、
+  `add` / `set` 兩種 op，並且在 pre-flight 失敗時保證 state 不變。
+  RFC-080 §3 §4 §5 的公式（GDP 成長、稅收、穩定度月結）仍未實作 ——
+  待後續子階段。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

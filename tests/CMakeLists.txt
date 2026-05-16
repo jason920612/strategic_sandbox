@@ -37,6 +37,7 @@ add_executable(leviathan_tests
     systems/data_loader_test.cpp
     systems/diagnostics_test.cpp
     systems/logging_system_test.cpp
+    systems/policy_system_test.cpp
     systems/random_service_test.cpp
     systems/runner_test.cpp
     systems/save_system_test.cpp
