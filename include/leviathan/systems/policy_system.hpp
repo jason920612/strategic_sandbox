@@ -5,20 +5,29 @@
 // through saves, validating shape. This is where numbers actually
 // change.
 //
-// Scope per the M1.4 review:
+// Scope per the M1.4 review (unchanged through M1.15):
 //   * Targets: country.<field>, country.budget.<category>,
 //              faction:<type>.<field>
 //   * Ops:     "add", "set"
-//   * NO duration queue (effects are instantaneous)
+//   * Effects are instantaneous (NO time-spread application).
 //   * NO AI / automatic enactment
 //   * NO event integration
 //   * NO faction.preferred_policies evaluation
+//
+// M1.15 adds duration TRACKING (not scheduling): each successful
+// apply records an `ActivePolicy{policy.id_code, current_date +
+// duration_days}` in `state.countries[actor].active_policies`. The
+// list is append-only in M1.15 - no scheduler removes expired
+// entries and nothing reverts the effects. The list is what later
+// systems (UI, AI, expiration sweep) will read.
 //
 // Atomicity:
 //   apply_policy_effects pre-flight-checks every effect (target
 //   resolution, op recognition) BEFORE mutating any state. If any
 //   effect fails to resolve, the function returns Result::failure
-//   and state is untouched. Otherwise every effect applies in order.
+//   and state is untouched (NO active_policies entry is added).
+//   Otherwise every effect applies in order and exactly one
+//   ActivePolicy entry is appended.
 
 #ifndef LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP
 #define LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP

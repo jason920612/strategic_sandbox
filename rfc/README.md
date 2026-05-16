@@ -139,6 +139,28 @@ M0 / M1 中落地，部分仍是未來工作：
   schema 變更（仍 v6）、CountryState / FactionState / PolicyData
   shape 變更、faction-level CSV、JSON 變體、streaming I/O、新 sanity
   check、AI / events / war / 平衡重調。
+  **M1.15（Policy duration tracking）** 為 `core::entities` 新增
+  `ActivePolicy { policy_id_code; expires_on }` 型別，以及
+  `CountryState::active_policies` 向量（預設空，只增不減）。每次
+  `policy::apply_policy_effects` 成功完成 apply loop 之後，會在 actor
+  country 的 `active_policies` 尾端 append 一筆，`expires_on =
+  current_date + duration_days`（由 `GameDate::advance_days` 計算，
+  DataLoader 已保證 `duration_days >= 0`）。Pre-flight 失敗時
+  「不 append」── M1.5 的 atomicity 規則涵蓋這個新 side effect。
+  `duration_days == 0` 仍記錄一筆（`expires_on == current_date`），
+  原因是 diagnostics 仍想看到 enactment 發生過。**M1.15 是本 M1
+  的第二次 save schema 升版（v6 → v7）**：`country.active_policies`
+  是 country object 中必備欄位，v6 save、v7 但 country 缺
+  `active_policies`、`active_policies[i]` 缺 `policy_id_code` 或
+  `expires_on` 為非法 Gregorian 日期等情況都會 reject 並把
+  `countries[N]` / `active_policies[N]` 路徑寫進錯誤訊息。M1.13 的
+  scenario day-0 enactment 自動繼承這個 side effect（scenario_loader
+  本身沒有 code change）。對應 RFC-010 §2.6 policy lifecycle、
+  RFC-090 §M1 task 1.21（policy duration runtime state）。**M1.15
+  不做** expiration sweep、effect revert、scheduler / queue、AI 自
+  動 enactment、event-triggered enactment、dedup（同一 policy 在
+  同一 country 重複 enact 會記兩筆）、新 log line、新 CSV 欄位、
+  monthly pipeline 變更、JSON-config / DataLoader shape 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

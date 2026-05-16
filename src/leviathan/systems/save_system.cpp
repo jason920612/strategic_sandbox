@@ -90,6 +90,18 @@ json country_to_json(const core::CountryState& c) {
     budget["infrastructure"]  = c.budget.infrastructure;
     budget["industry"]        = c.budget.industry;
     j["budget"] = std::move(budget);
+
+    // M1.15 active_policies block - array of {policy_id_code,
+    // expires_on}. May be empty. Insertion order matches the order
+    // in which apply_policy_effects appended entries.
+    json active = json::array();
+    for (const auto& ap : c.active_policies) {
+        json entry = json::object();
+        entry["policy_id_code"] = ap.policy_id_code;
+        entry["expires_on"]     = ap.expires_on.to_string();
+        active.push_back(std::move(entry));
+    }
+    j["active_policies"] = std::move(active);
     return j;
 }
 
@@ -284,6 +296,43 @@ core::Result<core::CountryState> country_from_json(const json& j,
     if (auto r = load_budget("intelligence",    c.budget.intelligence);    !r) return r;
     if (auto r = load_budget("infrastructure",  c.budget.infrastructure);  !r) return r;
     if (auto r = load_budget("industry",        c.budget.industry);        !r) return r;
+
+    // M1.15 active_policies block. Required as of save format v7.
+    // Empty array is fine; missing field is a hard failure (v6 saves
+    // dropped here per the v7 history note in save_system.hpp).
+    if (!j.contains("active_policies")) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": missing required field 'active_policies'");
+    }
+    const auto& ap_arr = j.at("active_policies");
+    if (!ap_arr.is_array()) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": 'active_policies' has wrong type (expected JSON array)");
+    }
+    c.active_policies.reserve(ap_arr.size());
+    for (std::size_t i = 0; i < ap_arr.size(); ++i) {
+        const std::string ap_ctx =
+            ctx + ": active_policies[" + std::to_string(i) + "]";
+        const auto& entry = ap_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::CountryState>::failure(
+                ap_ctx + ": expected JSON object");
+        }
+        auto id_code_r = require_string(entry, "policy_id_code", ap_ctx);
+        if (!id_code_r) {
+            return core::Result<core::CountryState>::failure(
+                std::move(id_code_r.error()));
+        }
+        auto expires_r = require_date(entry, "expires_on", ap_ctx);
+        if (!expires_r) {
+            return core::Result<core::CountryState>::failure(
+                std::move(expires_r.error()));
+        }
+        core::ActivePolicy ap;
+        ap.policy_id_code = id_code_r.value();
+        ap.expires_on     = expires_r.value();
+        c.active_policies.push_back(std::move(ap));
+    }
 
     return core::Result<core::CountryState>::success(std::move(c));
 }

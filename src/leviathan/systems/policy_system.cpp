@@ -266,6 +266,19 @@ core::Result<ApplyOutcome> apply_policy_effects(
         ++outcome.effects_applied;
     }
 
+    // ---- M1.15: record this enactment as an active policy --------
+    // Reached only after pre-flight passed AND every effect applied.
+    // expires_on = state.current_date + policy.duration_days. The
+    // DataLoader guarantees duration_days >= 0, so advance_days is
+    // safe to call directly. M1.15 only tracks; no system removes
+    // expired entries.
+    core::GameDate expires_on = state.current_date;
+    expires_on.advance_days(policy.duration_days);
+    auto& country_ref =
+        state.countries[static_cast<std::size_t>(actor.value())];
+    country_ref.active_policies.push_back(
+        core::ActivePolicy{policy.id_code, expires_on});
+
     return core::Result<ApplyOutcome>::success(std::move(outcome));
 }
 

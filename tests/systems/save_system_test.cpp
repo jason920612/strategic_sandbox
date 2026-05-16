@@ -161,7 +161,7 @@ TEST_CASE("serialize: empty GameState produces a well-formed JSON object") {
     GameState state;
     const std::string text = ss::serialize(state);
     CHECK(text.front() == '{');
-    CHECK(text.find("\"save_version\": 6")          != std::string::npos);
+    CHECK(text.find("\"save_version\": 7")          != std::string::npos);
     CHECK(text.find("\"rng_algorithm_version\": 1") != std::string::npos);
     CHECK(text.find("\"current_date\": \"1930-01-01\"") != std::string::npos);
     // Reserved entity-container keys exist even if empty so a future
@@ -383,7 +383,7 @@ TEST_CASE("deserialize: rejects an unknown save_version (v99)") {
     const auto r = ss::deserialize(text, "fake.json");
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 99") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
     CHECK(r.error().find("fake.json")  != std::string::npos);
 }
 
@@ -401,7 +401,7 @@ TEST_CASE("deserialize: an old v3 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 3") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
 }
 
 TEST_CASE("deserialize: an old v4 save is rejected loudly") {
@@ -419,7 +419,7 @@ TEST_CASE("deserialize: an old v4 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 4") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
 }
 
 TEST_CASE("deserialize: an old v1 save is rejected loudly") {
@@ -435,7 +435,7 @@ TEST_CASE("deserialize: an old v1 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 1") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
 }
 
 TEST_CASE("deserialize: an old v2 save is rejected loudly") {
@@ -453,7 +453,7 @@ TEST_CASE("deserialize: an old v2 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 2") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
 }
 
 TEST_CASE("deserialize: an old v5 save is rejected loudly") {
@@ -472,16 +472,35 @@ TEST_CASE("deserialize: an old v5 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 5") != std::string::npos);
-    CHECK(r.error().find("supports 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
 }
 
-TEST_CASE("deserialize: v6 country missing last_gdp_growth_rate is rejected") {
-    // M1.12 made last_gdp_growth_rate a required save field. A save
-    // produced before this PR has every M1.4 field but the new one;
-    // it must be rejected loudly so it can't silently default to 0
-    // and produce subtly different stability behaviour on reload.
+TEST_CASE("deserialize: an old v6 save is rejected loudly") {
+    // M1.15 bumped kSaveFormatVersion 6 -> 7. v6 saves predate the new
+    // CountryState::active_policies field; loading a v6 save with an
+    // M1.15+ binary would lose every day-0 enactment recorded by
+    // scenario_loader. Strict version gating is the same rule we used
+    // for v1..v5 rejections.
     const std::string text = R"({
         "save_version": 6,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [], "logs": []
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unsupported save_version 6") != std::string::npos);
+    CHECK(r.error().find("supports 7") != std::string::npos);
+}
+
+TEST_CASE("deserialize: v7 country missing last_gdp_growth_rate is rejected") {
+    // M1.12 made last_gdp_growth_rate a required country field; the
+    // field survived the M1.15 v6->v7 bump. A v7 save that drops it
+    // must still be rejected loudly so the runtime stability term
+    // cannot silently default to 0 on reload.
+    const std::string text = R"({
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -521,9 +540,138 @@ TEST_CASE("save + load: last_gdp_growth_rate survives the round trip") {
     CHECK(r.value().countries[1].last_gdp_growth_rate == doctest::Approx(-0.0042));
 }
 
+TEST_CASE("serialize: country emits an active_policies array (M1.15)") {
+    // The field is always written, even when empty, so v7 round-trip
+    // of a freshly-built state succeeds without manual seeding.
+    GameState state = build_seeded_state();
+    const std::string text = ss::serialize(state);
+    CHECK(text.find("\"active_policies\": []") != std::string::npos);
+}
+
+TEST_CASE("save + load: active_policies survives the round trip") {
+    TempFile tmp("leviathan_test_save_active_policies.json");
+    GameState before = build_seeded_state();
+    before.countries[0].active_policies.push_back(
+        {"raise_taxes", leviathan::core::GameDate(1930, 3, 2)});
+    before.countries[0].active_policies.push_back(
+        {"increase_military_budget", leviathan::core::GameDate(1930, 1, 31)});
+    before.countries[1].active_policies.push_back(
+        {"expand_welfare", leviathan::core::GameDate(1930, 4, 30)});
+    REQUIRE(ss::save(before, tmp.path).ok());
+
+    const auto r = ss::load(tmp.path);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().countries.size() == 2);
+    const auto& a = r.value().countries[0].active_policies;
+    REQUIRE(a.size() == 2);
+    CHECK(a[0].policy_id_code == "raise_taxes");
+    CHECK(a[0].expires_on     == leviathan::core::GameDate(1930, 3, 2));
+    CHECK(a[1].policy_id_code == "increase_military_budget");
+    CHECK(a[1].expires_on     == leviathan::core::GameDate(1930, 1, 31));
+    const auto& b = r.value().countries[1].active_policies;
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].policy_id_code == "expand_welfare");
+    CHECK(b[0].expires_on     == leviathan::core::GameDate(1930, 4, 30));
+}
+
+TEST_CASE("deserialize: v7 country missing active_policies is rejected") {
+    // M1.15 made active_policies a required country field; loading a
+    // hand-written v7 save without it must fail rather than default to
+    // an empty list (which would silently drop scenario day-0 records).
+    const std::string text = R"({
+        "save_version": 7,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [
+            { "id": 0, "id_code": "GER", "name": "Germany",
+              "display_name": "Germany",
+              "gdp": 100.0, "tax_revenue": 0.0, "budget_balance": 0.0,
+              "legal_tax_burden": 0.20, "fiscal_capacity": 0.50,
+              "administrative_efficiency": 0.55, "central_control": 0.60,
+              "corruption": 0.25, "stability": 0.55, "legitimacy": 0.55,
+              "military_power": 0.50, "threat_perception": 0.30,
+              "last_gdp_growth_rate": 0.0,
+              "budget": {
+                "administration": 0.25, "military": 0.35, "education": 0.10,
+                "welfare": 0.10, "intelligence": 0.05, "infrastructure": 0.10,
+                "industry": 0.05
+              } }
+        ]
+    })";
+    const auto r = ss::deserialize(text, "no-active.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("countries[0]")    != std::string::npos);
+    CHECK(r.error().find("active_policies") != std::string::npos);
+}
+
+TEST_CASE("deserialize: active_policies entry missing policy_id_code is rejected") {
+    const std::string text = R"({
+        "save_version": 7,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [
+            { "id": 0, "id_code": "GER", "name": "Germany",
+              "display_name": "Germany",
+              "gdp": 100.0, "tax_revenue": 0.0, "budget_balance": 0.0,
+              "legal_tax_burden": 0.20, "fiscal_capacity": 0.50,
+              "administrative_efficiency": 0.55, "central_control": 0.60,
+              "corruption": 0.25, "stability": 0.55, "legitimacy": 0.55,
+              "military_power": 0.50, "threat_perception": 0.30,
+              "last_gdp_growth_rate": 0.0,
+              "budget": {
+                "administration": 0.25, "military": 0.35, "education": 0.10,
+                "welfare": 0.10, "intelligence": 0.05, "infrastructure": 0.10,
+                "industry": 0.05
+              },
+              "active_policies": [
+                { "expires_on": "1930-02-01" }
+              ] }
+        ]
+    })";
+    const auto r = ss::deserialize(text, "bad-active.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("active_policies[0]") != std::string::npos);
+    CHECK(r.error().find("policy_id_code")     != std::string::npos);
+}
+
+TEST_CASE("deserialize: active_policies entry with malformed expires_on is rejected") {
+    const std::string text = R"({
+        "save_version": 7,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [
+            { "id": 0, "id_code": "GER", "name": "Germany",
+              "display_name": "Germany",
+              "gdp": 100.0, "tax_revenue": 0.0, "budget_balance": 0.0,
+              "legal_tax_burden": 0.20, "fiscal_capacity": 0.50,
+              "administrative_efficiency": 0.55, "central_control": 0.60,
+              "corruption": 0.25, "stability": 0.55, "legitimacy": 0.55,
+              "military_power": 0.50, "threat_perception": 0.30,
+              "last_gdp_growth_rate": 0.0,
+              "budget": {
+                "administration": 0.25, "military": 0.35, "education": 0.10,
+                "welfare": 0.10, "intelligence": 0.05, "infrastructure": 0.10,
+                "industry": 0.05
+              },
+              "active_policies": [
+                { "policy_id_code": "raise_taxes",
+                  "expires_on": "1930-02-30" }
+              ] }
+        ]
+    })";
+    const auto r = ss::deserialize(text, "bad-date.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("active_policies[0]") != std::string::npos);
+    CHECK(r.error().find("expires_on")         != std::string::npos);
+    CHECK(r.error().find("1930-02-30")         != std::string::npos);
+}
+
 TEST_CASE("deserialize: rejects an unknown rng_algorithm_version") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 99,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -561,7 +709,7 @@ TEST_CASE("deserialize: top-level non-object is rejected") {
 
 TEST_CASE("deserialize: invalid Gregorian current_date is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-02-30",
         "rng": {"seed": 0, "counter": 0}
@@ -576,7 +724,7 @@ TEST_CASE("deserialize: country id above CountryId range is rejected") {
     // CountryId is currently backed by int, so 2^31 must be refused
     // rather than silently truncated. Regression for PR #8 review.
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -607,7 +755,7 @@ TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
     // Boundary case: INT_MAX (2^31 - 1) is the largest representable
     // value and should round-trip without complaint.
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -624,7 +772,8 @@ TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
                 "administration": 0.2, "military": 0.2, "education": 0.1,
                 "welfare": 0.1, "intelligence": 0.1, "infrastructure": 0.1,
                 "industry": 0.1
-              } }
+              },
+              "active_policies": [] }
         ]
     })";
     const auto r = ss::deserialize(text);
@@ -635,7 +784,7 @@ TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
 
 TEST_CASE("deserialize: country with wrong type names its index") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -665,7 +814,7 @@ TEST_CASE("deserialize: country missing a M1.1 required field is rejected") {
     // Drop "legal_tax_burden" from an otherwise-valid country. The
     // loader must reject it rather than silently default to 0.
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -709,7 +858,7 @@ TEST_CASE("save + load: policies round-trip via file") {
 
 TEST_CASE("deserialize: policy missing effects is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -726,7 +875,7 @@ TEST_CASE("deserialize: policy missing effects is rejected") {
 
 TEST_CASE("deserialize: policy effect missing target is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -747,7 +896,7 @@ TEST_CASE("deserialize: faction with wrong type names its index") {
     // M1.2 regression: corrupted faction must be reported with the
     // factions[N] context, not the generic field error.
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -768,7 +917,7 @@ TEST_CASE("deserialize: faction with wrong type names its index") {
 
 TEST_CASE("deserialize: faction missing preferred_policies is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -788,7 +937,7 @@ TEST_CASE("deserialize: faction missing preferred_policies is rejected") {
 
 TEST_CASE("deserialize: faction id above FactionId range is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -808,7 +957,7 @@ TEST_CASE("deserialize: faction id above FactionId range is rejected") {
 
 TEST_CASE("deserialize: unknown severity in log is rejected") {
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -911,7 +1060,7 @@ TEST_CASE("deserialize: country missing budget block is rejected") {
     // Country shape that has every M1.1/M1.2 numeric field but no
     // budget object - should fail with the budget-context error.
     const std::string text = R"({
-        "save_version": 6,
+        "save_version": 7,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},

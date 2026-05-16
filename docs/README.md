@@ -42,6 +42,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-12-economy-stability-coupling.md`](m1-12-economy-stability-coupling.md) | M1.12 | **Economy → stability coupling.** `CountryState` gains `last_gdp_growth_rate` (default 0.0; runtime-only at load time). `economy::tick` writes it on every successful tick. `stability::tick` reads it as the RFC-080 §5 `EconomicGrowth` term with `kEconomicGrowthWeight = 2.0`. Monthly pipeline order is unchanged (faction → stability → economy) — produces an intentional one-month lag where stability sees last month's growth. **Save format bumped v5 → v6** (first M1 save-schema bump); v5 saves and v6 saves missing the field both rejected loudly. No policy scheduling, no AI / events / war, no balance pass — `kEconomicGrowthWeight` is a placeholder. |
 | [`m1-13-scenario-starting-policies.md`](m1-13-scenario-starting-policies.md) | M1.13 | **Scenario starting policies.** `ScenarioManifest` gains an optional `starting_policies` array of `{policy, actor}` id_code pairs. After loading countries / factions / policies, the loader resolves each entry and invokes `policy::apply_policy_effects(state, actor, policy)` exactly once. Manifests without the key still load (M1.11 back-compat). Entries apply in manifest order; multiple entries that touch the same field accumulate. Unknown policy / unknown actor rejected with the id_code in the message. New fixture `data/scenarios/1930_with_start_policies.json` enacts `raise_taxes` + `increase_military_budget` on GER. **No save-format bump (stays at v6)**, no duration queue, no scheduler, no AI, no new state shape, no monthly involvement. Mid-list apply failure leaves partial state (documented non-atomic). |
 | [`m1-14-diagnostics-surfaces-growth.md`](m1-14-diagnostics-surfaces-growth.md) | M1.14 | **Diagnostics surfaces `last_gdp_growth_rate`.** New `Diagnostics::CountrySummaryRow` + `country_snapshot(state, country)` + `write_country_csv_header` / `write_country_csv_row` free functions. New opt-in `--countries-csv PATH` runner flag emits one row per country per snapshot point (cadence mirrors `--summary-csv`: start + each `month_changed` + final post-sanity). 8 columns: `date,id_code,gdp,tax_revenue,budget_balance,stability,legitimacy,last_gdp_growth_rate`. Doubles formatted with `std::scientific` + `setprecision(17)` for deterministic round-trip. Existing `--summary-csv` 4-column format byte-for-byte unchanged (M0.10 contract preserved). **No save-format bump (still v6)**, no new state shape, no faction-level CSV, no JSON variant. |
+| [`m1-15-policy-duration-tracking.md`](m1-15-policy-duration-tracking.md) | M1.15 | **Policy duration tracking.** New `ActivePolicy{policy_id_code, expires_on}` core type and `CountryState::active_policies` vector (default empty, append-only). Every successful `policy::apply_policy_effects` records one entry with `expires_on = current_date + duration_days`. Atomicity covers the new side effect: pre-flight failure appends nothing. `duration_days == 0` is allowed and records a same-day-expiry entry. **Save format bumped v6 → v7** (v6 saves rejected loudly; v7 country missing `active_policies` rejected; entry parse errors point at `active_policies[N]`). Tracking-only — no expiration sweep, no effect revert, no scheduler, no AI, no dedup, no JSON-config / DataLoader change. |
 
 ## Reading order
 
@@ -53,26 +54,28 @@ If you're new to the codebase:
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
-   → M1.11 → M1.12 → M1.13 → M1.14). They build on each other and
-   each one tries to call out the rules a future contributor must
-   not silently break.
+   → M1.11 → M1.12 → M1.13 → M1.14 → M1.15). They build on each
+   other and each one tries to call out the rules a future
+   contributor must not silently break.
 
 ## What's next
 
-Two candidates after M1.14 merges:
+Two candidates after M1.15 merges:
 
-- **M1.15 — policy duration tracking.** Introduce a per-country
-  active-policy list (`policy_id_code + expires_on`) so M1.4's
-  `duration_days` field finally has runtime meaning. **This would
-  bump save format `v6 → v7`** because the active-policy container
-  is new persistent state.
 - **M1.16 — faction-level CSV.** Mirror the M1.14 per-country
   diagnostic pattern for factions: new `FactionSummaryRow` +
   `faction_snapshot` + `--factions-csv PATH` flag. No save-format
-  change.
+  change. Lowest-risk follow-up; observation-only.
+- **M1.17 — policy expiration sweep.** First consumer of
+  `active_policies.expires_on`: a free function that removes
+  expired entries (and a monthly pipeline step that calls it). Would
+  *not* automatically revert effects — that is a further follow-up
+  once we decide whether reverts should be exact-inverse, baseline-
+  restore, or a third option. No save-format change; the
+  `active_policies` shape stays at v7.
 
 Per the M1 pacing rule, the next sub-milestone is **not** started
-until M1.14 is merged.
+until M1.15 is merged.
 
 ## When to add a new file
 
