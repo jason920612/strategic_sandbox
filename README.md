@@ -7,17 +7,18 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.4 — TimeSystem**
+- Current sub-milestone: **M0.5 — deterministic RNG service**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
-`GameState` is a passive container, and `leviathan::systems::time` now
-provides free-function `advance_one_day(state) -> TickResult` and
-`advance_days(state, n)` entry points so simulation time can be moved
-forward. RNG, logging, data-loader, save/load, and headless-runner
-systems remain stubbed and arrive across M0.5 – M0.11. Today the repo
-builds a banner executable that advances a fresh `GameState` by 365
-days and reports month/year boundary crossings, plus a doctest-driven
-unit-test suite over the foundational types and TimeSystem.
+`GameState` is still a passive container. `leviathan::systems::time`
+provides `advance_one_day` and `advance_days`; `leviathan::systems::random`
+now provides `next_u64`, `draw_int`, `draw_unit`, `draw_double`,
+`draw_bool`, and `weighted_choice` plus a trace-hook for debugging
+non-determinism. The algorithm is a counter-indexed splitmix64 finaliser
+on `(seed, counter)`, deliberately not `<random>` (`std::random_device`
+is non-deterministic and `std::*_distribution` outputs are
+vendor-defined). Logging, data-loader, save/load, and headless-runner
+systems remain stubbed and arrive across M0.6 – M0.11.
 
 ## Repository layout
 
@@ -89,14 +90,15 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.4 there are ~60 doctest cases covering the strong-ID types,
-`GameDate` (leap years, month/year rollover, parsing, ISO-8601 output,
-the 1999→2000 boundary, etc.), `Result<T, E>`, `string_utils::trim`,
-`SimulationConfig`, the `GameState` container plus its
-`make_game_state` factory, and the TimeSystem free functions
-(boundary detection, leap years, manual month-end pipeline pattern,
-RNG/log non-interference). Each `TEST_CASE` is registered with CTest
-individually, so `ctest -R advance_days` runs just the time tests.
+As of M0.5 there are ~80 doctest cases covering all foundational types
+(`StrongId<Tag>`, `GameDate`, `Result<T, E>`, `string_utils::trim`,
+`SimulationConfig`, `GameState` + `make_game_state`), the TimeSystem
+free functions, and the RandomService (determinism, counter advance,
+range bounds, weighted-choice edge cases including all-zero weights,
+NaN-safe `draw_bool`, tag-independence, trace hook round-trip,
+snapshot replay). Each `TEST_CASE` is registered with CTest
+individually, so `ctest -R weighted_choice` runs just the
+weighted-choice tests.
 
 ## Build options
 
