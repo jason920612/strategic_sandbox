@@ -7,17 +7,17 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.3 — minimal `GameState`**
+- Current sub-milestone: **M0.4 — TimeSystem**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
-`GameState` exists as a passive container (current date, RNG state, six
-entity vectors) and a `make_game_state(config)` factory seeds it from a
-`SimulationConfig`. The time, RNG, logging, data-loader, save/load, and
-headless-runner systems remain stubbed; they fill in across M0.4 – M0.11.
-Today this repo builds a banner executable that demos `GameDate` and
-constructs a fresh `GameState`, plus a doctest-driven unit-test suite for
-the foundational types (`StrongId<Tag>`, `GameDate`, `Result<T, E>`,
-`string_utils::trim`, `SimulationConfig`, `GameState`).
+`GameState` is a passive container, and `leviathan::systems::time` now
+provides free-function `advance_one_day(state) -> TickResult` and
+`advance_days(state, n)` entry points so simulation time can be moved
+forward. RNG, logging, data-loader, save/load, and headless-runner
+systems remain stubbed and arrive across M0.5 – M0.11. Today the repo
+builds a banner executable that advances a fresh `GameState` by 365
+days and reports month/year boundary crossings, plus a doctest-driven
+unit-test suite over the foundational types and TimeSystem.
 
 ## Repository layout
 
@@ -89,12 +89,14 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.3 there are ~45+ doctest cases covering the strong-ID types,
+As of M0.4 there are ~60 doctest cases covering the strong-ID types,
 `GameDate` (leap years, month/year rollover, parsing, ISO-8601 output,
 the 1999→2000 boundary, etc.), `Result<T, E>`, `string_utils::trim`,
-`SimulationConfig`, and the `GameState` container plus its
-`make_game_state` factory. Each `TEST_CASE` is registered with CTest
-individually, so `ctest -R make_game_state` runs just the factory tests.
+`SimulationConfig`, the `GameState` container plus its
+`make_game_state` factory, and the TimeSystem free functions
+(boundary detection, leap years, manual month-end pipeline pattern,
+RNG/log non-interference). Each `TEST_CASE` is registered with CTest
+individually, so `ctest -R advance_days` runs just the time tests.
 
 ## Build options
 
