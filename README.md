@@ -7,13 +7,14 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.1 — project skeleton and build system**
+- Current sub-milestone: **M0.2 — core types and date utilities**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 The simulation core, data loaders, time system, RNG, logging, and headless
-runner are all stubbed out and will be filled in by sub-milestones M0.2 –
-M0.11. Today this repo only builds an empty banner executable and a
-smoke test.
+runner are all stubbed out and will be filled in by sub-milestones M0.3 –
+M0.11. Today this repo builds a banner executable that demos `GameDate`,
+plus a doctest-driven unit-test suite covering the foundational types
+(`StrongId<Tag>`, `GameDate`, `Result<T, E>`, `string_utils::trim`).
 
 ## Repository layout
 
@@ -38,9 +39,12 @@ smoke test.
   - Clang 10+
 - CMake **3.16 or newer**
 - A build tool that CMake can drive (Ninja, Make, MSBuild, Xcode, ...)
+- Network access on the **first** configure: the test suite fetches
+  [doctest](https://github.com/doctest/doctest) v2.4.11 via
+  `FetchContent`. Subsequent configures reuse the cached clone in
+  `build/_deps/`.
 
-No third-party libraries are required for M0.1. Later milestones will
-add a JSON library and a unit-test framework.
+No JSON library is required yet; it lands in M0.7.
 
 ## Build
 
@@ -82,9 +86,11 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-M0.1 ships a single smoke test that verifies the build pipeline and
-CTest registration work end-to-end. Real unit tests start arriving in
-M0.2 alongside core types.
+As of M0.2 there are ~35+ doctest cases covering the strong-ID types,
+`GameDate` (leap years, month/year rollover, parsing, ISO-8601 output,
+the 1999→2000 boundary, etc.), `Result<T, E>`, and `string_utils::trim`.
+Each `TEST_CASE` is registered with CTest individually, so
+`ctest -R parse` runs just the parse tests.
 
 ## Build options
 

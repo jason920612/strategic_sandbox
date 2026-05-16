@@ -1,17 +1,52 @@
 # Test suite root.
 #
-# M0.1 ships one smoke test that uses <cassert> directly so the project
-# has zero third-party dependencies at this point. A proper unit-test
-# framework will be introduced in a later milestone (M0.2 or M0.3) when
-# we have real types worth testing.
+# M0.2 introduces doctest as the unit-test framework. doctest is fetched
+# at configure time via FetchContent (shallow clone, fixed tag). It is a
+# single-header header-only library with very fast compile and no link-
+# time runtime, which suits a deterministic-simulation project well.
+#
+# All tests live in one executable (leviathan_tests). Individual
+# TEST_CASE entries are then registered with CTest by doctest's
+# discovery helper.
 
-add_executable(smoke_test smoke_test.cpp)
+include(FetchContent)
 
-target_link_libraries(smoke_test
+# doctest 2.4.11 ships a cmake_minimum_required from the CMake 2.x era,
+# which CMake >= 4.0 refuses to honour. Setting this cache variable
+# tells CMake to apply the policies of 3.5 to that older project. This
+# is the upstream-recommended workaround until doctest tags a release
+# with a modern minimum.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG        v2.4.11
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(doctest)
+
+add_executable(leviathan_tests
+    test_main.cpp
+    core/ids_test.cpp
+    core/result_test.cpp
+    core/game_date_test.cpp
+    core/string_utils_test.cpp
+)
+
+target_link_libraries(leviathan_tests
     PRIVATE
+        doctest::doctest
+        leviathan::core
         leviathan::compile_options
         leviathan::public_headers
 )
 
-add_test(NAME smoke_test COMMAND smoke_test)
-set_tests_properties(smoke_test PROPERTIES LABELS "smoke")
+# doctest's CMake helper registers each TEST_CASE as an individual
+# CTest test, so `ctest -R foo` works as expected and failures show
+# the failing case rather than the whole binary.
+list(APPEND CMAKE_MODULE_PATH "${doctest_SOURCE_DIR}/scripts/cmake")
+include(doctest)
+doctest_discover_tests(leviathan_tests
+    ADD_LABELS 1
+)

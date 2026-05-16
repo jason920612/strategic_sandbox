@@ -50,5 +50,7 @@ compile_commands.json
 
 # Generated docs / output
 docs/_build/
+# Local PR description drafts — canonical copy lives on GitHub.
+docs/pr-drafts/
 *.log
 *.tmp
