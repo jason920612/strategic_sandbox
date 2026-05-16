@@ -6,26 +6,27 @@
 
 ## Status
 
-- Phase: **Milestone 1 closed — single-country internal politics prototype complete.**
-- Latest shipped sub-milestone: **M1.17 — M1 exit / integration
-  tests.** New `tests/integration/m1_end_to_end_test.cpp` exercising
-  the full runner pipeline against the canonical
-  `1930_with_start_policies.json` scenario: 1-year run with all
-  three CSV outputs + save round-trip, 10-year soak run pinning the
-  RFC-090 §1.17 acceptance criterion (120 monthly pipelines,
-  finite-numerics guard, zero sanity issues), and a 5-artefact
-  byte-identical determinism test. New `docs/milestone-1-result.md`
-  collects the M1.1–M1.17 ledger, deferred items, M2 recommendations,
-  and the preserved architectural invariants. No save-format bump
-  (still v7); no new system; no new CLI flag. Drive-by: `main()`'s
-  stale milestone label rewritten to be milestone-neutral.
-- **M1 is closed.** Next phase is **Milestone 2 — player-operation
-  prototype** (RFC-090 §M2): `--player COUNTRY_IDCODE` selection,
-  pause / resume / step, command queue, command log. The runtime
-  systems M1 ships are exactly what M2 will react to.
-- M0 closed. See `docs/milestone-0-result.md` for the M0 exit report,
-  `docs/milestone-1-result.md` for the M1 exit report, and
-  `rfc/RFC-090-roadmap.md` for the full milestone map.
+- Phase: **Milestone 2 — player-operation prototype (in progress).**
+  M1 single-country internal-politics prototype is closed.
+- Latest shipped sub-milestone: **M2.1 — Player country selection.**
+  New `GameState::player_country` field (`CountryId`, default
+  `CountryId::invalid()`) and `--player COUNTRY_IDCODE` runner flag.
+  Resolution runs in `run_state` after scenario load: linear scan
+  for an `id_code` match, fail loudly on empty world or unknown
+  id_code. **Save format bumped v7 → v8** with `"player_country"`
+  as a required root-level integer (-1 = headless; non-negative
+  must index into `countries`); v7 saves rejected loudly. No
+  behaviour change yet — no M1 system reads `player_country`. The
+  pause / resume controller, command queue, and command log are
+  later M2 sub-milestones.
+- Next sub-milestone candidates: **M2.2** (pause / resume / step
+  tick-rate controller wrapping the runner's `for (i < days)`
+  loop, save-format-neutral) or **M2.3** (player command queue —
+  first-class command struct submitted by an outer driver, would
+  introduce a new save-format field for the queue).
+- M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
+  M0 exit report, `docs/milestone-1-result.md` for the M1 exit
+  report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -45,7 +46,9 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is complete. Seventeen sub-milestones merged:
+RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
+RFC-090 §M2) has begun with M2.1 merged. Eighteen sub-milestones
+shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -101,7 +104,12 @@ exit / integration tests — new
 10-year soak run + 5-artefact byte-identical determinism), new
 `docs/milestone-1-result.md` exit report, drive-by `main()`
 milestone-label cleanup. No new system, no new flag, no save
-schema change. M1 closes here.**
+schema change. M1 closes here; **M2.1 Player country selection —
+new `GameState::player_country` (`CountryId`, default invalid),
+new `--player COUNTRY_IDCODE` runner flag resolved after scenario
+load. Save format bumped v7 → v8 (`"player_country"` required at
+root; v7 rejected loudly). M1 systems unchanged: no behaviour
+branches on `player_country` yet. Opens RFC-090 §M2.**
 
 ## Repository layout
 
@@ -211,6 +219,15 @@ on Windows).
     --days     3652 \
     --seed     12345 \
     --scenario data/scenarios/1930_with_start_policies.json
+
+# M2.1 - select a player country. Resolution runs after --scenario
+# loads, so --player only makes sense when a scenario is loaded.
+# The id_code must match a country in the manifest; bad id_codes
+# fail loudly before any tick happens.
+./build/bin/Debug/leviathan \
+    --days     365 \
+    --scenario data/scenarios/1930_with_start_policies.json \
+    --player   GER
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -247,11 +264,21 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.17 there are **435 doctest cases**. M0 contributed 179;
+As of M2.1 there are **452 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
-M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 adds 3
+M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
+end-to-end integration tests; M2.1 adds 17 covering player country
+selection: 9 save_system cases (rejects an old v7 save loudly,
+serialize emits `"player_country": -1`, save+load round-trips
+both `-1` and a valid index, v8 missing `player_country` rejected,
+non-integer rejected, `< -1` rejected, out-of-range rejected,
+above `INT_MAX` rejected); 8 runner cases (`--player` plumbed /
+value-missing / default-unset; on empty world rejected with
+id_code in message; unknown id_code rejected; `--player GER` →
+`player_country: 0`; `--player FRA` → `player_country: 1`; no
+`--player` → `player_country: -1`). M1.17 added the 3
 end-to-end integration tests in `tests/integration/m1_end_to_end_test.cpp`:
 (1) 1-year run that loads the canonical day-0-policies scenario via
 the runner, asserts the `active_policies` round-trip (`expires_on

@@ -29,6 +29,15 @@ struct GameState {
     GameDate    current_date{1930, 1, 1};
     RandomState rng{};
 
+    // M2.1: which country the player has selected, or
+    // CountryId::invalid() when running headless / unattended.
+    // Resolved from `--player COUNTRY_IDCODE` by the runner AFTER
+    // scenario load. A valid value MUST index into `countries`; the
+    // save loader enforces this. The runtime systems never read this
+    // field yet (the M1 systems do not branch on the player); future
+    // M2 sub-milestones (player command queue, pause / step) will.
+    CountryId   player_country = CountryId::invalid();
+
     std::vector<CountryState>    countries;
     std::vector<ProvinceState>   provinces;
     std::vector<FactionState>    factions;

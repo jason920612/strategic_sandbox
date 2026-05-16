@@ -33,6 +33,10 @@ TEST_CASE("Default GameState has the documented baseline") {
     CHECK(state.policies.empty());
     CHECK(state.events.empty());
     CHECK(state.logs.empty());
+    // M2.1: player_country defaults to invalid (no player selected,
+    // headless run).
+    CHECK(state.player_country == CountryId::invalid());
+    CHECK(state.player_country.value() == -1);
 }
 
 TEST_CASE("GameState fields are directly mutable (no setters needed)") {

@@ -46,6 +46,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> scenario_path;       // unset = empty-world run (M1.11)
     std::optional<std::filesystem::path> countries_csv_path;  // unset = no per-country CSV (M1.14)
     std::optional<std::filesystem::path> factions_csv_path;   // unset = no per-faction CSV (M1.16)
+    std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     bool                                 show_help   = false;
 };
 
