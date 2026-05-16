@@ -57,7 +57,8 @@ std::string read_file(const fs::path& p) {
 }
 
 #ifdef LEVIATHAN_TEST_DATA_DIR
-const char* kCanonicalConfig = LEVIATHAN_TEST_DATA_DIR "/config/simulation.json";
+const char* kCanonicalConfig   = LEVIATHAN_TEST_DATA_DIR "/config/simulation.json";
+const char* kCanonicalScenario = LEVIATHAN_TEST_DATA_DIR "/scenarios/1930_minimal.json";
 #endif
 
 }  // namespace
@@ -439,6 +440,142 @@ TEST_CASE("parse_args: --summary-csv flag is plumbed through") {
     REQUIRE(r.ok());
     REQUIRE(r.value().summary_csv_path.has_value());
     CHECK(r.value().summary_csv_path.value() == fs::path("out/summary.csv"));
+}
+
+// =====================================================================
+// M1.11 - --scenario flag
+// =====================================================================
+
+TEST_CASE("parse_args: --scenario flag is plumbed through") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "3",
+        "--scenario", "data/scenarios/1930_minimal.json"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().scenario_path.has_value());
+    CHECK(r.value().scenario_path.value() ==
+          fs::path("data/scenarios/1930_minimal.json"));
+}
+
+TEST_CASE("parse_args: --scenario without a value is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--scenario"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--scenario") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --scenario defaults to unset when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().scenario_path.has_value());
+}
+
+TEST_CASE("run: without --scenario the runner still ticks an empty world") {
+    TempDir td("leviathan_runner_m111_no_scenario");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    // scenario_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 1);
+
+    // The save file should round-trip an empty state.countries.
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"countries\": []") != std::string::npos);
+    CHECK(save.find("\"factions\": []")  != std::string::npos);
+    CHECK(save.find("\"policies\": []")  != std::string::npos);
+}
+
+TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal world") {
+    TempDir td("leviathan_runner_m111_canonical_scenario");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 31;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 1);
+
+    // The save file should mention each loaded entity's id_code.
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"GER\"") != std::string::npos);
+    CHECK(save.find("\"FRA\"") != std::string::npos);
+    CHECK(save.find("\"JPN\"") != std::string::npos);
+    CHECK(save.find("\"GER_military\"") != std::string::npos);
+    CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
+
+    // Save schema is still v5 - M1.11 introduces no persistent state.
+    CHECK(save.find("\"save_version\": 5") != std::string::npos);
+}
+
+TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
+    // We can't easily compare to the initial GDP without round-tripping,
+    // but the M1.9 economy/stability/faction systems are exact-arithmetic
+    // and deterministic. After 31 days with monthly pipeline running
+    // once, GDP must be != 100.0 (initial value from germany.json).
+    TempDir td("leviathan_runner_m111_mutates");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 31;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+
+    REQUIRE(rn::run(opts).ok());
+    const std::string save = read_file(td.path / "save.json");
+
+    // Germany's initial GDP per germany.json is 100.0. After one month
+    // of EconomySystem ticking it should NOT remain exactly 100.0.
+    // A search for "100.0" in the GDP field would be brittle; instead
+    // we look for the substring " 100.0" inside the GER country
+    // serialisation. If it's still there, the economy tick didn't run.
+    CHECK(save.find("\"gdp\": 100.0") == std::string::npos);
+
+    // tax_revenue should be the per-tick value, not 0 (the loader sets
+    // it to 0 on startup; economy::tick overwrites with formula output).
+    CHECK(save.find("\"tax_revenue\": 0.0") == std::string::npos);
+}
+
+TEST_CASE("run: --scenario same seed + days produces byte-identical save and log") {
+    TempDir td_a("leviathan_runner_m111_det_a");
+    TempDir td_b("leviathan_runner_m111_det_b");
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 60;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xC0DEBABE};
+        o.scenario_path = kCanonicalScenario;
+        return o;
+    };
+
+    REQUIRE(rn::run(make_opts(td_a.path)).ok());
+    REQUIRE(rn::run(make_opts(td_b.path)).ok());
+
+    CHECK(read_file(td_a.path / "save.json")    == read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
+}
+
+TEST_CASE("run: bad --scenario path fails with the path in the message") {
+    TempDir td("leviathan_runner_m111_bad_scenario");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 5;
+    opts.output_dir    = td.path;
+    opts.scenario_path = "absolutely/does/not/exist/scenario.json";
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("scenario.json") != std::string::npos);
+    // Scenario load happens BEFORE run_state, so no save / log should
+    // be written.
+    CHECK_FALSE(fs::exists(td.path / "save.json"));
+    CHECK_FALSE(fs::exists(td.path / "events.jsonl"));
 }
 
 TEST_CASE("parse_args: --summary-csv without a value is rejected") {

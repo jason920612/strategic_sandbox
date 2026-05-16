@@ -83,6 +83,19 @@ M0 / M1 中落地，部分仍是未來工作：
   **M1.10 不做** save schema 變更（仍 v5）、country / faction 檔案載入、
   policy scheduler、CSV 新欄位、月度 pipeline log。determinism property
   在空 state 與非空 state 兩種情境下都仍成立。
+  **M1.11（Scenario loader）** 為 runner 增加 `--scenario PATH` 旗標
+  與 `scenario_loader::load_into_state`，將 M0.7 / M1.1 / M1.2 / M1.4
+  parser 組合成 manifest 驅動的載入器。Manifest schema：
+  `{ "scenario": { "countries":[…], "factions":[…], "policies":[…] } }`，
+  相對路徑相對於 `manifest_path.parent_path().parent_path()` 解析。
+  ID 依 vector 順序指派；`faction.country_id_code` 解析為對應的
+  `CountryId`。Duplicate id_code、missing country reference、
+  pre-populated state 都被 reject。Canonical fixture：
+  `data/scenarios/1930_minimal.json`（3 國 + 3 派系 + 10 政策）。
+  對應 RFC-090 §M1 task 1.17（scenario manifest / loader）。
+  **M1.11 不做** save schema 變更（仍 v5）、policy enactment、
+  state 欄位變更、`last_gdp_growth_rate`、RNG、log、partial-load
+  rollback、scenario 目錄掃描。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

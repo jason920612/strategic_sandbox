@@ -43,6 +43,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> save_path;           // defaults to output_dir/save.json
     std::optional<std::filesystem::path> log_path;            // defaults to output_dir/events.jsonl
     std::optional<std::filesystem::path> summary_csv_path;    // unset = no CSV written
+    std::optional<std::filesystem::path> scenario_path;       // unset = empty-world run (M1.11)
     bool                                 show_help   = false;
 };
 

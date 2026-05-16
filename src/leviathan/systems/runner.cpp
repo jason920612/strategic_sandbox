@@ -17,6 +17,7 @@
 #include "leviathan/systems/logging_system.hpp"
 #include "leviathan/systems/monthly_pipeline.hpp"
 #include "leviathan/systems/save_system.hpp"
+#include "leviathan/systems/scenario_loader.hpp"
 #include "leviathan/systems/time_system.hpp"
 
 namespace leviathan::systems::runner {
@@ -109,6 +110,9 @@ std::string usage_text() {
         "                      Snapshots are taken at start, each month\n"
         "                      boundary, and after sanity checks at the end.\n"
         "                      If omitted, no CSV is written.\n"
+        "  --scenario PATH     Scenario manifest JSON to load into GameState\n"
+        "                      before ticking (M1.11). Without this flag\n"
+        "                      the runner ticks an empty world.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -176,6 +180,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.summary_csv_path = std::filesystem::path(std::string(v.value()));
             ++i;
+        } else if (a == "--scenario") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.scenario_path = std::filesystem::path(std::string(v.value()));
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -213,10 +222,20 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     // ---- Build state ------------------------------------------------------
     auto state = core::make_game_state(cfg);
 
-    // M0.9 runner does not load country / faction / policy fixtures.
-    // The monthly pipeline (M1.9) still runs at each month boundary in
-    // run_state; with an empty state.countries it simply processes 0
-    // countries per call.
+    // ---- Optional scenario load (M1.11) -----------------------------------
+    // When --scenario PATH is set, populate state.countries / factions /
+    // policies BEFORE the tick loop runs so the monthly pipeline actually
+    // has something to mutate. Without it the runner ticks an empty
+    // world (M0.9 behaviour) and the M1.10 pipeline processes 0 countries
+    // per call.
+    if (opts.scenario_path.has_value()) {
+        namespace sl = leviathan::systems::scenario_loader;
+        auto load_r = sl::load_into_state(state, opts.scenario_path.value());
+        if (!load_r) {
+            return core::Result<RunOutcome>::failure(std::move(load_r.error()));
+        }
+    }
+
     return run_state(state, opts);
 }
 

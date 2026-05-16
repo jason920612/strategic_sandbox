@@ -7,16 +7,16 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.10 — runner monthly pipeline
-  wiring** — every month boundary in `leviathan --days N` invokes
-  `monthly::tick_all_countries(state)`. `RunOutcome.monthly_ticks`
-  counts crossings. No new state fields; no save-format bump (still
-  v5). `run_state(state, opts)` is exposed so tests can inject
-  pre-built countries / factions.
-- Next sub-milestone candidates: **M1.11** (economy → stability
-  coupling via a new `last_gdp_growth_rate` field — would trigger
-  save-format v5 → v6) or **M1.12** (scenario loader reading
-  `data/countries/*.json` + `data/factions/*.json`).
+- Latest shipped sub-milestone: **M1.11 — scenario loader for runner**
+  — new `--scenario PATH` flag, new `scenario_loader::load_into_state`
+  that composes the M0.7 / M1.1 / M1.2 / M1.4 parsers, canonical
+  `data/scenarios/1930_minimal.json` fixture. The runner can finally
+  produce a non-empty world end-to-end without test injection.
+  No new state shape; no save-format bump (still v5); no policy
+  enactment.
+- Next sub-milestone candidate: **M1.12 — economy → stability
+  coupling** (adds `last_gdp_growth_rate` to `CountryState` →
+  triggers save-format `v5 → v6`).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -38,7 +38,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Ten sub-milestones merged so far:
+RFC-090 §M1) is in progress. Eleven sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -49,14 +49,15 @@ RFC-080 §5); M1.8 EconomySystem `tick` (RFC-080 §3 tax revenue,
 expenditure = `gdp × sum_budget × 0.20`, stripped-down RFC-080 §4
 GDP growth); M1.9 MonthlyPipeline `tick_country` /
 `tick_all_countries` (first composition sub-milestone with canonical
-order `faction::react → stability::tick → economy::tick`); **M1.10
-runner monthly pipeline wiring — the M0.9 runner now invokes
-`monthly::tick_all_countries` on every month boundary**, and a new
-`run_state(state, opts)` entry point lets tests inject pre-built
-state. `leviathan --days 365` runs the monthly pipeline 12 times
-(over an empty country list by default, since the canonical M0.9
-runner does not load country fixtures — that's a future scenario-
-loader sub-milestone).
+order `faction::react → stability::tick → economy::tick`); M1.10
+runner monthly pipeline wiring (every `month_changed` invokes
+`monthly::tick_all_countries`; `run_state(state, opts)` exposed for
+test injection); **M1.11 scenario loader — `--scenario PATH` flag
++ `scenario_loader::load_into_state` compose the M0.7 / M1.1 / M1.2
+/ M1.4 parsers into a manifest-driven loader.** `leviathan --days
+365 --scenario data/scenarios/1930_minimal.json` finally produces a
+non-empty world end-to-end without test-only injection (3 countries
++ 3 factions + 10 policies, all canonical fixtures).
 
 ## Repository layout
 
@@ -71,7 +72,8 @@ loader sub-milestone).
 ├── data/                 Game data (JSON): config/simulation.json,
 │                         countries/{germany,france,japan}.json (M0.7-M1.3),
 │                         factions/ger_*.json (M1.2),
-│                         policies/*.json (M1.4)
+│                         policies/*.json (M1.4),
+│                         scenarios/1930_minimal.json (M1.11)
 ├── tools/                Dev / debug tools, currently empty
 └── docs/                 Per-milestone design notes (m0-N-*.md) +
                           pr-drafts/ (PR write-ups)
@@ -123,6 +125,13 @@ on Windows).
 # 10-day smoke run (everything else falls back to defaults)
 ./build/bin/Debug/leviathan --days 10
 
+# M1.11 - load the canonical 1930 world so the monthly pipeline
+# actually has countries to tick:
+./build/bin/Debug/leviathan \
+    --days 365 \
+    --scenario data/scenarios/1930_minimal.json \
+    --seed 12345
+
 # Pinned configuration matching the M0.9 spec example
 ./build/bin/Debug/leviathan \
     --config data/config/simulation.json \
@@ -168,19 +177,20 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.10 there are **327 doctest cases**. M0 contributed 179;
+As of M1.11 there are **352 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
-11; M1.10 adds 9 covering the **runner monthly-pipeline wiring**:
-`monthly_ticks` counter for 10 / 31 / 365 days (matched against
-TimeSystem's `month_changed` semantics with the canonical 1930-01-01
-start), empty-state determinism preserved, save schema still v5,
-and `run_state` integration with a hand-built 1-country / 1-faction
-state where every expected country / faction field actually
-mutates. Existing 365-day `log_count == 15` invariant still holds
-because M1.10 introduces no new logs. Each `TEST_CASE` is
+11; M1.10 added 9; M1.11 adds 25 covering the **scenario loader**:
+17 `scenario_loader_test.cpp` cases (manifest happy path, every
+schema rejection, end-to-end synthetic temp-dir layout, every
+duplicate-id and missing-reference rejection, canonical
+`data/scenarios/1930_minimal.json`) plus 8 runner-integration
+cases (`--scenario` flag plumbing, with-vs-without-scenario
+behaviour, non-empty save round-trip, byte-identical determinism
+with countries, mid-load failure stops before file writes). Save
+schema is still v5 — pinned by test. Each `TEST_CASE` is
 registered with CTest individually, so e.g.
-`ctest -R "m110"` runs just the M1.10 cases.
+`ctest -R "scenario"` runs just the scenario-loader cases.
 
 ## Build options
 
