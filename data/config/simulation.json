@@ -1,0 +1,8 @@
+{
+  "simulation": {
+    "start_date": "1930-01-01",
+    "end_date":   "2000-12-31",
+    "seed":       19300101,
+    "daily_tick": true
+  }
+}

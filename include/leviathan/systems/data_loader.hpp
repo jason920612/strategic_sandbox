@@ -1,0 +1,82 @@
+// DataLoader - parse simulation configuration and entity JSON.
+//
+// Design rules (M0.7 reviewer checklist):
+//   * Free functions. No methods on GameState; the loader never
+//     mutates a GameState directly. It returns parsed values via
+//     Result<T>; the caller composes them with make_game_state() or
+//     pushes them into state.countries on its own line.
+//   * No simulation side effects. The loader never advances time,
+//     never draws from the RNG, never logs.
+//   * No hard coupling to LoggingSystem. Read errors come back as
+//     Result::failure(message). Callers may choose to forward those
+//     messages to log_error(), or print them, or surface them in a
+//     UI - that decision lives outside this header.
+//   * No exceptions across the boundary. The underlying JSON library
+//     uses exceptions internally; we catch / use exception-free APIs
+//     so the public surface is Result-only.
+
+#ifndef LEVIATHAN_SYSTEMS_DATA_LOADER_HPP
+#define LEVIATHAN_SYSTEMS_DATA_LOADER_HPP
+
+#include <filesystem>
+#include <string_view>
+
+#include "leviathan/core/entities.hpp"
+#include "leviathan/core/result.hpp"
+#include "leviathan/core/simulation_config.hpp"
+
+namespace leviathan::systems::data_loader {
+
+// Parse a simulation-config JSON document from raw text. `source_label`
+// is used only to format error messages (e.g. "<inline>", a file path,
+// or any other caller-supplied tag).
+//
+// Expected shape (see docs/m0-7-data-loader.md for the full schema):
+//   {
+//     "simulation": {
+//       "start_date":  "YYYY-MM-DD",   // required
+//       "end_date":    "YYYY-MM-DD",   // optional, defaults to 2000-12-31
+//       "seed":        <unsigned int>, // optional, defaults to 0
+//       "daily_tick":  <bool>          // optional, defaults to true
+//     }
+//   }
+//
+// Error categories:
+//   - "<source>: JSON parse error: ..."
+//   - "<source>: missing required field '<path>'"
+//   - "<source>: '<path>' has wrong type (expected <X>)"
+//   - "<source>: '<path>' = \"...\" is not a real Gregorian date"
+core::Result<core::SimulationConfig> parse_simulation_config(
+    std::string_view json_text,
+    std::string_view source_label = "<inline>");
+
+// Reads `path` and parses its contents via parse_simulation_config.
+// On read failure (missing / unreadable file), returns a failure
+// Result with a message that names the path.
+core::Result<core::SimulationConfig> load_simulation_config(
+    const std::filesystem::path& path);
+
+// Parse a single-country JSON document.
+//
+// Expected shape:
+//   {
+//     "id":                "GER",     // required string code
+//     "name":              "Germany", // required
+//     "display_name":      "Germany", // optional, defaults to name
+//     "initial_gdp":       100.0,     // required, finite
+//     "initial_stability": 0.55       // required, finite
+//   }
+//
+// The numeric `CountryState::id` is left at its invalid default; the
+// caller is responsible for assigning numeric IDs (typically by
+// insertion order into state.countries).
+core::Result<core::CountryState> parse_country(
+    std::string_view json_text,
+    std::string_view source_label = "<inline>");
+
+core::Result<core::CountryState> load_country(
+    const std::filesystem::path& path);
+
+}  // namespace leviathan::systems::data_loader
+
+#endif  // LEVIATHAN_SYSTEMS_DATA_LOADER_HPP

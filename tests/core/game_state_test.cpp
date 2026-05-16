@@ -50,7 +50,10 @@ TEST_CASE("GameState fields are directly mutable (no setters needed)") {
 TEST_CASE("GameState containers accept their entity types") {
     GameState state;
 
-    state.countries.push_back(CountryState{CountryId{1}, "Germany"});
+    CountryState germany;
+    germany.id   = CountryId{1};
+    germany.name = "Germany";
+    state.countries.push_back(std::move(germany));
     state.provinces.push_back(ProvinceState{ProvinceId{10}, CountryId{1}});
     state.factions.push_back(FactionState{FactionId{100}, CountryId{1}});
     state.policies.push_back(PolicyData{PolicyId{1}, "increase_military_budget"});

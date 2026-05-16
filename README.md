@@ -7,18 +7,17 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.6 — LoggingSystem**
+- Current sub-milestone: **M0.7 — JSON data loader**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
-`GameState` is still a passive container. `leviathan::systems::time`
-provides `advance_one_day` and `advance_days`; `leviathan::systems::random`
-provides `next_u64` / `draw_int` / `draw_unit` / `draw_double` /
-`draw_bool` / `weighted_choice` (deterministic splitmix64 on
-`(seed, counter)`, no `<random>`); `leviathan::systems::logging`
-provides explicit `log()` with `Debug/Info/Warn/Error` severity, a
-deterministic ordered-metadata `LogEntry`, `recent(state, n)`, and
-byte-stable JSONL export. The data-loader, save/load, and
-headless-runner systems remain stubbed and arrive across M0.7 – M0.11.
+`GameState` is still a passive container. Systems so far:
+`leviathan::systems::time` (date advance + boundary detection);
+`leviathan::systems::random` (deterministic splitmix64 RNG, no
+`<random>`); `leviathan::systems::logging` (explicit-only logging
+with byte-stable JSONL); and now `leviathan::systems::data_loader`
+(JSON config + country parsers via nlohmann/json, returning `Result<T>`
+with clear path-prefixed error messages). The save/load and headless-
+runner systems remain stubbed and arrive across M0.8 – M0.11.
 
 ## Repository layout
 
@@ -43,12 +42,12 @@ headless-runner systems remain stubbed and arrive across M0.7 – M0.11.
   - Clang 10+
 - CMake **3.16 or newer**
 - A build tool that CMake can drive (Ninja, Make, MSBuild, Xcode, ...)
-- Network access on the **first** configure: the test suite fetches
-  [doctest](https://github.com/doctest/doctest) v2.4.11 via
-  `FetchContent`. Subsequent configures reuse the cached clone in
-  `build/_deps/`.
-
-No JSON library is required yet; it lands in M0.7.
+- Network access on the **first** configure: the build fetches
+  [nlohmann/json](https://github.com/nlohmann/json) v3.11.3 (used by
+  the data loader), and the test suite fetches
+  [doctest](https://github.com/doctest/doctest) v2.4.11. Both go through
+  CMake `FetchContent` (shallow clones, pinned tags). Subsequent
+  configures reuse the cached clones in `build/_deps/`.
 
 ## Build
 
@@ -90,13 +89,14 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.6 there are ~94 doctest cases covering all foundational
-types, TimeSystem, RandomService, and LoggingSystem (log appends,
-severity convenience wrappers, metadata insertion-order preservation,
-`recent(n)`, JSONL snapshot incl. escape and metadata rendering, the
-"TimeSystem must still not auto-log" regression). Each `TEST_CASE`
-is registered with CTest individually, so `ctest -R JSONL` runs just
-the export tests.
+As of M0.7 there are ~115 doctest cases covering all foundational
+types, TimeSystem, RandomService, LoggingSystem, and DataLoader
+(happy-path parses, every required-field error variant with path-
+prefixed messages, malformed JSON, file-not-found, file-load against
+the canonical `data/config/simulation.json` and
+`data/countries/germany.json`). Each `TEST_CASE` is registered with
+CTest individually, so `ctest -R parse_country` runs just the country
+parse cases.
 
 ## Build options
 
