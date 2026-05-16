@@ -39,11 +39,17 @@ core::Result<StabilityOutcome> tick(core::GameState& state,
                                     : kNoFactionsRadicalismDefault;
 
     // ---- Target stability -----------------------------------------
+    // M1.12: + kEconomicGrowthWeight * last_gdp_growth_rate is the
+    // RFC-080 §5 EconomicGrowth term. The value was written at the
+    // END of the previous monthly tick's economy::tick; the canonical
+    // monthly pipeline order (faction -> stability -> economy) is
+    // unchanged, so this read sees last month's growth.
     const double raw_target =
-          kSupportWeight    * avg_support
-        + kLegitimacyWeight * c.legitimacy
-        - kCorruptionWeight * c.corruption
-        - kRadicalismWeight * avg_radicalism;
+          kSupportWeight        * avg_support
+        + kLegitimacyWeight     * c.legitimacy
+        - kCorruptionWeight     * c.corruption
+        - kRadicalismWeight     * avg_radicalism
+        + kEconomicGrowthWeight * c.last_gdp_growth_rate;
     const double target = std::clamp(raw_target, 0.0, 1.0);
 
     // ---- Drift ----------------------------------------------------

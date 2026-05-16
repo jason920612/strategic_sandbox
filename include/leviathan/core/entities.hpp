@@ -75,6 +75,14 @@ struct CountryState {
     double military_power     = 0.0;
     double threat_perception  = 0.0;
 
+    // Most recent gdp_growth_rate written by economy::tick (M1.12).
+    // Fractional, e.g. 0.0035 = +0.35% monthly. Starts at 0.0 so the
+    // first stability::tick sees "no growth signal yet" (RFC-080 §5
+    // EconomicGrowth = 0). Updated AFTER the monthly economy tick;
+    // the next month's stability::tick reads it as input, producing
+    // a deliberate one-month lag (see docs/m1-12-...md).
+    double last_gdp_growth_rate = 0.0;
+
     // Per-category budget allocation (M1.3). Loaded as a nested
     // JSON object; saved likewise.
     BudgetState budget;

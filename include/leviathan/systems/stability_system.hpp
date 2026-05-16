@@ -7,21 +7,29 @@
 // No monthly tick, no runner integration, no AI, no event
 // integration.
 //
-// The formula is a stripped-down RFC-080 §5 stability formula. It
-// only consumes inputs that exist in the current GameState:
+// The formula consumes inputs that exist in the current GameState:
 //
-//   target =  kSupportWeight    * avg_faction_support
-//          +  kLegitimacyWeight * country.legitimacy
-//          -  kCorruptionWeight * country.corruption
-//          -  kRadicalismWeight * avg_faction_radicalism
+//   target =  kSupportWeight        * avg_faction_support
+//          +  kLegitimacyWeight     * country.legitimacy
+//          -  kCorruptionWeight     * country.corruption
+//          -  kRadicalismWeight     * avg_faction_radicalism
+//          +  kEconomicGrowthWeight * country.last_gdp_growth_rate  (M1.12)
 //
 //   stability += (clamp(target, 0, 1) - stability) * kStabilityDriftRate
 //   stability  = clamp(stability, 0, 1)
 //
+// The EconomicGrowth term is RFC-080 §5's `EconomicGrowth` input
+// (M1.12). It reads CountryState::last_gdp_growth_rate, which
+// economy::tick wrote at the END of the PREVIOUS monthly tick. The
+// monthly pipeline order (faction -> stability -> economy) is
+// unchanged from M1.9, so stability sees last month's growth, not
+// this month's. The one-month lag is deliberate; see
+// docs/m1-12-economy-stability-coupling.md.
+//
 // RFC-080 §5's full formula also includes WelfareSatisfaction,
-// EconomicGrowth, InequalityProxy, WarWeariness, BudgetCrisis. None
-// of those have inputs in M1.7's GameState; they land in M1.8+ as
-// economy / war systems come online.
+// InequalityProxy, WarWeariness, BudgetCrisis. None of those have
+// inputs in the current GameState; they land in later sub-milestones
+// as welfare / war systems come online.
 //
 // When a country has zero factions belonging to it, avg_support and
 // avg_radicalism each default to 0.5 (the neutral midpoint), so the
@@ -50,6 +58,14 @@ inline constexpr double kLegitimacyWeight    = 0.5;
 inline constexpr double kCorruptionWeight    = 0.3;
 inline constexpr double kRadicalismWeight    = 0.2;
 inline constexpr double kStabilityDriftRate  = 0.10;
+
+// M1.12: EconomicGrowth term coefficient (RFC-080 §5). Multiplies
+// CountryState::last_gdp_growth_rate, which is a fractional monthly
+// value (e.g. 0.0035 = +0.35% monthly). At 2.0 the term contributes
+// roughly 0.007 to the target for a typical 0.35%/month economy
+// (well below the legitimacy / support / corruption / radicalism
+// terms), so it shifts behaviour at the margin rather than dominating.
+inline constexpr double kEconomicGrowthWeight = 2.0;
 
 // Defaults used when the actor has no factions in state.factions.
 // 0.5 is the neutral midpoint of a ratio - it means "no political

@@ -510,8 +510,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is still v5 - M1.11 introduces no persistent state.
-    CHECK(save.find("\"save_version\": 5") != std::string::npos);
+    // Save schema is now v6 - M1.12 added CountryState.last_gdp_growth_rate.
+    CHECK(save.find("\"save_version\": 6") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -560,6 +560,28 @@ TEST_CASE("run: --scenario same seed + days produces byte-identical save and log
 
     CHECK(read_file(td_a.path / "save.json")    == read_file(td_b.path / "save.json"));
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
+}
+
+TEST_CASE("run: --scenario save contains last_gdp_growth_rate (M1.12)") {
+    // After at least one monthly tick, every country's
+    // last_gdp_growth_rate has been written by economy::tick. The
+    // save format v6 serialises it; this test pins the on-disk shape.
+    TempDir td("leviathan_runner_m112_last_growth");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 31;        // crosses the Jan->Feb boundary
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+
+    REQUIRE(rn::run(opts).ok());
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"last_gdp_growth_rate\"") != std::string::npos);
+    // Round-trip the save and verify the GER country has a non-zero
+    // growth rate (it was 0.0 at load; economy::tick wrote it).
+    auto loaded = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded.ok());
+    REQUIRE(!loaded.value().countries.empty());
+    CHECK(loaded.value().countries[0].last_gdp_growth_rate != doctest::Approx(0.0));
 }
 
 TEST_CASE("run: bad --scenario path fails with the path in the message") {
@@ -663,7 +685,7 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is still v5 (M1.10 introduces no persistent state)") {
+TEST_CASE("run: save schema is now v6 (M1.12 bumped from v5 for last_gdp_growth_rate)") {
     TempDir td("leviathan_runner_m110_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -673,7 +695,7 @@ TEST_CASE("run: save schema is still v5 (M1.10 introduces no persistent state)")
     const std::string save = read_file(td.path / "save.json");
     // Pin the unchanged version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 5") != std::string::npos);
+    CHECK(save.find("\"save_version\": 6") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------

@@ -78,6 +78,7 @@ json country_to_json(const core::CountryState& c) {
     j["legitimacy"]                = c.legitimacy;
     j["military_power"]            = c.military_power;
     j["threat_perception"]         = c.threat_perception;
+    j["last_gdp_growth_rate"]      = c.last_gdp_growth_rate;  // M1.12
 
     // M1.3 budget block - nested object, fixed key order.
     json budget = json::object();
@@ -254,6 +255,7 @@ core::Result<core::CountryState> country_from_json(const json& j,
     if (auto r = load_num("legitimacy",                c.legitimacy);                !r) return r;
     if (auto r = load_num("military_power",            c.military_power);            !r) return r;
     if (auto r = load_num("threat_perception",         c.threat_perception);         !r) return r;
+    if (auto r = load_num("last_gdp_growth_rate",      c.last_gdp_growth_rate);      !r) return r;  // M1.12
 
     // M1.3 budget block.
     if (!j.contains("budget")) {

@@ -96,6 +96,20 @@ M0 / M1 中落地，部分仍是未來工作：
   **M1.11 不做** save schema 變更（仍 v5）、policy enactment、
   state 欄位變更、`last_gdp_growth_rate`、RNG、log、partial-load
   rollback、scenario 目錄掃描。
+  **M1.12（Economy → Stability coupling）** 在 `CountryState` 新增
+  `last_gdp_growth_rate` 欄位：每次 `economy::tick` 在 tick 尾端寫入
+  該欄位，下一次 `stability::tick` 把它當作 RFC-080 §5 的
+  `EconomicGrowth` 項（`kEconomicGrowthWeight = 2.0`）讀入。
+  Monthly pipeline 順序維持 M1.9 canonical（faction → stability →
+  economy），所以本月 stability 讀到的是上一月 economy 寫的成長率
+  ── 這個一個月 lag 是有意設計，由 monthly_pipeline_test 的
+  one-month-lag 與 ordering-regression 兩個測試 pin 住。對應
+  RFC-080 §5 EconomicGrowth、RFC-090 §M1 task 1.18（economy ↔
+  stability 耦合）。**這是 M1 的第一次 save schema 升版（v5 → v6）**；
+  舊 v5 save 與缺少 `last_gdp_growth_rate` 的 v6 save 都被嚴格拒絕。
+  **M1.12 不做** policy scheduling、active-policy container、AI、
+  事件、戰爭、外交、平衡重調、其他 RFC-080 §5 項（welfare /
+  inequality / war weariness / budget crisis）。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
