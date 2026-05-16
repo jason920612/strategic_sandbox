@@ -49,8 +49,14 @@ M0 / M1 中落地，部分仍是未來工作：
   兩條 linear-toward-equilibrium reaction rules（loyalty drift toward
   stability at 0.10、support drift toward legitimacy at 0.05），
   明確呼叫，沒有 monthly tick / AI / 事件 / type-specific 行為。
-  RFC-080 §3 §4 §5 的公式（GDP 成長、稅收、穩定度月結）仍未實作 ——
-  M1.7 / M1.8 候選。
+  **M1.7（StabilitySystem tick）** 為 M1 第一個 country-side
+  dynamic：依 RFC-080 §5 簡化版公式（`0.5*avg_support +
+  0.5*legitimacy - 0.3*corruption - 0.2*avg_radicalism` → target，
+  stability drift toward target at 0.10），同樣明確呼叫。
+  RFC-080 §5 中 WelfareSatisfaction / EconomicGrowth /
+  InequalityProxy / WarWeariness / BudgetCrisis 等仍未實作 ——
+  待 M1.8（經濟月結）與後續系統補上。
+  RFC-080 §3 §4（GDP 成長、稅收）仍未實作 —— M1.8 候選。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

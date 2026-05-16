@@ -42,6 +42,7 @@ add_executable(leviathan_tests
     systems/random_service_test.cpp
     systems/runner_test.cpp
     systems/save_system_test.cpp
+    systems/stability_system_test.cpp
     systems/time_system_test.cpp
     integration/m0_end_to_end_test.cpp
 )
