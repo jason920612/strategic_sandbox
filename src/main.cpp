@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << kProjectName << " " << kProjectVersion << "\n"
-              << "Milestone 0.10 - headless runner with diagnostics.\n";
+              << "Headless strategic sandbox prototype.\n";
 
     auto run_r = runner::run(opts);
     if (!run_r) {

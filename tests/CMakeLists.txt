@@ -48,6 +48,7 @@ add_executable(leviathan_tests
     systems/stability_system_test.cpp
     systems/time_system_test.cpp
     integration/m0_end_to_end_test.cpp
+    integration/m1_end_to_end_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE
