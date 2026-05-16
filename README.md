@@ -139,15 +139,17 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.4 there are **231 doctest cases**. M0 contributed 179;
-M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 adds 17 more
-covering `PolicyData` parsing (happy path, missing fields, range
-checks, effect-shape errors), the canonical-file loads for two of
-the ten new policy fixtures, save round-trip including effects
-order, the v4→v5 save-format rejection regression, and policy
-loading in the M0.11 integration test. Each `TEST_CASE` is
-registered with CTest individually, so e.g.
-`ctest -R "parse_policy"` runs just the policy parser cases.
+As of M1.5 there are **255 doctest cases**. M0 contributed 179;
+M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
+adds 24 covering the **first real gameplay effect**: PolicySystem
+`apply_policy_effects` happy paths (country fields, budget
+categories, faction broadcast), clamping at both ends for ratio
+fields, multi-effect ordering, the atomicity guarantee
+(pre-flight failure leaves state untouched), and every distinct
+error path (unknown country / budget / faction field; unknown op;
+invalid actor; unrecognised target syntax). Each `TEST_CASE` is
+registered with CTest individually, so e.g. `ctest -R "apply:"`
+runs just the M1.5 effect-application cases.
 
 ## Build options
 

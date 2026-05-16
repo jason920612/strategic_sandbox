@@ -1,6 +1,7 @@
 #include "leviathan/systems/data_loader.hpp"
 
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -465,7 +466,7 @@ core::Result<core::PolicyData> parse_policy(
         return core::Result<core::PolicyData>::failure(std::move(duration.error()));
     }
     constexpr std::uint64_t kIntMax =
-        static_cast<std::uint64_t>(2147483647);   // INT_MAX
+        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
     if (duration.value() > kIntMax) {
         return core::Result<core::PolicyData>::failure(
             fmt_err(source_label,

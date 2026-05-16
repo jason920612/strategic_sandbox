@@ -33,6 +33,7 @@ add_library(leviathan_systems STATIC
     diagnostics.cpp
     internal/json_helpers.cpp
     logging_system.cpp
+    policy_system.cpp
     random_service.cpp
     runner.cpp
     save_system.cpp
