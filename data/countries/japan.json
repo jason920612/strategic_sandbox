@@ -1,0 +1,7 @@
+{
+  "id":                "JPN",
+  "name":              "Japan",
+  "display_name":      "Empire of Japan",
+  "initial_gdp":       60.0,
+  "initial_stability": 0.50
+}

@@ -6,25 +6,28 @@
 
 ## Status
 
-- Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.10 — diagnostics output**
-- See `rfc/RFC-090-roadmap.md` for the full milestone map.
+- Phase: **Milestone 0 — technical skeleton (COMPLETE)**
+- Last sub-milestone: **M0.11 — minimal integration test (M0 exit gate)**
+- See `rfc/RFC-090-roadmap.md` for the full milestone map and
+  `docs/milestone-0-result.md` for the M0 exit report.
 
-`GameState` is still a passive container. Systems so far:
+`GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
 `leviathan::systems::random` (deterministic splitmix64 RNG, no
 `<random>`); `leviathan::systems::logging` (explicit-only logging
 with byte-stable JSONL); `leviathan::systems::data_loader` (JSON
 config + country parsers via nlohmann/json);
 `leviathan::systems::save_system` (JSON round-trip with `save_version`
-/ `rng_algorithm_version` gates); `leviathan::systems::runner`
-(CLI: `leviathan --days N [--config ...] [--seed ...] [--output ...]
-[--summary-csv ...]`); and now `leviathan::systems::diagnostics`
-(observation-only `snapshot()` + summary CSV + `sanity_check()`
-covering invalid date, invalid CountryId, duplicate CountryId).
+/ `rng_algorithm_version` gates); `leviathan::systems::runner` (CLI
+`leviathan --days N [--config ...] [--seed ...] [--output ...]
+[--summary-csv ...]`); `leviathan::systems::diagnostics`
+(observation-only `snapshot()` + summary CSV + `sanity_check()`).
 Two runs with the same options produce byte-identical save, log,
-**and summary CSV** files. M0.11 (integration test) is the last
-piece of M0.
+and summary-CSV files. M0 closes with a full end-to-end integration
+test (`tests/integration/m0_end_to_end_test.cpp`) that loads three
+country JSON files, ticks 365 days, saves, loads back, and verifies
+the round-trip. **Milestone 1 (single-country internal politics
+prototype, RFC-090 §M1) is the next phase.**
 
 ## Repository layout
 
@@ -134,15 +137,14 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.10 there are ~178 doctest cases covering all foundational
+As of M0.11 there are **179 doctest cases** covering all foundational
 types, TimeSystem, RandomService, LoggingSystem, DataLoader,
-SaveSystem, Runner, and Diagnostics (`snapshot` + CSV format pin,
-sanity checks for invalid date / invalid CountryId / duplicate
-CountryId, `--summary-csv` end-to-end including same-seed
-byte-identical CSV, and the M0.9 byte-identical guarantee
-regression-tested against the new sanity-check integration). Each
-`TEST_CASE` is registered with CTest individually, so e.g.
-`ctest -R "duplicate"` runs just the duplicate-id detection.
+SaveSystem, Runner, and Diagnostics, plus a single end-to-end
+integration test that loads `data/config/simulation.json` and three
+country JSONs, ticks 365 days, saves, loads the save back, and
+verifies the round-trip. Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "end-to-end"` runs just the M0
+exit-gate.
 
 ## Build options
 

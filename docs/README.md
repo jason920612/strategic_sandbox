@@ -27,6 +27,7 @@ Per-milestone design notes and PR description drafts.
 | [`m0-8-save-load.md`](m0-8-save-load.md) | M0.8 | Full save-file schema. `save_version` / `rng_algorithm_version` strict-equality gates. The "session resume, NOT deterministic replay" distinction (and why `rng.counter` is preserved anyway). |
 | [`m0-9-runner.md`](m0-9-runner.md) | M0.9 | Headless CLI: flag table, defaults, the determinism property (same seed → byte-identical save + log), the two-layer `parse_args` / `run` split. |
 | [`m0-10-diagnostics.md`](m0-10-diagnostics.md) | M0.10 | `systems::diagnostics`: observation-only `snapshot`, byte-stable CSV format, `sanity_check` (invalid date, invalid / duplicate CountryId). The `--summary-csv` flag and how snapshot cadence interacts with month-boundary logs. |
+| [`milestone-0-result.md`](milestone-0-result.md) | **M0 exit report** | What M0 ships (every sub-milestone), what is deliberately deferred (entity behaviour, events, AI, replay), recommendations for M1, and the architectural invariants every M1+ milestone must preserve. |
 
 ## Reading order
 
