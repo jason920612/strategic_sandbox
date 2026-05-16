@@ -7,7 +7,7 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.7 — stability tick (minimal)**
+- Current sub-milestone: **M1.8 — economy month-end tick (minimal)**
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -139,18 +139,19 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.7 there are **288 doctest cases**. M0 contributed 179;
-M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17;
-M1.5 added 24; M1.6 added 17; M1.7 adds 16 covering the **first
-country-side dynamic**: StabilitySystem `tick` with a stripped-
-down RFC-080 §5 formula. Tests pin exact one-step delta math for
-both up-pull and down-pull, the rate / weight / no-factions-default
-constants, both clamp bounds against pathological inputs, 50-step
-geometric convergence, the country filter (averaging only own
-factions), the "faction state untouched" guarantee, and every
-invalid-id path. Each `TEST_CASE` is registered with CTest
-individually, so e.g. `ctest -R "tick:"` runs just the M1.7
-stability cases.
+As of M1.8 there are **307 doctest cases**. M0 contributed 179;
+M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
+added 24; M1.6 added 17; M1.7 added 16; M1.8 adds 19 covering the
+**second country-side dynamic**: EconomySystem `tick` with three
+formulas. Tests pin exact tax-revenue arithmetic (RFC-080 §3),
+exact expenditure (`gdp × sum_budget × 0.20`), exact GDP-growth
+arithmetic with every term exercised, all eight constants against
+spec, recession case (`growth_rate = −0.010`), 12-tick annual
+compounding, gdp=0 edge case, country filter, untouched fields
+(eleven CountryState fields verified unchanged), faction state
+untouched, and every invalid-id path. Each `TEST_CASE` is
+registered with CTest individually, so e.g.
+`ctest -R "economy"` runs just the M1.8 cases.
 
 ## Build options
 
