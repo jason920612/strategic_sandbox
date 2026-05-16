@@ -110,6 +110,20 @@ M0 / M1 中落地，部分仍是未來工作：
   **M1.12 不做** policy scheduling、active-policy container、AI、
   事件、戰爭、外交、平衡重調、其他 RFC-080 §5 項（welfare /
   inequality / war weariness / budget crisis）。
+  **M1.13（Scenario starting policies）** 為 scenario manifest 新增
+  optional `starting_policies` 陣列：每個元素是 `{policy, actor}` 配對的
+  id_code，loader 在載入 countries / factions / policies 之後對每個元素
+  呼叫一次 `policy::apply_policy_effects`，達成 day-0 政策套用。
+  Manifest 沒有 `starting_policies` 仍可載入（保留 M1.11 相容性）。
+  Unknown policy / unknown actor 都會 reject 並把 id_code 寫進錯誤訊息。
+  新增 fixture `data/scenarios/1930_with_start_policies.json`，在 GER
+  上 enact `raise_taxes` + `increase_military_budget`，使 `legal_tax_burden`
+  從 0.20 變 0.25、`military_power` 從 0.50 變 0.53。對應 RFC-010 §2.6
+  policy fixtures、RFC-090 §M1 task 1.19（scenario 政策初始狀態）。
+  **M1.13 不做** save schema 變更（仍 v6）、duration queue / active-
+  policy container、monthly policy scheduler、AI、event-triggered
+  enactment、平衡重調。Mid-list apply 失敗會留下 partial state（與
+  M1.11 文件化的 non-atomic 規則一致）。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

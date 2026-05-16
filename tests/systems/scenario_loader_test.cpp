@@ -342,6 +342,9 @@ TEST_CASE("load_into_state: canonical data/scenarios/1930_minimal.json loads cle
     CHECK(r.value().countries_loaded == 3);   // Germany, France, Japan
     CHECK(r.value().factions_loaded  == 3);   // GER_military, GER_workers, GER_bureaucracy
     CHECK(r.value().policies_loaded  == 10);  // all canonical fixtures
+    // M1.13: canonical fixture has NO starting_policies, so the
+    // counter stays at 0 and the existing manifest is still valid.
+    CHECK(r.value().starting_policies_applied == 0);
 
     // Verify ID assignment order:
     CHECK(state.countries[0].id_code == "GER");
@@ -355,3 +358,248 @@ TEST_CASE("load_into_state: canonical data/scenarios/1930_minimal.json loads cle
     }
 }
 #endif
+
+// =====================================================================
+// M1.13: starting_policies parse
+// =====================================================================
+
+TEST_CASE("parse_manifest: starting_policies absent parses as empty (M1.11 back-compat)") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[]}})");
+    REQUIRE(r.ok());
+    CHECK(r.value().starting_policies.empty());
+}
+
+TEST_CASE("parse_manifest: starting_policies happy path") {
+    const std::string text = R"({
+        "scenario": {
+            "countries": [], "factions": [], "policies": [],
+            "starting_policies": [
+                { "policy": "raise_taxes",    "actor": "GER" },
+                { "policy": "expand_welfare", "actor": "FRA" }
+            ]
+        }
+    })";
+    const auto r = sl::parse_manifest(text);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().starting_policies.size() == 2u);
+    CHECK(r.value().starting_policies[0].policy_id_code == "raise_taxes");
+    CHECK(r.value().starting_policies[0].actor_id_code  == "GER");
+    CHECK(r.value().starting_policies[1].policy_id_code == "expand_welfare");
+    CHECK(r.value().starting_policies[1].actor_id_code  == "FRA");
+}
+
+TEST_CASE("parse_manifest: starting_policies not an array rejected") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[],"starting_policies":"bad"}})",
+        "<test>");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("starting_policies") != std::string::npos);
+    CHECK(r.error().find("not an array")      != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: starting_policies entry not an object rejected") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[],"starting_policies":["just a string"]}})",
+        "<test>");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("starting_policies[0]") != std::string::npos);
+    CHECK(r.error().find("not an object")        != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: starting_policies entry missing 'policy' rejected") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[],"starting_policies":[{"actor":"GER"}]}})",
+        "<test>");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("starting_policies[0].policy") != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: starting_policies entry missing 'actor' rejected") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[],"starting_policies":[{"policy":"raise_taxes"}]}})",
+        "<test>");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("starting_policies[0].actor") != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: starting_policies entry 'policy' wrong type rejected") {
+    const auto r = sl::parse_manifest(
+        R"({"scenario":{"countries":[],"factions":[],"policies":[],"starting_policies":[{"policy":42,"actor":"GER"}]}})",
+        "<test>");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("starting_policies[0].policy") != std::string::npos);
+}
+
+// =====================================================================
+// M1.13: starting_policies apply
+// =====================================================================
+
+TEST_CASE("load_into_state: starting_policies applies day-0 enactment") {
+    // Write a synthetic scenario where raise_taxes is enacted on
+    // GER at day 0. raise_taxes adds 0.05 to country.legal_tax_burden,
+    // so GER's tax burden should change from its initial value.
+    TempDir td("scen_loader_m113_day0");
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER", "Germany"));
+    write_file(td.path / "data" / "policies" / "raise_taxes.json",
+               R"({
+  "id": "raise_taxes",
+  "name": "Raise Taxes",
+  "category": "tax",
+  "duration_days": 60,
+  "admin_cost": 0.12,
+  "effects": [
+    { "target": "country.legal_tax_burden", "op": "add", "value": 0.05 }
+  ]
+})");
+    const std::string manifest = R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  ["policies/raise_taxes.json"],
+    "starting_policies": [
+      { "policy": "raise_taxes", "actor": "GER" }
+    ]
+  }
+})";
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, manifest);
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.ok());
+    CHECK(r.value().starting_policies_applied == 1);
+
+    // country_json sets legal_tax_burden = 0.20. Day-0 raise_taxes
+    // adds 0.05; final value should be 0.25.
+    REQUIRE(state.countries.size() == 1u);
+    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.25));
+}
+
+TEST_CASE("load_into_state: starting_policies unknown policy id_code rejected") {
+    TempDir td("scen_loader_m113_unknown_policy");
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER", "Germany"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  [],
+    "starting_policies": [
+      { "policy": "this_policy_was_not_loaded", "actor": "GER" }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unknown policy id_code")             != std::string::npos);
+    CHECK(r.error().find("this_policy_was_not_loaded")         != std::string::npos);
+}
+
+TEST_CASE("load_into_state: starting_policies unknown actor id_code rejected") {
+    TempDir td("scen_loader_m113_unknown_actor");
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER", "Germany"));
+    write_file(td.path / "data" / "policies" / "raise_taxes.json",
+               policy_json("raise_taxes"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  ["policies/raise_taxes.json"],
+    "starting_policies": [
+      { "policy": "raise_taxes", "actor": "USA" }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unknown actor country id_code") != std::string::npos);
+    CHECK(r.error().find("USA")                            != std::string::npos);
+}
+
+TEST_CASE("load_into_state: starting_policies with invalid target propagates apply error") {
+    TempDir td("scen_loader_m113_bad_target");
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER", "Germany"));
+    // Policy whose effect references a CountryState field that
+    // doesn't exist. PolicySystem (M1.5) will reject this on apply.
+    write_file(td.path / "data" / "policies" / "broken.json",
+               R"({
+  "id": "broken",
+  "name": "Broken",
+  "category": "test",
+  "duration_days": 0,
+  "admin_cost": 0.0,
+  "effects": [
+    { "target": "country.no_such_field", "op": "add", "value": 0.01 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  ["policies/broken.json"],
+    "starting_policies": [
+      { "policy": "broken", "actor": "GER" }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("apply_policy_effects") != std::string::npos);
+}
+
+TEST_CASE("load_into_state: starting_policies multiple entries apply in order") {
+    // Both raise_taxes and a second policy apply, each contributing
+    // to legal_tax_burden so we can see ordered accumulation.
+    TempDir td("scen_loader_m113_multi");
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER", "Germany"));
+    write_file(td.path / "data" / "policies" / "tax_up.json",
+               R"({
+  "id": "tax_up",
+  "name": "Tax Up",
+  "category": "tax",
+  "duration_days": 0,
+  "admin_cost": 0.0,
+  "effects": [
+    { "target": "country.legal_tax_burden", "op": "add", "value": 0.05 }
+  ]
+})");
+    write_file(td.path / "data" / "policies" / "tax_up2.json",
+               R"({
+  "id": "tax_up2",
+  "name": "Tax Up 2",
+  "category": "tax",
+  "duration_days": 0,
+  "admin_cost": 0.0,
+  "effects": [
+    { "target": "country.legal_tax_burden", "op": "add", "value": 0.10 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  ["policies/tax_up.json", "policies/tax_up2.json"],
+    "starting_policies": [
+      { "policy": "tax_up",  "actor": "GER" },
+      { "policy": "tax_up2", "actor": "GER" }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.ok());
+    CHECK(r.value().starting_policies_applied == 2);
+    // 0.20 (initial) + 0.05 (tax_up) + 0.10 (tax_up2) = 0.35.
+    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.35));
+}

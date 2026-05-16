@@ -57,8 +57,9 @@ std::string read_file(const fs::path& p) {
 }
 
 #ifdef LEVIATHAN_TEST_DATA_DIR
-const char* kCanonicalConfig   = LEVIATHAN_TEST_DATA_DIR "/config/simulation.json";
-const char* kCanonicalScenario = LEVIATHAN_TEST_DATA_DIR "/scenarios/1930_minimal.json";
+const char* kCanonicalConfig          = LEVIATHAN_TEST_DATA_DIR "/config/simulation.json";
+const char* kCanonicalScenario        = LEVIATHAN_TEST_DATA_DIR "/scenarios/1930_minimal.json";
+const char* kStartingPoliciesScenario = LEVIATHAN_TEST_DATA_DIR "/scenarios/1930_with_start_policies.json";
 #endif
 
 }  // namespace
@@ -582,6 +583,75 @@ TEST_CASE("run: --scenario save contains last_gdp_growth_rate (M1.12)") {
     REQUIRE(loaded.ok());
     REQUIRE(!loaded.value().countries.empty());
     CHECK(loaded.value().countries[0].last_gdp_growth_rate != doctest::Approx(0.0));
+}
+
+// =====================================================================
+// M1.13 - --scenario starting_policies integration
+// =====================================================================
+
+TEST_CASE("run: --scenario with starting_policies applies them at day 0") {
+    // 1930_with_start_policies.json enacts raise_taxes + increase_military_budget
+    // on GER. raise_taxes adds 0.05 to country.legal_tax_burden;
+    // increase_military_budget adds 0.03 to country.military_power.
+    // GER fixture starts at legal_tax_burden 0.20 and military_power
+    // 0.50; after day-0 enactment they should be 0.25 and 0.53.
+    TempDir td("leviathan_runner_m113_day0");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;                            // no ticks - day-0 only
+    opts.output_dir    = td.path;
+    opts.scenario_path = kStartingPoliciesScenario;
+
+    REQUIRE(rn::run(opts).ok());
+    const std::string save = read_file(td.path / "save.json");
+    // Re-load the save and inspect Germany's state.
+    const auto loaded = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded.ok());
+    REQUIRE(!loaded.value().countries.empty());
+    const auto& ger = loaded.value().countries[0];
+    CHECK(ger.id_code == "GER");
+    CHECK(ger.legal_tax_burden    == doctest::Approx(0.25));
+    CHECK(ger.military_power      == doctest::Approx(0.53));
+}
+
+TEST_CASE("run: --scenario with starting_policies is byte-identical on same seed") {
+    // M1.13 must not break the determinism property: the loader's
+    // day-0 apply step is RNG-free, log-free, date-free.
+    TempDir td_a("leviathan_runner_m113_det_a");
+    TempDir td_b("leviathan_runner_m113_det_b");
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 90;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xDA7AC0DE};
+        o.scenario_path = kStartingPoliciesScenario;
+        return o;
+    };
+
+    REQUIRE(rn::run(make_opts(td_a.path)).ok());
+    REQUIRE(rn::run(make_opts(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "save.json")    == read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
+}
+
+TEST_CASE("run: --scenario without starting_policies is unchanged (back-compat)") {
+    // The canonical 1930_minimal.json has no starting_policies. Per
+    // M1.13, that should parse as an empty vector and apply nothing.
+    // GER's legal_tax_burden should match the fixture's initial value.
+    TempDir td("leviathan_runner_m113_no_starting");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+
+    REQUIRE(rn::run(opts).ok());
+    const auto loaded = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded.ok());
+    REQUIRE(!loaded.value().countries.empty());
+    CHECK(loaded.value().countries[0].legal_tax_burden == doctest::Approx(0.20));
 }
 
 TEST_CASE("run: bad --scenario path fails with the path in the message") {

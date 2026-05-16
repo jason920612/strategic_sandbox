@@ -13,6 +13,7 @@
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/data_loader.hpp"
+#include "leviathan/systems/policy_system.hpp"
 
 namespace leviathan::systems::scenario_loader {
 
@@ -99,6 +100,47 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
         return core::Result<ScenarioManifest>::failure(std::move(policies_r.error()));
     }
     m.policies = std::move(policies_r).value();
+
+    // ---- M1.13: optional starting_policies array ------------------
+    // Missing key is allowed (M1.11 manifests stay valid). Present-
+    // but-wrong-type is rejected. Each entry must be an object with
+    // string `policy` and `actor` fields.
+    if (s.contains("starting_policies")) {
+        const json& arr = s.at("starting_policies");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.starting_policies' is not an array"));
+        }
+        m.starting_policies.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            if (!arr[i].is_object()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            "'scenario.starting_policies[" +
+                            std::to_string(i) + "]' is not an object"));
+            }
+            const json& e = arr[i];
+            if (!e.contains("policy") || !e.at("policy").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            "'scenario.starting_policies[" +
+                            std::to_string(i) +
+                            "].policy' missing or not a string"));
+            }
+            if (!e.contains("actor") || !e.at("actor").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            "'scenario.starting_policies[" +
+                            std::to_string(i) +
+                            "].actor' missing or not a string"));
+            }
+            StartingPolicy sp;
+            sp.policy_id_code = e.at("policy").get<std::string>();
+            sp.actor_id_code  = e.at("actor").get<std::string>();
+            m.starting_policies.push_back(std::move(sp));
+        }
+    }
 
     return core::Result<ScenarioManifest>::success(std::move(m));
 }
@@ -212,6 +254,49 @@ core::Result<ScenarioLoadOutcome> load_into_state(
         state.policies.push_back(std::move(p));
     }
     outcome.policies_loaded = static_cast<int>(state.policies.size());
+
+    // ---- 5. Day-0 starting policies (M1.13) ------------------------
+    // For each entry resolve `policy` → loaded PolicyData and `actor`
+    // → loaded CountryId, then invoke policy::apply_policy_effects
+    // exactly once. M1.5 guarantees each call is atomic per-policy
+    // (pre-flight rejection on bad target). Day-0 enactments earlier
+    // in the list that have already succeeded stay applied if a
+    // later one fails — documented non-atomic across the list.
+    namespace pol = leviathan::systems::policy;
+    for (std::size_t i = 0; i < manifest.starting_policies.size(); ++i) {
+        const auto& entry = manifest.starting_policies[i];
+
+        auto policy_it = policy_by_id_code.find(entry.policy_id_code);
+        if (policy_it == policy_by_id_code.end()) {
+            return core::Result<ScenarioLoadOutcome>::failure(
+                manifest_path.string() +
+                ": starting_policies[" + std::to_string(i) +
+                "] references unknown policy id_code '" +
+                entry.policy_id_code + "'");
+        }
+        auto actor_it = country_by_id_code.find(entry.actor_id_code);
+        if (actor_it == country_by_id_code.end()) {
+            return core::Result<ScenarioLoadOutcome>::failure(
+                manifest_path.string() +
+                ": starting_policies[" + std::to_string(i) +
+                "] references unknown actor country id_code '" +
+                entry.actor_id_code + "'");
+        }
+
+        const auto& policy_data =
+            state.policies[static_cast<std::size_t>(policy_it->second.value())];
+        auto apply_r = pol::apply_policy_effects(state, actor_it->second,
+                                                 policy_data);
+        if (!apply_r) {
+            return core::Result<ScenarioLoadOutcome>::failure(
+                manifest_path.string() +
+                ": starting_policies[" + std::to_string(i) +
+                "] apply_policy_effects(" + entry.policy_id_code +
+                " by " + entry.actor_id_code + ") failed: " +
+                std::move(apply_r.error()));
+        }
+        ++outcome.starting_policies_applied;
+    }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);
 }
