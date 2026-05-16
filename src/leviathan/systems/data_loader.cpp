@@ -347,7 +347,54 @@ core::Result<core::CountryState> parse_country(
 
     // tax_revenue and budget_balance are runtime-only. They are not
     // read from the config JSON; they start at 0 and will be updated
-    // by future economy systems (M1.3+).
+    // by future economy systems (M1.5+).
+
+    // ---- M1.3 budget block -----------------------------------------
+    // Required: the "budget" key must exist and be a JSON object.
+    // Within it, every category is a required ratio in [0, 1].
+    const json* budget_node = navigate(root, "budget");
+    if (budget_node == nullptr) {
+        return core::Result<core::CountryState>::failure(
+            fmt_err(source_label, "missing required field 'budget'"));
+    }
+    if (!budget_node->is_object()) {
+        return core::Result<core::CountryState>::failure(
+            fmt_err(source_label,
+                    "'budget' has wrong type (expected JSON object)"));
+    }
+
+    // Use a contextualised source so missing-category errors read as
+    // "<src>: budget: missing required field 'military'".
+    const std::string budget_ctx = std::string(source_label) + ": budget";
+
+    auto read_cat = [&](const char* key, double& dst) -> core::Result<bool> {
+        auto r = require_ratio(*budget_node, key, budget_ctx);
+        if (!r) return core::Result<bool>::failure(std::move(r.error()));
+        dst = r.value();
+        return core::Result<bool>::success(true);
+    };
+
+    if (auto r = read_cat("administration", country.budget.administration); !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("military",       country.budget.military);       !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("education",      country.budget.education);      !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("welfare",        country.budget.welfare);        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("intelligence",   country.budget.intelligence);   !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("infrastructure", country.budget.infrastructure); !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_cat("industry",       country.budget.industry);       !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
 
     return core::Result<core::CountryState>::success(std::move(country));
 }

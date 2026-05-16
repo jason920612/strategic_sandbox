@@ -86,6 +86,17 @@ json country_to_json(const core::CountryState& c) {
     j["legitimacy"]                = c.legitimacy;
     j["military_power"]            = c.military_power;
     j["threat_perception"]         = c.threat_perception;
+
+    // M1.3 budget block - nested object, fixed key order.
+    json budget = json::object();
+    budget["administration"]  = c.budget.administration;
+    budget["military"]        = c.budget.military;
+    budget["education"]       = c.budget.education;
+    budget["welfare"]         = c.budget.welfare;
+    budget["intelligence"]    = c.budget.intelligence;
+    budget["infrastructure"]  = c.budget.infrastructure;
+    budget["industry"]        = c.budget.industry;
+    j["budget"] = std::move(budget);
     return j;
 }
 
@@ -310,6 +321,34 @@ core::Result<core::CountryState> country_from_json(const json& j,
     if (auto r = load_num("military_power",            c.military_power);            !r) return r;
     if (auto r = load_num("threat_perception",         c.threat_perception);         !r) return r;
 
+    // M1.3 budget block.
+    if (!j.contains("budget")) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": missing required field 'budget'");
+    }
+    const auto& bj = j.at("budget");
+    if (!bj.is_object()) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": 'budget' has wrong type (expected JSON object)");
+    }
+    const std::string budget_ctx = ctx + ": budget";
+    auto load_budget = [&](const char* key, double& dst)
+        -> core::Result<core::CountryState> {
+        auto r = require_number(bj, key, budget_ctx);
+        if (!r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        dst = r.value();
+        return core::Result<core::CountryState>::success(core::CountryState{});
+    };
+    if (auto r = load_budget("administration",  c.budget.administration);  !r) return r;
+    if (auto r = load_budget("military",        c.budget.military);        !r) return r;
+    if (auto r = load_budget("education",       c.budget.education);       !r) return r;
+    if (auto r = load_budget("welfare",         c.budget.welfare);         !r) return r;
+    if (auto r = load_budget("intelligence",    c.budget.intelligence);    !r) return r;
+    if (auto r = load_budget("infrastructure",  c.budget.infrastructure);  !r) return r;
+    if (auto r = load_budget("industry",        c.budget.industry);        !r) return r;
+
     return core::Result<core::CountryState>::success(std::move(c));
 }
 
@@ -330,26 +369,33 @@ core::Result<core::FactionState> faction_from_json(const json& j,
     if (!id_value) {
         return core::Result<core::FactionState>::failure(std::move(id_value.error()));
     }
-    using under = core::FactionId::underlying_type;
-    constexpr auto kMaxId =
-        static_cast<std::uint64_t>(std::numeric_limits<under>::max());
-    if (id_value.value() > kMaxId) {
+    using fac_under = core::FactionId::underlying_type;
+    constexpr auto kFacMaxId =
+        static_cast<std::uint64_t>(std::numeric_limits<fac_under>::max());
+    if (id_value.value() > kFacMaxId) {
         return core::Result<core::FactionState>::failure(
             ctx + ": 'id' is out of range for FactionId (max " +
-            std::to_string(kMaxId) + ")");
+            std::to_string(kFacMaxId) + ")");
     }
-    f.id = core::FactionId{static_cast<under>(id_value.value())};
+    f.id = core::FactionId{static_cast<fac_under>(id_value.value())};
 
     auto country_value = require_u64(j, "country", ctx);
     if (!country_value) {
         return core::Result<core::FactionState>::failure(std::move(country_value.error()));
     }
-    if (country_value.value() > kMaxId) {
+    // Use CountryId's own underlying type rather than borrowing
+    // FactionId's. Both are int today, so this is semantics-only;
+    // PR #13 review flagged this so the latent bug never bites if
+    // the underlying types diverge later.
+    using cty_under = core::CountryId::underlying_type;
+    constexpr auto kCtyMaxId =
+        static_cast<std::uint64_t>(std::numeric_limits<cty_under>::max());
+    if (country_value.value() > kCtyMaxId) {
         return core::Result<core::FactionState>::failure(
             ctx + ": 'country' is out of range for CountryId (max " +
-            std::to_string(kMaxId) + ")");
+            std::to_string(kCtyMaxId) + ")");
     }
-    f.country = core::CountryId{static_cast<under>(country_value.value())};
+    f.country = core::CountryId{static_cast<cty_under>(country_value.value())};
 
     auto id_code = require_string(j, "id_code", ctx);
     if (!id_code) {

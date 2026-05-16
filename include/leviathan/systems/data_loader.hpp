@@ -76,7 +76,17 @@ core::Result<core::SimulationConfig> load_simulation_config(
 //     "corruption":                0.25,       // required, in [0, 1]
 //     "legitimacy":                0.55,       // required, in [0, 1]
 //     "military_power":            0.50,       // required, in [0, 1]
-//     "threat_perception":         0.30        // required, in [0, 1]
+//     "threat_perception":         0.30,       // required, in [0, 1]
+//
+//     "budget": {                              // required JSON object (M1.3)
+//       "administration":  0.25,               // every field required, [0, 1]
+//       "military":        0.35,
+//       "education":       0.10,
+//       "welfare":         0.10,
+//       "intelligence":    0.05,
+//       "infrastructure":  0.10,
+//       "industry":        0.05
+//     }
 //   }
 //
 // Any required field that is missing, has the wrong type, is

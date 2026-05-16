@@ -1,9 +1,9 @@
 // Entity placeholders + M1 baseline state.
 //
 // M0 introduced these as ID-only stubs; M1.1 fleshed out CountryState;
-// M1.2 fleshes out FactionState. ProvinceState, PolicyData, and
-// EventDefinition remain ID-only stubs and will grow in subsequent
-// sub-milestones (M1.4, ...).
+// M1.2 fleshed out FactionState; M1.3 adds BudgetState (embedded in
+// CountryState). ProvinceState, PolicyData, and EventDefinition remain
+// ID-only stubs and will grow in subsequent sub-milestones (M1.4, ...).
 //
 // Naming convention for CountryState numeric fields:
 //   * gdp / tax_revenue / budget_balance      - absolute amounts
@@ -26,6 +26,26 @@
 #include "leviathan/core/ids.hpp"
 
 namespace leviathan::core {
+
+// Per-country budget allocation. Each field is the share of total
+// state spending devoted to that category, in [0, 1]. The seven
+// categories follow RFC-010 §2.4 and RFC-060 §3.
+//
+// We deliberately DO NOT enforce that the seven fields sum to 1 at
+// the data-model layer. A new state may be authored with an
+// under-allocated budget (e.g. uncommitted surplus) or an
+// over-allocated one (deficit spending). Whether the sum is
+// meaningful is an economy-tick concern (M1.5+) and a future
+// Diagnostics::sanity_check rule, not a load-time invariant here.
+struct BudgetState {
+    double administration  = 0.0;
+    double military        = 0.0;
+    double education       = 0.0;
+    double welfare         = 0.0;
+    double intelligence    = 0.0;
+    double infrastructure  = 0.0;
+    double industry        = 0.0;
+};
 
 struct CountryState {
     // Identity
@@ -53,6 +73,10 @@ struct CountryState {
     // Strategic ratios (0..1)
     double military_power     = 0.0;
     double threat_perception  = 0.0;
+
+    // Per-category budget allocation (M1.3). Loaded as a nested
+    // JSON object; saved likewise.
+    BudgetState budget;
 };
 
 struct ProvinceState {
