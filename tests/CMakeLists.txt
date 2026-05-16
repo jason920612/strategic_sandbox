@@ -34,11 +34,13 @@ add_executable(leviathan_tests
     core/string_utils_test.cpp
     core/simulation_config_test.cpp
     core/game_state_test.cpp
+    systems/time_system_test.cpp
 )
 
 target_link_libraries(leviathan_tests
     PRIVATE
         doctest::doctest
+        leviathan::systems
         leviathan::core
         leviathan::compile_options
         leviathan::public_headers
