@@ -7,14 +7,17 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.2 — core types and date utilities**
+- Current sub-milestone: **M0.3 — minimal `GameState`**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
-The simulation core, data loaders, time system, RNG, logging, and headless
-runner are all stubbed out and will be filled in by sub-milestones M0.3 –
-M0.11. Today this repo builds a banner executable that demos `GameDate`,
-plus a doctest-driven unit-test suite covering the foundational types
-(`StrongId<Tag>`, `GameDate`, `Result<T, E>`, `string_utils::trim`).
+`GameState` exists as a passive container (current date, RNG state, six
+entity vectors) and a `make_game_state(config)` factory seeds it from a
+`SimulationConfig`. The time, RNG, logging, data-loader, save/load, and
+headless-runner systems remain stubbed; they fill in across M0.4 – M0.11.
+Today this repo builds a banner executable that demos `GameDate` and
+constructs a fresh `GameState`, plus a doctest-driven unit-test suite for
+the foundational types (`StrongId<Tag>`, `GameDate`, `Result<T, E>`,
+`string_utils::trim`, `SimulationConfig`, `GameState`).
 
 ## Repository layout
 
@@ -86,11 +89,12 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.2 there are ~35+ doctest cases covering the strong-ID types,
+As of M0.3 there are ~45+ doctest cases covering the strong-ID types,
 `GameDate` (leap years, month/year rollover, parsing, ISO-8601 output,
-the 1999→2000 boundary, etc.), `Result<T, E>`, and `string_utils::trim`.
-Each `TEST_CASE` is registered with CTest individually, so
-`ctest -R parse` runs just the parse tests.
+the 1999→2000 boundary, etc.), `Result<T, E>`, `string_utils::trim`,
+`SimulationConfig`, and the `GameState` container plus its
+`make_game_state` factory. Each `TEST_CASE` is registered with CTest
+individually, so `ctest -R make_game_state` runs just the factory tests.
 
 ## Build options
 
