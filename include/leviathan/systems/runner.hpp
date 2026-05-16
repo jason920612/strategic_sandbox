@@ -44,6 +44,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> log_path;            // defaults to output_dir/events.jsonl
     std::optional<std::filesystem::path> summary_csv_path;    // unset = no CSV written
     std::optional<std::filesystem::path> scenario_path;       // unset = empty-world run (M1.11)
+    std::optional<std::filesystem::path> countries_csv_path;  // unset = no per-country CSV (M1.14)
     bool                                 show_help   = false;
 };
 
@@ -77,6 +78,12 @@ struct RunOutcome {
     // executes but processes zero countries; the counter increments
     // once per crossed month boundary regardless.
     int                    monthly_ticks        = 0;
+    // M1.14: per-country diagnostic CSV output. Mirrors
+    // summary_csv_path: passthrough from RunnerOptions so main() can
+    // print it. `countries_csv_rows` counts the number of data rows
+    // (NOT including the header) written across all snapshot points.
+    std::optional<std::filesystem::path> countries_csv_path;
+    std::size_t            countries_csv_rows   = 0;
 };
 
 // Execute one simulation run.

@@ -7,16 +7,18 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.13 — scenario starting
-  policies.** The scenario manifest gains an optional
-  `starting_policies` array of `{policy, actor}` id_code pairs. After
-  loading countries / factions / policies, the loader applies each
-  entry once via `policy::apply_policy_effects`. M1.11 manifests
-  without the key still load unchanged. **No save-format bump**
-  (stays at v6); no duration queue, no scheduler, no AI.
-- Next sub-milestone candidate: **M1.14** (Diagnostics surfaces
-  `last_gdp_growth_rate`) or **M1.15** (policy duration tracking,
-  would trigger save-format `v6 → v7`).
+- Latest shipped sub-milestone: **M1.14 — Diagnostics surfaces
+  `last_gdp_growth_rate`.** New `CountrySummaryRow` +
+  `country_snapshot` + per-country CSV writers in
+  `systems::diagnostics`. New opt-in `--countries-csv PATH` runner
+  flag emits 8 columns per country per snapshot point
+  (`date,id_code,gdp,tax_revenue,budget_balance,stability,legitimacy,
+  last_gdp_growth_rate`). Same snapshot cadence as `--summary-csv`.
+  Existing summary CSV byte-for-byte unchanged (M0.10 contract
+  preserved). No save-format bump (still v6).
+- Next sub-milestone candidates: **M1.15** (policy duration tracking,
+  would trigger save-format `v6 → v7`) or **M1.16** (faction-level
+  CSV mirroring the M1.14 pattern).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -38,7 +40,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Thirteen sub-milestones merged so far:
+RFC-090 §M1) is in progress. Fourteen sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -61,15 +63,19 @@ economy → stability coupling (new `CountryState::last_gdp_growth_rate`
 field, `economy::tick` writes it, `stability::tick` reads it as the
 RFC-080 §5 `EconomicGrowth` term with `kEconomicGrowthWeight = 2.0`;
 monthly pipeline order unchanged, intentional one-month lag;
-save format bumped v5 → v6, first M1 save-schema bump); **M1.13
-scenario starting policies — manifest gains optional
+save format bumped v5 → v6, first M1 save-schema bump); M1.13
+scenario starting policies (manifest gains optional
 `starting_policies` array of `{policy, actor}` id_code pairs;
 loader applies each via `policy::apply_policy_effects` exactly
-once at day 0**, with the new fixture
+once at day 0, with the new fixture
 `data/scenarios/1930_with_start_policies.json` enacting
-`raise_taxes` + `increase_military_budget` on GER. M1.11 manifests
-without the key still load unchanged. No save-format bump (still
-v6); no duration queue, no scheduler, no AI.
+`raise_taxes` + `increase_military_budget` on GER); **M1.14
+Diagnostics surfaces `last_gdp_growth_rate` — new
+`CountrySummaryRow` + `country_snapshot` + per-country CSV writers,
+plus opt-in `--countries-csv PATH` runner flag emitting 8 columns
+per country per snapshot point.** Existing `--summary-csv` byte-for-
+byte unchanged (M0.10 determinism contract preserved). No save-
+format bump (still v6).
 
 ## Repository layout
 
@@ -154,6 +160,14 @@ on Windows).
     --save out/save.json \
     --log out/events.jsonl \
     --summary-csv out/summary.csv
+
+# M1.14 - per-country diagnostic CSV: one row per country per snapshot
+# point with gdp / stability / last_gdp_growth_rate etc., inspectable
+# without round-tripping the save.
+./build/bin/Debug/leviathan \
+    --days 365 \
+    --scenario data/scenarios/1930_minimal.json \
+    --countries-csv out/countries.csv
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -190,22 +204,24 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.13 there are **382 doctest cases**. M0 contributed 179;
+As of M1.14 there are **399 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
-11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 adds 15
-covering the **scenario starting policies**: 7 parse_manifest cases
-(absent key parses empty, happy path, every shape-rejection branch),
-5 load_into_state cases (day-0 apply changes country state,
-unknown-policy and unknown-actor rejections, invalid-target
-propagation, multi-entry cumulative ordering pinned by
-`0.20 + 0.05 + 0.10 = 0.35` exactly), and 3 runner-integration cases
-(`1930_with_start_policies.json` produces `legal_tax_burden = 0.25`
-and `military_power = 0.53` at day 0, same-seed byte-identical
-determinism with 90-day non-empty runs, M1.11 fixture without the
-key still loads cleanly). Save schema remains v6. Each `TEST_CASE`
-is registered with CTest individually, so e.g.
-`ctest -R "starting_policies"` runs just the M1.13 cases.
+11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
+M1.14 adds 17 covering the **per-country diagnostic CSV**: 9
+diagnostics cases (`country_snapshot` reads every field, invalid
+id rejected with bad index in message, default-id rejected, empty
+state rejects any index, header byte-exact, row well-formed,
+negative budget_balance survives format, byte-identical for same
+row twice, snapshot doesn't mutate state); 8 runner cases
+(`--countries-csv` plumbed/value-missing/default-unset, no-flag no
+file, empty state writes header-only file, canonical scenario emits
+`9 rows = 3 countries × 3 snapshots` for a 31-day run, byte-
+identical determinism with `--countries-csv`, summary CSV unchanged
+when `--countries-csv` is added — M0.10 contract regression). Save
+schema remains v6. Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "country_snapshot|country_csv"` runs
+just the M1.14 cases.
 
 ## Build options
 

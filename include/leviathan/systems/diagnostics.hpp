@@ -21,6 +21,8 @@
 
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
+#include "leviathan/core/ids.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::diagnostics {
 
@@ -46,6 +48,56 @@ void write_csv_header(std::ostream& out);
 //   "YYYY-MM-DD,<country_count>,<log_count>,<seed>\n"
 // No quoting (none of our fields ever contains a comma).
 void write_csv_row(std::ostream& out, const SummaryRow& row);
+
+// ---------------------------------------------------------------------------
+// Per-country snapshot (M1.14).
+//
+// The summary CSV intentionally collapses every country to a count.
+// M1.14 adds a SEPARATE per-country snapshot type and a SEPARATE CSV
+// format so callers (the runner via --countries-csv) can inspect
+// `last_gdp_growth_rate` and the other per-country runtime numerics
+// without round-tripping a save file. The existing SummaryRow + 4-
+// column summary CSV are unchanged so M0.10's byte-identical
+// determinism contract still holds.
+// ---------------------------------------------------------------------------
+
+// One row of the per-country CSV.
+struct CountrySummaryRow {
+    core::GameDate date;
+    std::string id_code;              // e.g. "GER"
+    double       gdp                  = 0.0;
+    double       tax_revenue          = 0.0;
+    double       budget_balance       = 0.0;
+    double       stability            = 0.0;
+    double       legitimacy           = 0.0;
+    double       last_gdp_growth_rate = 0.0;   // the M1.14 motivator
+};
+
+// Build a CountrySummaryRow from `state` for `country`. Pure
+// observation; never mutates state.
+//
+// Returns failure if `country` is not a valid index into
+// `state.countries`. The runner only calls this for indexes it
+// iterated from state.countries.size(), so failure is reserved
+// for misuse / programmer errors.
+core::Result<CountrySummaryRow> country_snapshot(const core::GameState& state,
+                                                 core::CountryId country);
+
+// Write the canonical per-country CSV header. Always:
+//   "date,id_code,gdp,tax_revenue,budget_balance,"
+//   "stability,legitimacy,last_gdp_growth_rate\n"
+// Like the summary header, this is pinned by tests; bumping a column
+// here is breaking.
+void write_country_csv_header(std::ostream& out);
+
+// Write one CountrySummaryRow as a CSV line.
+//
+// Doubles are formatted with std::setprecision(17) so the round-trip
+// from double -> text -> double is exact and same-process / same-
+// state always produces byte-identical text. Trailing zeros are
+// kept by `std::scientific`; not pretty for human reading, but the
+// determinism contract is more important than aesthetics here.
+void write_country_csv_row(std::ostream& out, const CountrySummaryRow& row);
 
 // ---------------------------------------------------------------------------
 // Sanity checks.

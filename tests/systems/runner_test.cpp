@@ -447,6 +447,147 @@ TEST_CASE("parse_args: --summary-csv flag is plumbed through") {
 // M1.11 - --scenario flag
 // =====================================================================
 
+// =====================================================================
+// M1.14 - --countries-csv flag
+// =====================================================================
+
+TEST_CASE("parse_args: --countries-csv flag is plumbed through") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "3",
+        "--countries-csv", "out/countries.csv"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().countries_csv_path.has_value());
+    CHECK(r.value().countries_csv_path.value() ==
+          fs::path("out/countries.csv"));
+}
+
+TEST_CASE("parse_args: --countries-csv without a value is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--countries-csv"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--countries-csv") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --countries-csv defaults to unset when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().countries_csv_path.has_value());
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: without --countries-csv no per-country CSV is written") {
+    TempDir td("leviathan_runner_m114_no_countries_csv");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    // countries_csv_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_csv_rows == 0u);
+    CHECK_FALSE(fs::exists(td.path / "countries.csv"));
+}
+
+TEST_CASE("run: --countries-csv with empty state writes header-only file") {
+    // No --scenario, so state.countries is empty. The CSV should
+    // contain just the header (no data rows).
+    TempDir td("leviathan_runner_m114_empty_countries_csv");
+    rn::RunnerOptions opts;
+    opts.config_path        = kCanonicalConfig;
+    opts.days               = 31;
+    opts.output_dir         = td.path;
+    opts.countries_csv_path = td.path / "countries.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_csv_rows == 0u);
+    REQUIRE(fs::exists(td.path / "countries.csv"));
+    const std::string text = read_file(td.path / "countries.csv");
+    CHECK(text ==
+          "date,id_code,gdp,tax_revenue,budget_balance,"
+          "stability,legitimacy,last_gdp_growth_rate\n");
+}
+
+TEST_CASE("run: --countries-csv + scenario emits one row per country per snapshot point") {
+    // Snapshot cadence: start + each month_changed + final post-sanity.
+    // For 31 days starting 1930-01-01 we cross one month boundary,
+    // so there are 3 snapshot points. With 3 countries in the canonical
+    // scenario, that's 9 data rows.
+    TempDir td("leviathan_runner_m114_canonical_countries_csv");
+    rn::RunnerOptions opts;
+    opts.config_path        = kCanonicalConfig;
+    opts.days               = 31;
+    opts.output_dir         = td.path;
+    opts.scenario_path      = kCanonicalScenario;
+    opts.countries_csv_path = td.path / "countries.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_csv_rows == 9u);
+
+    const std::string text = read_file(td.path / "countries.csv");
+    // Every country's id_code appears in the file.
+    CHECK(text.find("GER") != std::string::npos);
+    CHECK(text.find("FRA") != std::string::npos);
+    CHECK(text.find("JPN") != std::string::npos);
+    // After at least one month boundary, last_gdp_growth_rate has
+    // been written for every country. The final snapshot's GER row
+    // should contain a non-zero scientific-notation growth value.
+    // (We assert presence of an exponent marker as a sanity proxy.)
+    CHECK(text.find("e-") != std::string::npos);
+}
+
+TEST_CASE("run: --countries-csv preserves byte-identical determinism on same seed") {
+    // Determinism extends to the new CSV output.
+    TempDir td_a("leviathan_runner_m114_det_a");
+    TempDir td_b("leviathan_runner_m114_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path        = kCanonicalConfig;
+        o.days               = 90;
+        o.output_dir         = dir;
+        o.seed_override      = std::uint64_t{0xDA7AB00B};
+        o.scenario_path      = kCanonicalScenario;
+        o.countries_csv_path = dir / "countries.csv";
+        return o;
+    };
+
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "countries.csv") == read_file(td_b.path / "countries.csv"));
+}
+
+TEST_CASE("run: --countries-csv does NOT change --summary-csv output (M0.10 contract)") {
+    // Regression: --countries-csv must not perturb the existing
+    // summary-CSV byte format. Run twice on the same seed, one with
+    // --countries-csv set, one without. The summary CSV files must
+    // be byte-identical.
+    TempDir td_a("leviathan_runner_m114_summary_iso_a");
+    TempDir td_b("leviathan_runner_m114_summary_iso_b");
+
+    rn::RunnerOptions opts_a;
+    opts_a.config_path      = kCanonicalConfig;
+    opts_a.days             = 60;
+    opts_a.output_dir       = td_a.path;
+    opts_a.seed_override    = std::uint64_t{0xCAFE};
+    opts_a.summary_csv_path = td_a.path / "summary.csv";
+
+    rn::RunnerOptions opts_b = opts_a;
+    opts_b.output_dir         = td_b.path;
+    opts_b.summary_csv_path   = td_b.path / "summary.csv";
+    opts_b.countries_csv_path = td_b.path / "countries.csv";  // extra opt-in
+
+    REQUIRE(rn::run(opts_a).ok());
+    REQUIRE(rn::run(opts_b).ok());
+
+    CHECK(read_file(td_a.path / "summary.csv") == read_file(td_b.path / "summary.csv"));
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
 TEST_CASE("parse_args: --scenario flag is plumbed through") {
     Argv arg(std::array<const char*, 5>{
         "leviathan", "--days", "3",
