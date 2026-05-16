@@ -35,6 +35,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-5-policy-system.md`](m1-5-policy-system.md) | M1.5 | **First real gameplay effect.** `leviathan::systems::policy::apply_policy_effects(state, actor, policy)`. Resolves `country.<field>` / `country.budget.<cat>` / `faction:<type>.<field>` targets; ops `add` / `set`; ratio fields clamped to `[0, 1]` post-op. **Atomic via pre-flight**: any unresolvable effect fails the whole call and leaves state untouched. No duration queue, no AI, no runner integration yet. |
 | [`m1-6-faction-reactions.md`](m1-6-faction-reactions.md) | M1.6 | **First faction-side dynamics.** `leviathan::systems::faction::react(state, country)`: two linear-toward-equilibrium rules — `loyalty` drifts toward `country.stability` at rate 0.10, `support` drifts toward `country.legitimacy` at rate 0.05. Clamped to `[0, 1]`. `influence` / `radicalism` / `resources` / identity fields untouched. Drive-by: pre-flight `std::isfinite` check on `PolicyEffect.value`. No tick, no AI, no type-specific reactions yet. |
 | [`m1-7-stability-tick.md`](m1-7-stability-tick.md) | M1.7 | **First country-side dynamic.** `leviathan::systems::stability::tick(state, country)`: stripped-down RFC-080 §5 formula. Target = `0.5*avg_support + 0.5*legitimacy − 0.3*corruption − 0.2*avg_radicalism`, clamped `[0,1]`. `stability` drifts toward target at rate 0.10. No factions → 0.5 / 0.5 defaults. Reads faction state but never writes it. Skipped RFC-080 §5 inputs (welfare / economic growth / inequality / war / budget crisis) wait for M1.8+ systems to land. |
+| [`m1-8-economy-tick.md`](m1-8-economy-tick.md) | M1.8 | **Second country-side dynamic.** `leviathan::systems::economy::tick(state, country)`: three formulas. Tax revenue = `gdp × legal_tax_burden × fiscal_capacity × central_control × (1 - corruption)` (RFC-080 §3 verbatim). Expenditure = `gdp × sum_budget × 0.20`. `budget_balance += (revenue - expenditure)`. GDP growth = `kBase + kEdu*budget.education + kInfra*budget.infrastructure + kInd*budget.industry + kAdmin*admin_efficiency − kPolitical*(1−stability) − kCorruption*corruption`; `gdp *= 1 + growth`. Skipped RFC-080 §4 terms (InflationPressure, WarDamage) await their input systems. |
 
 ## Reading order
 
@@ -45,8 +46,8 @@ If you're new to the codebase:
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
-   → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7). They build on each
-   other and each one tries to call out the rules a future
+   → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8). They build on
+   each other and each one tries to call out the rules a future
    contributor must not silently break.
 
 ## When to add a new file

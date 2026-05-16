@@ -31,6 +31,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(leviathan_systems STATIC
     data_loader.cpp
     diagnostics.cpp
+    economy_system.cpp
     internal/json_helpers.cpp
     logging_system.cpp
     faction_system.cpp

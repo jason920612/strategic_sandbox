@@ -53,10 +53,16 @@ M0 / M1 中落地，部分仍是未來工作：
   dynamic：依 RFC-080 §5 簡化版公式（`0.5*avg_support +
   0.5*legitimacy - 0.3*corruption - 0.2*avg_radicalism` → target，
   stability drift toward target at 0.10），同樣明確呼叫。
-  RFC-080 §5 中 WelfareSatisfaction / EconomicGrowth /
-  InequalityProxy / WarWeariness / BudgetCrisis 等仍未實作 ——
-  待 M1.8（經濟月結）與後續系統補上。
-  RFC-080 §3 §4（GDP 成長、稅收）仍未實作 —— M1.8 候選。
+  **M1.8（EconomySystem tick）** 落實 RFC-080 §3 稅收公式
+  （`gdp * legal_tax_burden * fiscal_capacity * central_control *
+  (1 - corruption)`）與 RFC-080 §4 GDP 成長公式（含 education /
+  infrastructure / industry / admin_efficiency 正向項，與 political
+  instability / corruption 負向項；exponential compounding），再加
+  `budget_balance += (tax_revenue - expenditure)`。明確呼叫，仍
+  不接 monthly tick / runner / AI。RFC-080 §4 的 InflationPressure
+  / WarDamage 與 RFC-080 §5 的 WelfareSatisfaction / EconomicGrowth /
+  InequalityProxy / WarWeariness / BudgetCrisis 仍未實作 —— 待
+  monthly pipeline 與後續通膨 / 戰爭 / 福利系統補上。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
