@@ -7,21 +7,21 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.8 — JSON save / load**
+- Current sub-milestone: **M0.9 — headless simulation runner**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is still a passive container. Systems so far:
 `leviathan::systems::time` (date advance + boundary detection);
 `leviathan::systems::random` (deterministic splitmix64 RNG, no
 `<random>`); `leviathan::systems::logging` (explicit-only logging
-with byte-stable JSONL); `leviathan::systems::data_loader`
-(JSON config + country parsers via nlohmann/json, returning `Result<T>`
-with clear path-prefixed error messages); and now
-`leviathan::systems::save_system` (round-trip serialise / deserialise
-of a `GameState` to JSON, with explicit `save_version` and
-`rng_algorithm_version` so old saves fail loudly rather than silently
-diverge). CSV export and the headless-runner remain stubbed and arrive
-across M0.9 – M0.11.
+with byte-stable JSONL); `leviathan::systems::data_loader` (JSON
+config + country parsers via nlohmann/json); `leviathan::systems::save_system`
+(JSON round-trip with `save_version` / `rng_algorithm_version` gates);
+and now `leviathan::systems::runner`, which wires those into a real
+CLI (`leviathan --days N [--config ...] [--seed ...] [--output ...]`).
+Two runs with the same options produce byte-identical save and log
+files. The CSV / diagnostics output milestones (M0.10, M0.11) are
+the last pieces of M0.
 
 ## Repository layout
 
@@ -75,13 +75,47 @@ cmake --build build --config Debug
 ```
 
 The main executable is produced at `build/bin/leviathan` (`leviathan.exe`
-on Windows). Run it to verify the toolchain:
+on Windows).
+
+## Run a simulation (M0.9 headless runner)
 
 ```bash
-./build/bin/leviathan
+# Show usage
+./build/bin/Debug/leviathan --help
+
+# 10-day smoke run (everything else falls back to defaults)
+./build/bin/Debug/leviathan --days 10
+
+# Pinned configuration matching the M0.9 spec example
+./build/bin/Debug/leviathan \
+    --config data/config/simulation.json \
+    --days 365 \
+    --seed 12345 \
+    --output out/ \
+    --save out/save.json \
+    --log out/events.jsonl
 ```
 
-You should see a short banner identifying the project and milestone.
+Required flag: `--days`. Everything else has a default
+(`--config data/config/simulation.json`, `--output out/`, `--seed`
+falls back to the value in the config file, `--save` and `--log` live
+under `--output`).
+
+Outputs (paths can be overridden):
+
+| File | Format | Source |
+|------|--------|--------|
+| `out/save.json`     | Pretty-printed save (M0.8) | Round-trippable with `save_system::load` |
+| `out/events.jsonl`  | One JSON object per line   | M0.6 logging exporter |
+| stdout              | Plain-text run summary     | start / end dates, log count, output paths |
+
+**Determinism**: the same `--config` + `--days` + `--seed` produces
+byte-identical `save.json` and `events.jsonl`. The
+`run: same seed produces byte-identical save and log files` test in
+`tests/systems/runner_test.cpp` pins this.
+
+The runner ticks an empty world (no countries, factions, policies)
+in M0.9. Loading countries from a directory will land in a later PR.
 
 ## Test
 
@@ -95,17 +129,14 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.8 there are ~135 doctest cases covering all foundational
-types, TimeSystem, RandomService, LoggingSystem, DataLoader
-(happy-path parses, every required-field error variant with path-
-prefixed messages, malformed JSON, file-not-found, file-load against
-the canonical `data/config/simulation.json` and
-`data/countries/germany.json`), and SaveSystem (serialise →
-deserialise round-trip equality, rejection of unknown
-`save_version` / `rng_algorithm_version`, malformed JSON, missing
-required fields, and disk round-trip via a temp file). Each
-`TEST_CASE` is registered with CTest individually, so e.g.
-`ctest -R save_system` runs just the save/load cases.
+As of M0.9 there are ~156 doctest cases covering all foundational
+types, TimeSystem, RandomService, LoggingSystem, DataLoader,
+SaveSystem, and Runner (arg-parse happy and error paths, 3-day and
+365-day end-to-end runs, output-dir auto-create, `--seed` override,
+and the determinism check: same seed produces **byte-identical**
+save and log files). Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "byte-identical"` runs just the
+determinism guard.
 
 ## Build options
 
