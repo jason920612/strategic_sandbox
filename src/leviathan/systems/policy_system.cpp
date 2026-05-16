@@ -1,6 +1,7 @@
 #include "leviathan/systems/policy_system.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <utility>
