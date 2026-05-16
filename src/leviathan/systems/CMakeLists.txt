@@ -10,6 +10,7 @@
 # on systems.
 
 add_library(leviathan_systems STATIC
+    random_service.cpp
     time_system.cpp
 )
 add_library(leviathan::systems ALIAS leviathan_systems)
