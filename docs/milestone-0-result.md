@@ -246,3 +246,15 @@ ctest --test-dir build -C Debug --output-on-failure
 `docs/README.md` is the canonical index.
 
 M0 closes here. The repo is ready for Milestone 1.
+
+---
+
+## Note (added after M1.1)
+
+Milestone 1 has begun. `CountryState` gained its real runtime numeric
+fields in M1.1 and the save format bumped to v2; that is a deliberate
+schema change rather than a violation of M0's exit contract. The M0
+test count quoted above (179) reflects the M0 exit state; the live
+total is higher as M1 progresses. See `docs/m1-1-country-state.md` for
+the migration details and `docs/README.md` for the current per-PR
+ledger.

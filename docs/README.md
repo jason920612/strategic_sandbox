@@ -28,6 +28,7 @@ Per-milestone design notes and PR description drafts.
 | [`m0-9-runner.md`](m0-9-runner.md) | M0.9 | Headless CLI: flag table, defaults, the determinism property (same seed → byte-identical save + log), the two-layer `parse_args` / `run` split. |
 | [`m0-10-diagnostics.md`](m0-10-diagnostics.md) | M0.10 | `systems::diagnostics`: observation-only `snapshot`, byte-stable CSV format, `sanity_check` (invalid date, invalid / duplicate CountryId). The `--summary-csv` flag and how snapshot cadence interacts with month-boundary logs. |
 | [`milestone-0-result.md`](milestone-0-result.md) | **M0 exit report** | What M0 ships (every sub-milestone), what is deliberately deferred (entity behaviour, events, AI, replay), recommendations for M1, and the architectural invariants every M1+ milestone must preserve. |
+| [`m1-1-country-state.md`](m1-1-country-state.md) | M1.1 | `CountryState` runtime numeric fields (gdp, tax_revenue, budget_balance, legal_tax_burden, fiscal_capacity, administrative_efficiency, central_control, corruption, stability, legitimacy, military_power, threat_perception). JSON schema, range validation, save-format v2 bump, old-v1-rejection behaviour. **No simulation logic** at this stage. |
 
 ## Reading order
 
@@ -37,9 +38,9 @@ If you're new to the codebase:
    and test instructions.
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
-3. Read the milestone notes here **in order** (M0.2 → M0.10). They
-   build on each other and each one tries to call out the rules a
-   future contributor must not silently break.
+3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1).
+   They build on each other and each one tries to call out the rules
+   a future contributor must not silently break.
 
 ## When to add a new file
 

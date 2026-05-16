@@ -6,10 +6,10 @@
 
 ## Status
 
-- Phase: **Milestone 0 — technical skeleton (COMPLETE)**
-- Last sub-milestone: **M0.11 — minimal integration test (M0 exit gate)**
-- See `rfc/RFC-090-roadmap.md` for the full milestone map and
-  `docs/milestone-0-result.md` for the M0 exit report.
+- Phase: **Milestone 1 — single-country internal politics prototype**
+- Current sub-milestone: **M1.1 — `CountryState` real fields**
+- M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
+  `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -137,14 +137,13 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.11 there are **179 doctest cases** covering all foundational
-types, TimeSystem, RandomService, LoggingSystem, DataLoader,
-SaveSystem, Runner, and Diagnostics, plus a single end-to-end
-integration test that loads `data/config/simulation.json` and three
-country JSONs, ticks 365 days, saves, loads the save back, and
-verifies the round-trip. Each `TEST_CASE` is registered with CTest
-individually, so e.g. `ctest -R "end-to-end"` runs just the M0
-exit-gate.
+As of M1.1 there are **188 doctest cases**. M0's 179 cases all still
+pass; M1.1 added 9 more covering the new `CountryState` field set
+(range checks for negative GDP / out-of-range ratios, missing
+required field errors, the `v1 → v2` save-format rejection
+regression, and round-trip preservation of every numeric field).
+Each `TEST_CASE` is registered with CTest individually, so e.g.
+`ctest -R "ratio"` runs just the range-check tests.
 
 ## Build options
 
