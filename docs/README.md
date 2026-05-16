@@ -1,0 +1,67 @@
+# docs/
+
+Per-milestone design notes and PR description drafts.
+
+## What lives here
+
+- **`m0-N-*.md`** — design notes that get written **alongside** each
+  sub-milestone PR. They capture decisions that the PR itself touched
+  only briefly: type-design rationale, error-message format, edge-case
+  policies, deliberate non-goals. Treat them as the canonical answer
+  to "why was it done this way?" once a PR is merged.
+- **`pr-drafts/`** — local working copies of PR descriptions. The
+  canonical copy lives on GitHub (each `gh pr edit` updates it). The
+  drafts folder is git-ignored on purpose; it's a scratch space for
+  composing the next PR body, not a deliverable.
+
+## Index of design notes
+
+| File | Sub-milestone | Covers |
+|------|---------------|--------|
+| [`m0-2-calendar-and-types.md`](m0-2-calendar-and-types.md) | M0.2 | Proleptic Gregorian decision, `StrongId<Tag>` shape, `Result<T, E>` semantics, doctest framework choice, the no-`[brackets]`-in-test-names gotcha. |
+| [`m0-3-game-state.md`](m0-3-game-state.md) | M0.3 | The "GameState is dumb data, systems are free functions" rule. Why `make_game_state` is a free function (not a constructor). Entity-stub policy. Why `rng.counter` resets on `make_game_state`. |
+| [`m0-4-time-system.md`](m0-4-time-system.md) | M0.4 | Free-function-systems pattern. `systems → core` dependency direction. `TickResult` + loop-on-`advance_one_day` as the "minimal pipeline". TimeSystem non-interference contract. |
+| [`m0-5-rng-service.md`](m0-5-rng-service.md) | M0.5 | Why we avoid `<random>` and `<random_device>`. Counter-indexed splitmix64 algorithm. Edge-case rules for `weighted_choice`. Tag / trace-hook design. |
+| [`m0-6-logging.md`](m0-6-logging.md) | M0.6 | Full `LogEntry` shape. The "logging is always explicit" rule. Byte-stable JSONL format + escape rules. Why no JSON library for emit. Insertion-order-preserving metadata. |
+| [`m0-7-data-loader.md`](m0-7-data-loader.md) | M0.7 | nlohmann/json v3.11.3 pinning. Simulation + country JSON schemas. Error-message format. The "no GameState mutation, no time/RNG side effects, loggable but not coupled" architectural rules. |
+| [`m0-8-save-load.md`](m0-8-save-load.md) | M0.8 | Full save-file schema. `save_version` / `rng_algorithm_version` strict-equality gates. The "session resume, NOT deterministic replay" distinction (and why `rng.counter` is preserved anyway). |
+| [`m0-9-runner.md`](m0-9-runner.md) | M0.9 | Headless CLI: flag table, defaults, the determinism property (same seed → byte-identical save + log), the two-layer `parse_args` / `run` split. |
+
+## Reading order
+
+If you're new to the codebase:
+
+1. Start with the top-level `README.md` for current status, build,
+   and test instructions.
+2. Skim `rfc/README.md` and the RFC documents it indexes for the
+   high-level design intent.
+3. Read the milestone notes here **in order** (M0.2 → M0.9). They
+   build on each other and each one tries to call out the rules a
+   future contributor must not silently break.
+
+## When to add a new file
+
+A new design note belongs here whenever a PR lands that does any of:
+
+- Introduces a new core type or system in `leviathan::` and pins a
+  rule about its shape or behaviour.
+- Locks in an on-disk or wire-format invariant.
+- Makes an architectural decision that later code will be tempted to
+  unwind (e.g. "GameState has no methods", "systems never write to
+  `state.logs` as a side effect").
+
+Conversely, do **not** create a design note for things `git log`
+already covers: refactors, bug fixes, dependency bumps, doc-only
+changes. Use the PR description for those.
+
+## Conventions
+
+- File name: `m0-N-<short-slug>.md`. Section 1 always opens with what
+  rule(s) this PR locks in. Section "What's NOT in scope" is
+  encouraged — explicit non-goals age much better than implicit ones.
+- Cross-link with relative paths so `mkdocs` / IDE preview Just Work.
+- Keep examples small and copy-pastable.
+- When a later milestone changes a rule that an earlier note set,
+  update the older note in the same PR rather than letting the two
+  drift apart. Don't write "see also M0.X for the new rule"; rewrite
+  the original in place.
