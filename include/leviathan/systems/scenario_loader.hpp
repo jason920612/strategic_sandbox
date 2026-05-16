@@ -13,12 +13,17 @@
 //     "scenario": {
 //       "countries": [ "countries/germany.json", ... ],
 //       "factions":  [ "factions/ger_military.json", ... ],
-//       "policies":  [ "policies/raise_taxes.json", ... ]
+//       "policies":  [ "policies/raise_taxes.json", ... ],
+//       "starting_policies": [                                  // optional (M1.13)
+//         { "policy": "raise_taxes", "actor": "GER" },
+//         ...
+//       ]
 //     }
 //   }
 //
-// All three arrays are required (they may be empty). Each entry is a
-// relative path resolved against
+// `countries`, `factions`, `policies` are required (they may be empty
+// arrays). `starting_policies` is optional; absent means "no day-0
+// enactment". Each path entry is resolved against
 //   manifest_path.parent_path().parent_path()
 // so a manifest at `data/scenarios/1930_minimal.json` resolves
 // `"countries/germany.json"` as `data/countries/germany.json`.
@@ -43,13 +48,20 @@
 //     build their own pipeline.
 //
 // What this loader does NOT do:
-//   * Apply policies. Policies are loaded as inert templates with
-//     their effects vector intact; M1.5's `apply_policy_effects` is
-//     the only function that interprets them, and it is caller-
-//     driven, not pipeline-driven.
-//   * Touch RNG, logs, date, save schema, or any persistent state
-//     shape. Save-format version stays at v5.
-//   * Validate cross-references beyond faction->country. A policy's
+//   * Schedule policies over time. Entries in `starting_policies`
+//     are applied exactly once at load time via M1.5's
+//     `apply_policy_effects`. There is NO duration queue, NO
+//     monthly scheduler, NO AI / event-triggered enactment. Policies
+//     not named in `starting_policies` remain inert templates in
+//     `state.policies` until a future system enacts them.
+//   * Touch RNG, logs, or the date. The save-format version is
+//     owned by SaveSystem (`kSaveFormatVersion`) and is not
+//     changed by scenario loading; M1.13 introduces no new
+//     persistent state, so the bump cadence stays where SaveSystem
+//     defines it.
+//   * Validate cross-references beyond faction->country and the
+//     M1.13 starting_policies resolution (policy id_code -> loaded
+//     PolicyData, actor id_code -> loaded CountryId). A policy's
 //     effect `target = "faction:bureaucracy.support"` is not
 //     resolved here - that's M1.5's job.
 //   * Discover scenarios on disk. The caller (typically the runner)
