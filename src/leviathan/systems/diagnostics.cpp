@@ -97,6 +97,54 @@ void write_country_csv_row(std::ostream& out, const CountrySummaryRow& row) {
         << '\n';
 }
 
+// ---------------------------------------------------------------------------
+// M1.16: per-faction snapshot.
+// ---------------------------------------------------------------------------
+
+core::Result<FactionSummaryRow> faction_snapshot(const core::GameState& state,
+                                                 core::FactionId faction) {
+    if (!faction.valid() ||
+        faction.value() < 0 ||
+        static_cast<std::size_t>(faction.value()) >= state.factions.size()) {
+        return core::Result<FactionSummaryRow>::failure(
+            "diagnostics::faction_snapshot: faction FactionId " +
+            std::to_string(faction.value()) +
+            " is not a valid index into state.factions");
+    }
+    const auto& f = state.factions[static_cast<std::size_t>(faction.value())];
+
+    FactionSummaryRow row;
+    row.date            = state.current_date;
+    row.id_code         = f.id_code;
+    row.country_id_code = f.country_id_code;
+    row.type            = f.type;
+    row.support         = f.support;
+    row.influence       = f.influence;
+    row.radicalism      = f.radicalism;
+    row.loyalty         = f.loyalty;
+    row.resources       = f.resources;
+    return core::Result<FactionSummaryRow>::success(std::move(row));
+}
+
+void write_faction_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column here is breaking.
+    out << "date,id_code,country_id_code,type,support,influence,"
+           "radicalism,loyalty,resources\n";
+}
+
+void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row) {
+    out << row.date.to_string() << ','
+        << row.id_code          << ','
+        << row.country_id_code  << ','
+        << row.type             << ','
+        << fmt_double(row.support)    << ','
+        << fmt_double(row.influence)  << ','
+        << fmt_double(row.radicalism) << ','
+        << fmt_double(row.loyalty)    << ','
+        << fmt_double(row.resources)
+        << '\n';
+}
+
 std::vector<Issue> sanity_check(const core::GameState& state) {
     std::vector<Issue> issues;
 

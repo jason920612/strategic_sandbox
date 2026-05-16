@@ -119,6 +119,11 @@ std::string usage_text() {
         "                      Surfaces gdp / stability / last_gdp_growth_rate\n"
         "                      etc. so multi-month runs are inspectable\n"
         "                      without round-tripping the save.\n"
+        "  --factions-csv PATH   Write a per-faction CSV summary to PATH\n"
+        "                      (M1.16). One row per faction per snapshot\n"
+        "                      point (same cadence as --summary-csv).\n"
+        "                      Surfaces support / loyalty / radicalism /\n"
+        "                      influence / resources per faction.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -195,6 +200,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             auto v = need_value(i, a);
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.countries_csv_path = std::filesystem::path(std::string(v.value()));
+            ++i;
+        } else if (a == "--factions-csv") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.factions_csv_path = std::filesystem::path(std::string(v.value()));
             ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
@@ -291,6 +301,24 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             return core::Result<bool>::success(true);
         };
 
+    // M1.16: parallel buffer for --factions-csv. Mirrors M1.14 country
+    // CSV; one row per faction per snapshot point.
+    std::vector<dg::FactionSummaryRow> faction_rows;
+    const bool want_faction_csv = opts.factions_csv_path.has_value();
+
+    const auto snapshot_all_factions =
+        [&faction_rows](const core::GameState& s) -> core::Result<bool> {
+            for (std::size_t i = 0; i < s.factions.size(); ++i) {
+                const core::FactionId id{static_cast<int>(i)};
+                auto r = dg::faction_snapshot(s, id);
+                if (!r) {
+                    return core::Result<bool>::failure(std::move(r.error()));
+                }
+                faction_rows.push_back(std::move(r).value());
+            }
+            return core::Result<bool>::success(true);
+        };
+
     int monthly_ticks = 0;
 
     // Initial log. Metadata is intentionally path-independent so two
@@ -304,6 +332,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
     }
     if (want_country_csv) {
         auto r = snapshot_all_countries(state);
+        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    }
+    if (want_faction_csv) {
+        auto r = snapshot_all_factions(state);
         if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
     }
 
@@ -336,6 +368,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             auto r2 = snapshot_all_countries(state);
             if (!r2) return core::Result<RunOutcome>::failure(std::move(r2.error()));
         }
+        if (want_faction_csv && r.month_changed) {
+            auto r2 = snapshot_all_factions(state);
+            if (!r2) return core::Result<RunOutcome>::failure(std::move(r2.error()));
+        }
     }
 
     lg::log_info(state, "lifecycle", "runner", "simulation end",
@@ -356,6 +392,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
     }
     if (want_country_csv) {
         auto r = snapshot_all_countries(state);
+        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    }
+    if (want_faction_csv) {
+        auto r = snapshot_all_factions(state);
         if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
     }
 
@@ -403,6 +443,19 @@ core::Result<RunOutcome> run_state(core::GameState& state,
         }
     }
 
+    // ---- Write per-faction CSV (if requested) (M1.16) --------------------
+    if (want_faction_csv) {
+        std::ostringstream csv;
+        dg::write_faction_csv_header(csv);
+        for (const auto& row : faction_rows) {
+            dg::write_faction_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(opts.factions_csv_path.value(), csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
+
     // ---- Outcome ----------------------------------------------------------
     RunOutcome outcome;
     outcome.start_date           = start_date;
@@ -417,6 +470,8 @@ core::Result<RunOutcome> run_state(core::GameState& state,
     outcome.monthly_ticks        = monthly_ticks;
     outcome.countries_csv_path   = opts.countries_csv_path;
     outcome.countries_csv_rows   = country_rows.size();
+    outcome.factions_csv_path    = opts.factions_csv_path;
+    outcome.factions_csv_rows    = faction_rows.size();
     return core::Result<RunOutcome>::success(std::move(outcome));
 }
 

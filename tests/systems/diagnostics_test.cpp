@@ -12,6 +12,8 @@
 
 using leviathan::core::CountryId;
 using leviathan::core::CountryState;
+using leviathan::core::FactionId;
+using leviathan::core::FactionState;
 using leviathan::core::GameDate;
 using leviathan::core::GameState;
 using leviathan::core::LogEntry;
@@ -371,4 +373,151 @@ TEST_CASE("country_snapshot: does NOT mutate state") {
     // The CountryState fields are unchanged.
     CHECK(s.countries[0].gdp                  == doctest::Approx(100.0));
     CHECK(s.countries[0].last_gdp_growth_rate == doctest::Approx(0.0035));
+}
+
+// ---------------------------------------------------------------------
+// M1.16 - per-faction snapshot + CSV
+// ---------------------------------------------------------------------
+
+namespace {
+
+FactionState m116_faction(int idx,
+                          const std::string& id_code,
+                          const std::string& country_id_code,
+                          const std::string& type,
+                          double support,
+                          double resources = 1.0) {
+    FactionState f;
+    f.id              = FactionId{idx};
+    f.country         = CountryId{0};
+    f.id_code         = id_code;
+    f.country_id_code = country_id_code;
+    f.name            = id_code;
+    f.type            = type;
+    f.support         = support;
+    f.influence       = 0.50;
+    f.radicalism      = 0.30;
+    f.loyalty         = 0.55;
+    f.resources       = resources;
+    return f;
+}
+
+}  // namespace
+
+TEST_CASE("faction_snapshot: reads every documented field verbatim") {
+    GameState s;
+    s.current_date = GameDate(1930, 6, 1);
+    s.factions.push_back(m116_faction(0, "GER_military", "GER", "military",
+                                      0.45, 1.20));
+
+    const auto r = dg::faction_snapshot(s, FactionId{0});
+    REQUIRE(r.ok());
+    const auto& row = r.value();
+    CHECK(row.date            == GameDate(1930, 6, 1));
+    CHECK(row.id_code         == "GER_military");
+    CHECK(row.country_id_code == "GER");
+    CHECK(row.type            == "military");
+    CHECK(row.support    == doctest::Approx(0.45));
+    CHECK(row.influence  == doctest::Approx(0.50));
+    CHECK(row.radicalism == doctest::Approx(0.30));
+    CHECK(row.loyalty    == doctest::Approx(0.55));
+    CHECK(row.resources  == doctest::Approx(1.20));
+}
+
+TEST_CASE("faction_snapshot: invalid FactionId is rejected with the bad index in the message") {
+    GameState s;
+    s.factions.push_back(m116_faction(0, "GER_military", "GER", "military", 0.45));
+
+    const auto r = dg::faction_snapshot(s, FactionId{99});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("FactionId 99") != std::string::npos);
+}
+
+TEST_CASE("faction_snapshot: default-constructed FactionId is rejected") {
+    GameState s;
+    s.factions.push_back(m116_faction(0, "GER_military", "GER", "military", 0.45));
+    const auto r = dg::faction_snapshot(s, FactionId{});
+    REQUIRE(r.failed());
+}
+
+TEST_CASE("faction_snapshot: empty state.factions -> any index rejected") {
+    GameState s;
+    const auto r = dg::faction_snapshot(s, FactionId{0});
+    REQUIRE(r.failed());
+}
+
+TEST_CASE("write_faction_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_faction_csv_header(out);
+    CHECK(out.str() ==
+          "date,id_code,country_id_code,type,support,influence,"
+          "radicalism,loyalty,resources\n");
+}
+
+TEST_CASE("write_faction_csv_row: emits a well-formed line with all nine fields") {
+    GameState s;
+    s.current_date = GameDate(1930, 2, 1);
+    s.factions.push_back(m116_faction(0, "GER_military", "GER", "military", 0.45));
+    const auto r = dg::faction_snapshot(s, FactionId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_faction_csv_row(out, r.value());
+    const std::string line = out.str();
+    // Date + id_code + country_id_code + type prefixed verbatim.
+    CHECK(line.substr(0, 36) == "1930-02-01,GER_military,GER,military");
+    // Eight commas separate nine columns.
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 8);
+    CHECK(line.back() == '\n');
+    // Numeric columns use scientific notation; partial mantissa match.
+    CHECK(line.find("4.5") != std::string::npos);  // 0.45 support
+}
+
+TEST_CASE("write_faction_csv_row: negative resources still survives the format") {
+    GameState s;
+    s.current_date = GameDate(1930, 2, 1);
+    FactionState f = m116_faction(0, "GER_workers", "GER", "workers", 0.50, -2.5);
+    s.factions.push_back(f);
+    const auto r = dg::faction_snapshot(s, FactionId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_faction_csv_row(out, r.value());
+    const std::string line = out.str();
+    CHECK(line.find("GER_workers") != std::string::npos);
+    CHECK(line.find("-2.5")        != std::string::npos);
+}
+
+TEST_CASE("write_faction_csv_row: byte-identical for the same row twice") {
+    GameState s;
+    s.current_date = GameDate(1930, 3, 1);
+    s.factions.push_back(m116_faction(0, "JPN_intelligence", "JPN", "intelligence",
+                                      0.40, 0.80));
+    const auto r = dg::faction_snapshot(s, FactionId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream a, b;
+    dg::write_faction_csv_row(a, r.value());
+    dg::write_faction_csv_row(b, r.value());
+    CHECK(a.str() == b.str());
+}
+
+TEST_CASE("faction_snapshot: does NOT mutate state") {
+    GameState s;
+    s.current_date  = GameDate(1930, 4, 1);
+    s.rng.seed      = 42;
+    s.rng.counter   = 7;
+    s.factions.push_back(m116_faction(0, "GER_military", "GER", "military", 0.45));
+    const auto logs_before = s.logs.size();
+
+    REQUIRE(dg::faction_snapshot(s, FactionId{0}).ok());
+
+    CHECK(s.current_date == GameDate(1930, 4, 1));
+    CHECK(s.rng.seed     == 42u);
+    CHECK(s.rng.counter  == 7u);
+    CHECK(s.logs.size()  == logs_before);
+    CHECK(s.factions[0].support   == doctest::Approx(0.45));
+    CHECK(s.factions[0].resources == doctest::Approx(1.0));
 }

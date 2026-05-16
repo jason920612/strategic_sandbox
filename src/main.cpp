@@ -58,6 +58,16 @@ int main(int argc, char** argv) {
               << "Summary CSV file    : " << outcome.summary_csv_path.value().string() << "\n"
               << "Summary CSV rows    : " << outcome.summary_rows                       << "\n";
     }
+    if (outcome.countries_csv_path.has_value()) {
+        std::cout
+              << "Countries CSV file  : " << outcome.countries_csv_path.value().string() << "\n"
+              << "Countries CSV rows  : " << outcome.countries_csv_rows                  << "\n";
+    }
+    if (outcome.factions_csv_path.has_value()) {
+        std::cout
+              << "Factions CSV file   : " << outcome.factions_csv_path.value().string() << "\n"
+              << "Factions CSV rows   : " << outcome.factions_csv_rows                  << "\n";
+    }
 
     return EXIT_SUCCESS;
 }

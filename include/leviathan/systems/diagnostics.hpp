@@ -100,6 +100,52 @@ void write_country_csv_header(std::ostream& out);
 void write_country_csv_row(std::ostream& out, const CountrySummaryRow& row);
 
 // ---------------------------------------------------------------------------
+// Per-faction snapshot (M1.16).
+//
+// Mirrors the M1.14 per-country shape. Same observation-only rule,
+// same `std::scientific` + 17-digit double formatting, same snapshot
+// cadence when wired through the runner (`--factions-csv PATH`).
+// Faction-level CSV is a SEPARATE output stream; it does not change
+// the summary CSV (M0.10) or the per-country CSV (M1.14), both of
+// which keep their byte-identical determinism contracts.
+// ---------------------------------------------------------------------------
+
+// One row of the per-faction CSV. Mirrors `FactionState` runtime
+// fields. `country_id_code` is included so external tooling can group
+// rows by country without re-joining against another file.
+struct FactionSummaryRow {
+    core::GameDate date;
+    std::string id_code;          // e.g. "GER_military"
+    std::string country_id_code;  // e.g. "GER"
+    std::string type;             // e.g. "military"
+    double      support    = 0.0;
+    double      influence  = 0.0;
+    double      radicalism = 0.0;
+    double      loyalty    = 0.0;
+    double      resources  = 0.0;
+};
+
+// Build a FactionSummaryRow from `state` for `faction`. Pure
+// observation; never mutates state.
+//
+// Returns failure if `faction` is not a valid index into
+// `state.factions`. As with `country_snapshot`, the runner only calls
+// this with indexes pulled from `state.factions.size()`, so failure is
+// reserved for misuse / programmer errors.
+core::Result<FactionSummaryRow> faction_snapshot(const core::GameState& state,
+                                                 core::FactionId faction);
+
+// Write the canonical per-faction CSV header. Always:
+//   "date,id_code,country_id_code,type,support,influence,"
+//   "radicalism,loyalty,resources\n"
+// Pinned by tests; bumping a column here is breaking.
+void write_faction_csv_header(std::ostream& out);
+
+// Write one FactionSummaryRow as a CSV line. Same doubles policy as
+// `write_country_csv_row`.
+void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row);
+
+// ---------------------------------------------------------------------------
 // Sanity checks.
 // ---------------------------------------------------------------------------
 

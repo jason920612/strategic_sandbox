@@ -7,27 +7,25 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.15 — Policy duration tracking.**
-  New `ActivePolicy{policy_id_code, expires_on}` core type and
-  `CountryState::active_policies` vector (default empty,
-  append-only). Every successful
-  `policy::apply_policy_effects` now records one entry with
-  `expires_on = current_date + duration_days`. Pre-flight failure
-  appends nothing (atomicity covers the new side effect).
-  `apply_policy_effects` also enforces a runtime cap
-  (`kMaxTrackedPolicyDurationDays = 36500`, ~100 years) and rejects
-  negative `duration_days`, because `GameDate::advance_days` is a
-  per-day loop and `duration_days` is now on the runtime path.
-  **Save format bumped v6 → v7** — v6 saves rejected loudly, and a
-  v7 country object missing `active_policies` is rejected.
-  Scenario day-0 enactments from M1.13 now populate the list as a
-  side effect. M1.15 is tracking-only: nothing removes expired
-  entries, nothing reverts policy effects, no scheduler, no AI.
-- Next sub-milestone candidates: **M1.16** (faction-level CSV
-  mirroring the M1.14 per-country diagnostics pattern, no save
-  schema change) or **M1.17** (policy expiration sweep — first
-  consumer of `active_policies.expires_on`, would add a monthly
-  pipeline step).
+- Latest shipped sub-milestone: **M1.16 — Faction-level
+  diagnostics CSV.** New `FactionSummaryRow` +
+  `faction_snapshot(state, faction)` +
+  `write_faction_csv_header` / `write_faction_csv_row` in
+  `systems::diagnostics`. New opt-in `--factions-csv PATH` runner
+  flag emits 9 columns per faction per snapshot point
+  (`date,id_code,country_id_code,type,support,influence,
+  radicalism,loyalty,resources`). Same snapshot cadence as
+  `--summary-csv` and `--countries-csv`. Existing summary CSV and
+  per-country CSV both byte-for-byte unchanged (M0.10 and M1.14
+  contracts preserved). No save-format bump (still v7). Drive-by:
+  `main()` now prints the per-country / per-faction CSV row counts
+  alongside the existing summary print, matching the data already
+  in `RunOutcome`.
+- Next sub-milestone candidates: **M1.17** (policy expiration
+  sweep — first consumer of `active_policies.expires_on`; would add
+  a monthly pipeline step but no save schema change) or **M1.18**
+  (faction `react` extension — type-specific reactions beyond the
+  M1.6 linear-drift rules).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -49,7 +47,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Fifteen sub-milestones merged so far:
+RFC-090 §M1) is in progress. Sixteen sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -90,7 +88,16 @@ every successful `policy::apply_policy_effects` records one entry
 with `expires_on = current_date + duration_days`; pre-flight
 failure appends nothing. Save format bumped v6 → v7 (v6 saves
 rejected loudly, v7 country without `active_policies` rejected).
-Tracking-only: no expiration sweep, no revert, no scheduler.**
+Tracking-only: no expiration sweep, no revert, no scheduler.
+`apply_policy_effects` also enforces a runtime cap on
+`duration_days` (`kMaxTrackedPolicyDurationDays = 36500`, ~100
+years) and rejects negatives, because `GameDate::advance_days` is
+a per-day loop; **M1.16 Faction-level diagnostics CSV — new
+`FactionSummaryRow` + `faction_snapshot` + per-faction CSV
+writers, plus opt-in `--factions-csv PATH` runner flag emitting
+9 columns per faction per snapshot point. Existing summary CSV
+and per-country CSV both byte-for-byte unchanged (M0.10 + M1.14
+contracts preserved). No save-format bump (still v7).**
 
 ## Repository layout
 
@@ -183,6 +190,15 @@ on Windows).
     --days 365 \
     --scenario data/scenarios/1930_minimal.json \
     --countries-csv out/countries.csv
+
+# M1.16 - per-faction diagnostic CSV: one row per faction per snapshot
+# point with support / influence / radicalism / loyalty / resources.
+# Can be combined with --countries-csv and --summary-csv.
+./build/bin/Debug/leviathan \
+    --days 365 \
+    --scenario data/scenarios/1930_minimal.json \
+    --countries-csv out/countries.csv \
+    --factions-csv  out/factions.csv
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -219,11 +235,28 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.15 there are **414 doctest cases**. M0 contributed 179;
+As of M1.16 there are **432 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
-M1.14 added 17; M1.15 adds 15 covering the **policy duration
+M1.14 added 17; M1.15 added 15; M1.16 adds 18 covering the
+**per-faction CSV**: 9 diagnostics cases (faction_snapshot reads
+every field, invalid id rejected with bad index in message,
+default-id rejected, empty state rejects any index, header
+byte-exact, row well-formed with 8 commas / 9 columns, negative
+resources survives format, byte-identical for same row twice,
+snapshot doesn't mutate state); 9 runner cases (`--factions-csv`
+plumbed/value-missing/default-unset, no-flag no file, empty state
+header-only, canonical scenario emits `9 rows = 3 factions × 3
+snapshots` for a 31-day run, byte-identical determinism, summary
+CSV unchanged when `--factions-csv` is added (M0.10 contract
+regression), countries CSV unchanged when `--factions-csv` is
+added (M1.14 contract regression)). Save schema remains v7 (no
+new persistent state). Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "faction_snapshot|factions-csv"`
+runs just the M1.16 cases.
+
+Previously: M1.15 added 15 covering the **policy duration
 tracking** save state plus the new runtime cap on `duration_days`:
 9 policy_system cases (successful enact appends one `ActivePolicy`,
 pre-flight failure appends nothing, `duration_days == 0` same-day
