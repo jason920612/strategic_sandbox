@@ -227,3 +227,148 @@ TEST_CASE("sanity_check does not mutate the input GameState") {
     // current_date is still the broken one we set up.
     CHECK_FALSE(s.current_date.is_valid());
 }
+
+// ---------------------------------------------------------------------
+// M1.14 - per-country snapshot + CSV
+// ---------------------------------------------------------------------
+
+namespace {
+
+CountryState m114_country(int idx,
+                          const std::string& id_code,
+                          double gdp,
+                          double last_growth) {
+    CountryState c;
+    c.id          = CountryId{idx};
+    c.id_code     = id_code;
+    c.name        = id_code;
+    c.gdp                  = gdp;
+    c.tax_revenue          = 1.5;
+    c.budget_balance       = -4.0;
+    c.stability            = 0.55;
+    c.legitimacy           = 0.60;
+    c.last_gdp_growth_rate = last_growth;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("country_snapshot: reads every documented field verbatim") {
+    GameState s;
+    s.current_date = GameDate(1930, 6, 1);
+    s.countries.push_back(m114_country(0, "GER", 123.5, 0.00350));
+
+    const auto r = dg::country_snapshot(s, CountryId{0});
+    REQUIRE(r.ok());
+    const auto& row = r.value();
+    CHECK(row.date                 == GameDate(1930, 6, 1));
+    CHECK(row.id_code              == "GER");
+    CHECK(row.gdp                  == doctest::Approx(123.5));
+    CHECK(row.tax_revenue          == doctest::Approx(1.5));
+    CHECK(row.budget_balance       == doctest::Approx(-4.0));
+    CHECK(row.stability            == doctest::Approx(0.55));
+    CHECK(row.legitimacy           == doctest::Approx(0.60));
+    CHECK(row.last_gdp_growth_rate == doctest::Approx(0.00350));
+}
+
+TEST_CASE("country_snapshot: invalid CountryId is rejected with the bad index in the message") {
+    GameState s;
+    s.countries.push_back(m114_country(0, "GER", 100.0, 0.0));
+
+    const auto r = dg::country_snapshot(s, CountryId{99});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("CountryId 99") != std::string::npos);
+}
+
+TEST_CASE("country_snapshot: default-constructed CountryId is rejected") {
+    GameState s;
+    s.countries.push_back(m114_country(0, "GER", 100.0, 0.0));
+    const auto r = dg::country_snapshot(s, CountryId{});
+    REQUIRE(r.failed());
+}
+
+TEST_CASE("country_snapshot: empty state.countries -> any index rejected") {
+    GameState s;
+    const auto r = dg::country_snapshot(s, CountryId{0});
+    REQUIRE(r.failed());
+}
+
+TEST_CASE("write_country_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_country_csv_header(out);
+    CHECK(out.str() ==
+          "date,id_code,gdp,tax_revenue,budget_balance,"
+          "stability,legitimacy,last_gdp_growth_rate\n");
+}
+
+TEST_CASE("write_country_csv_row: emits a well-formed line with all eight fields") {
+    GameState s;
+    s.current_date = GameDate(1930, 2, 1);
+    s.countries.push_back(m114_country(0, "GER", 100.0, 0.00350));
+    const auto r = dg::country_snapshot(s, CountryId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_country_csv_row(out, r.value());
+    const std::string line = out.str();
+    // Date + id_code prefixed verbatim.
+    CHECK(line.substr(0, 14) == "1930-02-01,GER");
+    // Seven commas separate eight columns.
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 7);
+    // Ends in newline; no trailing comma.
+    CHECK(line.back() == '\n');
+    // last_gdp_growth_rate is the last column and renders with full
+    // round-trip precision (std::scientific + setprecision(17)).
+    CHECK(line.find("3.50") != std::string::npos);  // partial match on 0.0035 mantissa
+}
+
+TEST_CASE("write_country_csv_row: negative budget_balance survives the format") {
+    GameState s;
+    s.current_date = GameDate(1930, 2, 1);
+    CountryState c = m114_country(0, "FRA", 75.0, -0.001);
+    c.budget_balance = -12.345;
+    s.countries.push_back(c);
+    const auto r = dg::country_snapshot(s, CountryId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_country_csv_row(out, r.value());
+    const std::string line = out.str();
+    CHECK(line.find("FRA") != std::string::npos);
+    // Negative sign survives the formatter.
+    CHECK(line.find("-1.234") != std::string::npos);
+}
+
+TEST_CASE("write_country_csv_row: byte-identical for the same row twice") {
+    GameState s;
+    s.current_date = GameDate(1930, 3, 1);
+    s.countries.push_back(m114_country(0, "JPN", 60.0, 0.0042));
+    const auto r = dg::country_snapshot(s, CountryId{0});
+    REQUIRE(r.ok());
+
+    std::ostringstream a, b;
+    dg::write_country_csv_row(a, r.value());
+    dg::write_country_csv_row(b, r.value());
+    CHECK(a.str() == b.str());
+}
+
+TEST_CASE("country_snapshot: does NOT mutate state") {
+    GameState s;
+    s.current_date  = GameDate(1930, 4, 1);
+    s.rng.seed      = 42;
+    s.rng.counter   = 7;
+    s.countries.push_back(m114_country(0, "GER", 100.0, 0.0035));
+    const auto logs_before = s.logs.size();
+
+    REQUIRE(dg::country_snapshot(s, CountryId{0}).ok());
+
+    CHECK(s.current_date == GameDate(1930, 4, 1));
+    CHECK(s.rng.seed     == 42u);
+    CHECK(s.rng.counter  == 7u);
+    CHECK(s.logs.size()  == logs_before);
+    // The CountryState fields are unchanged.
+    CHECK(s.countries[0].gdp                  == doctest::Approx(100.0));
+    CHECK(s.countries[0].last_gdp_growth_rate == doctest::Approx(0.0035));
+}

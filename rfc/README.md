@@ -124,6 +124,21 @@ M0 / M1 中落地，部分仍是未來工作：
   policy container、monthly policy scheduler、AI、event-triggered
   enactment、平衡重調。Mid-list apply 失敗會留下 partial state（與
   M1.11 文件化的 non-atomic 規則一致）。
+  **M1.14（Diagnostics surfaces `last_gdp_growth_rate`）** 為
+  `systems::diagnostics` 新增 `CountrySummaryRow` 與
+  `country_snapshot(state, country)` 觀察函式，並補上
+  `write_country_csv_header` / `write_country_csv_row`；runner 多了
+  opt-in 的 `--countries-csv PATH` 旗標，會在每個 snapshot 點
+  （start + 每個 `month_changed` + final post-sanity）對每個 country
+  各寫一行，欄位為 `date,id_code,gdp,tax_revenue,budget_balance,
+  stability,legitimacy,last_gdp_growth_rate`。doubles 用
+  `std::scientific` + `setprecision(17)` 以確保 round-trip 精度與 byte-
+  identical determinism。原本 `--summary-csv` 的 4 欄格式完全不變，
+  保留 M0.10 byte-identical determinism contract。對應 RFC-090 §M1
+  task 1.20（per-country diagnostics surface）。**M1.14 不做** save
+  schema 變更（仍 v6）、CountryState / FactionState / PolicyData
+  shape 變更、faction-level CSV、JSON 變體、streaming I/O、新 sanity
+  check、AI / events / war / 平衡重調。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

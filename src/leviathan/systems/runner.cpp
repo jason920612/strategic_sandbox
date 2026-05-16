@@ -113,6 +113,12 @@ std::string usage_text() {
         "  --scenario PATH     Scenario manifest JSON to load into GameState\n"
         "                      before ticking (M1.11). Without this flag\n"
         "                      the runner ticks an empty world.\n"
+        "  --countries-csv PATH  Write a per-country CSV summary to PATH\n"
+        "                      (M1.14). One row per country per snapshot\n"
+        "                      point (same cadence as --summary-csv).\n"
+        "                      Surfaces gdp / stability / last_gdp_growth_rate\n"
+        "                      etc. so multi-month runs are inspectable\n"
+        "                      without round-tripping the save.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -184,6 +190,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             auto v = need_value(i, a);
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.scenario_path = std::filesystem::path(std::string(v.value()));
+            ++i;
+        } else if (a == "--countries-csv") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.countries_csv_path = std::filesystem::path(std::string(v.value()));
             ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
@@ -259,6 +270,27 @@ core::Result<RunOutcome> run_state(core::GameState& state,
     std::vector<dg::SummaryRow> summary_rows;
     const bool want_csv = opts.summary_csv_path.has_value();
 
+    // M1.14: parallel buffer for --countries-csv. Same cadence as the
+    // summary CSV; one row per country per snapshot point.
+    std::vector<dg::CountrySummaryRow> country_rows;
+    const bool want_country_csv = opts.countries_csv_path.has_value();
+
+    // Helper: append one CountrySummaryRow per country at the current
+    // GameState time. Pulled out so the start / per-month / final
+    // snapshots all share one call site.
+    const auto snapshot_all_countries =
+        [&country_rows](const core::GameState& s) -> core::Result<bool> {
+            for (std::size_t i = 0; i < s.countries.size(); ++i) {
+                const core::CountryId id{static_cast<int>(i)};
+                auto r = dg::country_snapshot(s, id);
+                if (!r) {
+                    return core::Result<bool>::failure(std::move(r.error()));
+                }
+                country_rows.push_back(std::move(r).value());
+            }
+            return core::Result<bool>::success(true);
+        };
+
     int monthly_ticks = 0;
 
     // Initial log. Metadata is intentionally path-independent so two
@@ -269,6 +301,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
 
     if (want_csv) {
         summary_rows.push_back(dg::snapshot(state));
+    }
+    if (want_country_csv) {
+        auto r = snapshot_all_countries(state);
+        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
     }
 
     // ---- Tick -------------------------------------------------------------
@@ -296,6 +332,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
         if (want_csv && r.month_changed) {
             summary_rows.push_back(dg::snapshot(state));
         }
+        if (want_country_csv && r.month_changed) {
+            auto r2 = snapshot_all_countries(state);
+            if (!r2) return core::Result<RunOutcome>::failure(std::move(r2.error()));
+        }
     }
 
     lg::log_info(state, "lifecycle", "runner", "simulation end",
@@ -313,6 +353,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
 
     if (want_csv) {
         summary_rows.push_back(dg::snapshot(state));
+    }
+    if (want_country_csv) {
+        auto r = snapshot_all_countries(state);
+        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
     }
 
     // ---- Resolve output paths --------------------------------------------
@@ -346,6 +390,19 @@ core::Result<RunOutcome> run_state(core::GameState& state,
         }
     }
 
+    // ---- Write per-country CSV (if requested) (M1.14) --------------------
+    if (want_country_csv) {
+        std::ostringstream csv;
+        dg::write_country_csv_header(csv);
+        for (const auto& row : country_rows) {
+            dg::write_country_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(opts.countries_csv_path.value(), csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
+
     // ---- Outcome ----------------------------------------------------------
     RunOutcome outcome;
     outcome.start_date           = start_date;
@@ -358,6 +415,8 @@ core::Result<RunOutcome> run_state(core::GameState& state,
     outcome.summary_rows         = summary_rows.size();
     outcome.sanity_issues_logged = issues.size();
     outcome.monthly_ticks        = monthly_ticks;
+    outcome.countries_csv_path   = opts.countries_csv_path;
+    outcome.countries_csv_rows   = country_rows.size();
     return core::Result<RunOutcome>::success(std::move(outcome));
 }
 

@@ -1,7 +1,11 @@
 #include "leviathan/systems/diagnostics.hpp"
 
+#include <cstddef>
+#include <iomanip>
+#include <ios>
 #include <ostream>
 #include <set>
+#include <sstream>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -9,6 +13,19 @@
 #include "leviathan/core/ids.hpp"
 
 namespace leviathan::systems::diagnostics {
+
+namespace {
+
+// Format a double with full round-trip precision (17 significant
+// digits in std::scientific). Determinism over prettiness: the same
+// double value always produces the same string.
+std::string fmt_double(double v) {
+    std::ostringstream s;
+    s << std::scientific << std::setprecision(17) << v;
+    return s.str();
+}
+
+}  // namespace
 
 SummaryRow snapshot(const core::GameState& state) {
     SummaryRow row;
@@ -31,6 +48,52 @@ void write_csv_row(std::ostream& out, const SummaryRow& row) {
         << row.country_count    << ','
         << row.log_count        << ','
         << row.seed
+        << '\n';
+}
+
+// ---------------------------------------------------------------------------
+// M1.14: per-country snapshot.
+// ---------------------------------------------------------------------------
+
+core::Result<CountrySummaryRow> country_snapshot(const core::GameState& state,
+                                                 core::CountryId country) {
+    if (!country.valid() ||
+        country.value() < 0 ||
+        static_cast<std::size_t>(country.value()) >= state.countries.size()) {
+        return core::Result<CountrySummaryRow>::failure(
+            "diagnostics::country_snapshot: country CountryId " +
+            std::to_string(country.value()) +
+            " is not a valid index into state.countries");
+    }
+    const auto& c = state.countries[static_cast<std::size_t>(country.value())];
+
+    CountrySummaryRow row;
+    row.date                 = state.current_date;
+    row.id_code              = c.id_code;
+    row.gdp                  = c.gdp;
+    row.tax_revenue          = c.tax_revenue;
+    row.budget_balance       = c.budget_balance;
+    row.stability            = c.stability;
+    row.legitimacy           = c.legitimacy;
+    row.last_gdp_growth_rate = c.last_gdp_growth_rate;
+    return core::Result<CountrySummaryRow>::success(std::move(row));
+}
+
+void write_country_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column here is breaking.
+    out << "date,id_code,gdp,tax_revenue,budget_balance,"
+           "stability,legitimacy,last_gdp_growth_rate\n";
+}
+
+void write_country_csv_row(std::ostream& out, const CountrySummaryRow& row) {
+    out << row.date.to_string() << ','
+        << row.id_code          << ','
+        << fmt_double(row.gdp)                  << ','
+        << fmt_double(row.tax_revenue)          << ','
+        << fmt_double(row.budget_balance)       << ','
+        << fmt_double(row.stability)            << ','
+        << fmt_double(row.legitimacy)           << ','
+        << fmt_double(row.last_gdp_growth_rate)
         << '\n';
 }
 
