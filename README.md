@@ -14,6 +14,10 @@
   `policy::apply_policy_effects` now records one entry with
   `expires_on = current_date + duration_days`. Pre-flight failure
   appends nothing (atomicity covers the new side effect).
+  `apply_policy_effects` also enforces a runtime cap
+  (`kMaxTrackedPolicyDurationDays = 36500`, ~100 years) and rejects
+  negative `duration_days`, because `GameDate::advance_days` is a
+  per-day loop and `duration_days` is now on the runtime path.
   **Save format bumped v6 → v7** — v6 saves rejected loudly, and a
   v7 country object missing `active_policies` is rejected.
   Scenario day-0 enactments from M1.13 now populate the list as a
@@ -215,23 +219,26 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.15 there are **411 doctest cases**. M0 contributed 179;
+As of M1.15 there are **414 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
-M1.14 added 17; M1.15 adds 12 covering the **policy duration
-tracking** save state: 6 policy_system cases (successful enact
-appends one `ActivePolicy`, pre-flight failure appends nothing,
-`duration_days == 0` same-day expiry, multiple enacts preserve
-insertion order, faction-zero-match enactment still records,
-only the actor's list grows); 6 save_system cases (rejects an old
-v6 save loudly, serialize emits `"active_policies": []`,
-save+load round-trips populated entries with their `expires_on`
-dates, v7 country missing `active_policies` rejected, entry
-missing `policy_id_code` rejected, entry with malformed
-`expires_on` rejected); plus an extension to the M1.13
-day-0-enactment scenario test that pins `expires_on = 1930-03-02`
-for the canonical `raise_taxes` (60-day) enactment.
+M1.14 added 17; M1.15 adds 15 covering the **policy duration
+tracking** save state plus the new runtime cap on `duration_days`:
+9 policy_system cases (successful enact appends one `ActivePolicy`,
+pre-flight failure appends nothing, `duration_days == 0` same-day
+expiry, multiple enacts preserve insertion order, faction-zero-
+match enactment still records, only the actor's list grows,
+negative `duration_days` rejected, `duration_days >
+kMaxTrackedPolicyDurationDays` rejected, the cap boundary value
+itself is accepted); 6 save_system cases (rejects an old v6 save
+loudly, serialize emits `"active_policies": []`, save+load
+round-trips populated entries with their `expires_on` dates, v7
+country missing `active_policies` rejected, entry missing
+`policy_id_code` rejected, entry with malformed `expires_on`
+rejected); plus an extension to the M1.13 day-0-enactment scenario
+test that pins `expires_on = 1930-03-02` for the canonical
+`raise_taxes` (60-day) enactment.
 Save schema is now v7. Each `TEST_CASE` is registered with CTest
 individually, so e.g. `ctest -R "M1.15"` runs just the M1.15 cases.
 

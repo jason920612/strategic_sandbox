@@ -216,6 +216,24 @@ core::Result<ApplyOutcome> apply_policy_effects(
             " is not a valid index into state.countries");
     }
 
+    // M1.15: bound-check duration_days BEFORE any pre-flight or apply.
+    // GameDate::advance_days is a per-day loop, so an unbounded
+    // duration would stall the call. DataLoader admits anything up to
+    // INT_MAX (it can't depend on this module without inverting the
+    // layering), so PolicySystem is the last line of defense.
+    if (policy.duration_days < 0) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_policy_effects: policy.duration_days must be >= 0 (got " +
+            std::to_string(policy.duration_days) + ")");
+    }
+    if (policy.duration_days > kMaxTrackedPolicyDurationDays) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_policy_effects: policy.duration_days " +
+            std::to_string(policy.duration_days) +
+            " exceeds kMaxTrackedPolicyDurationDays (" +
+            std::to_string(kMaxTrackedPolicyDurationDays) + ")");
+    }
+
     // ---- Pre-flight: resolve every effect's target / op ----------
     std::vector<ResolvedTarget> resolved;
     resolved.reserve(policy.effects.size());

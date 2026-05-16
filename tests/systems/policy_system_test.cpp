@@ -568,6 +568,68 @@ TEST_CASE("M1.15 apply: faction-zero-match enactment still records the policy") 
     CHECK(state.countries[0].active_policies[0].policy_id_code == "press_censorship");
 }
 
+TEST_CASE("M1.15 apply: negative duration_days is rejected without mutation") {
+    // Pre-flight regression: DataLoader uses require_u64 so JSON cannot
+    // smuggle a negative duration, but apply_policy_effects must still
+    // refuse a hand-built PolicyData with duration_days < 0 rather than
+    // hand it to GameDate::advance_days (which has a non-negative
+    // precondition).
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "bad_duration";
+    p.duration_days = -1;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    const auto before_stability = state.countries[0].stability;
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duration_days") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(before_stability));
+    CHECK(state.countries[0].active_policies.empty());
+}
+
+TEST_CASE("M1.15 apply: duration_days above the runtime cap is rejected") {
+    // M1.15 cap. Without this, an INT_MAX duration would push the
+    // per-day GameDate::advance_days loop into a multi-second stall.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "too_long";
+    p.duration_days = ps::kMaxTrackedPolicyDurationDays + 1;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    const auto before_stability = state.countries[0].stability;
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duration_days")                       != std::string::npos);
+    CHECK(r.error().find("kMaxTrackedPolicyDurationDays")       != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(before_stability));
+    CHECK(state.countries[0].active_policies.empty());
+}
+
+TEST_CASE("M1.15 apply: duration_days at the runtime cap boundary is accepted") {
+    // Boundary case: the cap itself must remain a legal value, so the
+    // bound is `> kMax`, not `>= kMax`. Pin it.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "exactly_cap";
+    p.duration_days = ps::kMaxTrackedPolicyDurationDays;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    REQUIRE(state.countries[0].active_policies.size() == 1);
+}
+
 TEST_CASE("M1.15 apply: only the actor's active_policies list grows") {
     // Cross-country regression: an enactment on GER must not appear in
     // FRA's list. The country pointer in apply_policy_effects is

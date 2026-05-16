@@ -148,7 +148,14 @@ M0 / M1 中落地，部分仍是未來工作：
   DataLoader 已保證 `duration_days >= 0`）。Pre-flight 失敗時
   「不 append」── M1.5 的 atomicity 規則涵蓋這個新 side effect。
   `duration_days == 0` 仍記錄一筆（`expires_on == current_date`），
-  原因是 diagnostics 仍想看到 enactment 發生過。**M1.15 是本 M1
+  原因是 diagnostics 仍想看到 enactment 發生過。`apply_policy_effects`
+  並在 actor validation 後加上 runtime 上限
+  （`kMaxTrackedPolicyDurationDays = 36500`，~100 年），同時拒絕
+  負值 `duration_days`；理由是 `GameDate::advance_days` 是逐日 loop，
+  M1.15 開始 `duration_days` 進入 runtime path，否則手寫 `INT_MAX`
+  duration 會讓 apply 卡住。DataLoader 不重複這個檢查（避免
+  `data_loader -> policy_system` 反向依賴），PolicySystem 是 last
+  line of defense。**M1.15 是本 M1
   的第二次 save schema 升版（v6 → v7）**：`country.active_policies`
   是 country object 中必備欄位，v6 save、v7 但 country 缺
   `active_policies`、`active_policies[i]` 缺 `policy_id_code` 或

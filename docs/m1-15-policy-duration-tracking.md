@@ -56,7 +56,10 @@ from `state.policies` cheaply.
 
 Pre-flight semantics from M1.5 are unchanged: any unresolvable target
 or unrecognised op fails the whole call and leaves state untouched.
-What changes is the tail of a **successful** apply:
+
+Before any target / op pre-flight, M1.15 adds a `duration_days`
+bound check (see §3a). What changes at the tail of a **successful**
+apply:
 
 ```cpp
 // After the apply loop completes:
@@ -81,6 +84,43 @@ Properties:
 - A faction-broadcast effect that matches zero factions remains a
   silent no-op for the *effect*, but the policy itself is still
   considered enacted and is recorded.
+
+## 3a. Runtime cap on `duration_days`
+
+M1.4 stored `duration_days` as a raw integer field on `PolicyData`;
+the DataLoader admits anything in `[0, INT_MAX]`. M1.15 makes that
+integer enter the runtime path — `expires_on` is computed via
+`GameDate::advance_days(int days)`, which is currently a **per-day
+loop**. A hand-rolled `INT_MAX` duration would stall an `apply`
+call for the better part of forever.
+
+`apply_policy_effects` therefore performs a bound check **before**
+any effect pre-flight or apply:
+
+```cpp
+if (policy.duration_days < 0) { /* reject */ }
+if (policy.duration_days > kMaxTrackedPolicyDurationDays) { /* reject */ }
+```
+
+`kMaxTrackedPolicyDurationDays` is exposed in `policy_system.hpp` so
+tests can refer to it:
+
+```cpp
+inline constexpr int kMaxTrackedPolicyDurationDays = 36500;  // ~100 years
+```
+
+Cap rationale: ~100 years is well past any single in-game policy
+horizon the simulation will ever need (the prototype targets 1930-2000;
+70 years is the wallclock budget). The exact boundary value is
+**accepted**: the rule is `> kMax` rejected, `== kMax` allowed —
+pinned by a boundary test.
+
+Layering note: the **DataLoader deliberately does not enforce this
+cap**. `data_loader -> policy_system` would invert the existing
+module direction, and the only practical attack vector is a
+hand-built `PolicyData` (JSON goes through `require_u64`, which
+already excludes negatives). PolicySystem is the **last line of
+defense**; it is exhaustively unit-tested for both bounds.
 
 ## 4. Save format v6 → v7
 
@@ -123,9 +163,9 @@ sequence.
 
 ## 5. Tests
 
-12 new doctest cases (M1.14 was 399 → M1.15 is 411):
+15 new doctest cases (M1.14 was 399 → M1.15 is 414):
 
-`tests/systems/policy_system_test.cpp` (6 cases under the
+`tests/systems/policy_system_test.cpp` (9 cases under the
 "M1.15: duration tracking" section):
 
 - successful enact appends one entry with `expires_on = current_date + duration_days`
@@ -134,6 +174,9 @@ sequence.
 - multiple enacts append in call order
 - faction-zero-match enactment still records the policy
 - only the actor's `active_policies` grows; sibling countries unaffected
+- negative `duration_days` rejected, state unchanged, no append (§3a)
+- `duration_days > kMaxTrackedPolicyDurationDays` rejected, no append (§3a)
+- `duration_days == kMaxTrackedPolicyDurationDays` accepted (boundary, §3a)
 
 `tests/systems/save_system_test.cpp` (6 cases):
 
