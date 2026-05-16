@@ -89,6 +89,29 @@ json country_to_json(const core::CountryState& c) {
     return j;
 }
 
+json faction_to_json(const core::FactionState& f) {
+    // M1.2 schema. Field order is fixed and pinned by tests.
+    json j = json::object();
+    j["id"]              = f.id.value();
+    j["country"]         = f.country.value();
+    j["id_code"]         = f.id_code;
+    j["country_id_code"] = f.country_id_code;
+    j["name"]            = f.name;
+    j["type"]            = f.type;
+    j["support"]         = f.support;
+    j["influence"]       = f.influence;
+    j["radicalism"]      = f.radicalism;
+    j["loyalty"]         = f.loyalty;
+    j["resources"]       = f.resources;
+
+    json pref = json::array();
+    for (const auto& s : f.preferred_policies) {
+        pref.push_back(s);
+    }
+    j["preferred_policies"] = std::move(pref);
+    return j;
+}
+
 json log_entry_to_json(const core::LogEntry& e) {
     json j = json::object();
     j["date"]     = e.date.to_string();
@@ -290,6 +313,108 @@ core::Result<core::CountryState> country_from_json(const json& j,
     return core::Result<core::CountryState>::success(std::move(c));
 }
 
+core::Result<core::FactionState> faction_from_json(const json& j,
+                                                   std::size_t array_index,
+                                                   std::string_view source) {
+    const std::string ctx =
+        std::string(source) + ": factions[" + std::to_string(array_index) + "]";
+
+    if (!j.is_object()) {
+        return core::Result<core::FactionState>::failure(
+            ctx + ": expected JSON object");
+    }
+
+    core::FactionState f;
+
+    auto id_value = require_u64(j, "id", ctx);
+    if (!id_value) {
+        return core::Result<core::FactionState>::failure(std::move(id_value.error()));
+    }
+    using under = core::FactionId::underlying_type;
+    constexpr auto kMaxId =
+        static_cast<std::uint64_t>(std::numeric_limits<under>::max());
+    if (id_value.value() > kMaxId) {
+        return core::Result<core::FactionState>::failure(
+            ctx + ": 'id' is out of range for FactionId (max " +
+            std::to_string(kMaxId) + ")");
+    }
+    f.id = core::FactionId{static_cast<under>(id_value.value())};
+
+    auto country_value = require_u64(j, "country", ctx);
+    if (!country_value) {
+        return core::Result<core::FactionState>::failure(std::move(country_value.error()));
+    }
+    if (country_value.value() > kMaxId) {
+        return core::Result<core::FactionState>::failure(
+            ctx + ": 'country' is out of range for CountryId (max " +
+            std::to_string(kMaxId) + ")");
+    }
+    f.country = core::CountryId{static_cast<under>(country_value.value())};
+
+    auto id_code = require_string(j, "id_code", ctx);
+    if (!id_code) {
+        return core::Result<core::FactionState>::failure(std::move(id_code.error()));
+    }
+    f.id_code = id_code.value();
+
+    auto country_id_code = require_string(j, "country_id_code", ctx);
+    if (!country_id_code) {
+        return core::Result<core::FactionState>::failure(std::move(country_id_code.error()));
+    }
+    f.country_id_code = country_id_code.value();
+
+    auto name = require_string(j, "name", ctx);
+    if (!name) {
+        return core::Result<core::FactionState>::failure(std::move(name.error()));
+    }
+    f.name = name.value();
+
+    auto type = require_string(j, "type", ctx);
+    if (!type) {
+        return core::Result<core::FactionState>::failure(std::move(type.error()));
+    }
+    f.type = type.value();
+
+    // Numeric scalars. Same load_num pattern as country_from_json
+    // (see comment there about no [0,1] enforcement at load time).
+    auto load_num = [&](const char* key, double& dst)
+        -> core::Result<core::FactionState> {
+        auto r = require_number(j, key, ctx);
+        if (!r) {
+            return core::Result<core::FactionState>::failure(std::move(r.error()));
+        }
+        dst = r.value();
+        return core::Result<core::FactionState>::success(core::FactionState{});
+    };
+    if (auto r = load_num("support",    f.support);    !r) return r;
+    if (auto r = load_num("influence",  f.influence);  !r) return r;
+    if (auto r = load_num("radicalism", f.radicalism); !r) return r;
+    if (auto r = load_num("loyalty",    f.loyalty);    !r) return r;
+    if (auto r = load_num("resources",  f.resources);  !r) return r;
+
+    // preferred_policies: required array of strings (may be empty).
+    if (!j.contains("preferred_policies")) {
+        return core::Result<core::FactionState>::failure(
+            ctx + ": missing required field 'preferred_policies'");
+    }
+    const auto& pp = j.at("preferred_policies");
+    if (!pp.is_array()) {
+        return core::Result<core::FactionState>::failure(
+            ctx + ": 'preferred_policies' has wrong type (expected array of strings)");
+    }
+    f.preferred_policies.reserve(pp.size());
+    for (std::size_t i = 0; i < pp.size(); ++i) {
+        if (!pp[i].is_string()) {
+            return core::Result<core::FactionState>::failure(
+                ctx + ": preferred_policies[" + std::to_string(i) +
+                "] is not a string");
+        }
+        f.preferred_policies.push_back(pp[i].get<std::string>());
+    }
+
+    return core::Result<core::FactionState>::success(std::move(f));
+}
+
 core::Result<core::LogEntry> log_entry_from_json(const json& j,
                                                  std::size_t array_index,
                                                  std::string_view source) {
@@ -392,10 +517,17 @@ std::string serialize(const core::GameState& state) {
     }
     root["countries"] = std::move(countries);
 
-    // Reserve container keys for future entity types. Their on-disk
-    // shapes are not pinned yet; M1 will populate them.
+    // factions are populated as of M1.2; provinces / policies / events
+    // remain reserved-empty until their shapes are pinned in later
+    // M1 sub-milestones.
     root["provinces"] = json::array();
-    root["factions"]  = json::array();
+
+    json factions = json::array();
+    for (const auto& f : state.factions) {
+        factions.push_back(faction_to_json(f));
+    }
+    root["factions"] = std::move(factions);
+
     root["policies"]  = json::array();
     root["events"]    = json::array();
 
@@ -509,6 +641,23 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         }
     }
 
+    // factions
+    if (root.contains("factions")) {
+        const auto& arr = root.at("factions");
+        if (!arr.is_array()) {
+            return core::Result<core::GameState>::failure(
+                fmt_err(source_label, "'factions' is not an array"));
+        }
+        state.factions.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            auto f = faction_from_json(arr[i], i, source_label);
+            if (!f) {
+                return core::Result<core::GameState>::failure(std::move(f.error()));
+            }
+            state.factions.push_back(std::move(f).value());
+        }
+    }
+
     // logs
     if (root.contains("logs")) {
         const auto& arr = root.at("logs");
@@ -526,8 +675,8 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         }
     }
 
-    // provinces, factions, policies, events: keys reserved, contents
-    // not yet schema-pinned. Tolerate present-but-empty arrays.
+    // provinces, policies, events: keys reserved, contents not yet
+    // schema-pinned. Tolerate present-but-empty arrays.
     return core::Result<core::GameState>::success(std::move(state));
 }
 

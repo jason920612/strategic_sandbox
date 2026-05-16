@@ -386,6 +386,179 @@ TEST_CASE("load_country: canonical data/countries/germany.json") {
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
 
+// ---------------------------------------------------------------------
+// Faction (M1.2)
+// ---------------------------------------------------------------------
+
+namespace {
+const std::string kCanonicalFactionJson = R"({
+    "id":         "GER_military",
+    "country":    "GER",
+    "type":       "military",
+    "name":       "Reichswehr",
+    "support":    0.45,
+    "influence":  0.70,
+    "radicalism": 0.30,
+    "loyalty":    0.55,
+    "resources":  1.20,
+    "preferred_policies": [
+        "increase_military_budget",
+        "press_censorship"
+    ]
+})";
+}  // namespace
+
+TEST_CASE("parse_faction: full M1.2 shape") {
+    const auto r = dl::parse_faction(kCanonicalFactionJson);
+    REQUIRE(r.ok());
+    const auto& f = r.value();
+    CHECK(f.id_code         == "GER_military");
+    CHECK(f.country_id_code == "GER");
+    CHECK(f.type            == "military");
+    CHECK(f.name            == "Reichswehr");
+    CHECK(f.support    == doctest::Approx(0.45));
+    CHECK(f.influence  == doctest::Approx(0.70));
+    CHECK(f.radicalism == doctest::Approx(0.30));
+    CHECK(f.loyalty    == doctest::Approx(0.55));
+    CHECK(f.resources  == doctest::Approx(1.20));
+    REQUIRE(f.preferred_policies.size() == 2);
+    CHECK(f.preferred_policies[0] == "increase_military_budget");
+    CHECK(f.preferred_policies[1] == "press_censorship");
+    // Numeric ids stay at invalid defaults - caller-assigned.
+    CHECK_FALSE(f.id.valid());
+    CHECK_FALSE(f.country.valid());
+}
+
+TEST_CASE("parse_faction: empty preferred_policies array is allowed") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        "\"preferred_policies\": [\n"
+        "        \"increase_military_budget\",\n"
+        "        \"press_censorship\"\n"
+        "    ]",
+        "\"preferred_policies\": []");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.ok());
+    CHECK(r.value().preferred_policies.empty());
+}
+
+TEST_CASE("parse_faction: missing country is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson, "\"country\":    \"GER\",\n    ", "");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("missing")  != std::string::npos);
+    CHECK(r.error().find("'country'") != std::string::npos);
+}
+
+TEST_CASE("parse_faction: missing type is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson, "\"type\":       \"military\",\n    ", "");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'type'") != std::string::npos);
+}
+
+TEST_CASE("parse_faction: missing preferred_policies is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        ",\n    \"preferred_policies\": [\n"
+        "        \"increase_military_budget\",\n"
+        "        \"press_censorship\"\n"
+        "    ]",
+        "");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("preferred_policies") != std::string::npos);
+}
+
+TEST_CASE("parse_faction: preferred_policies wrong type is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        "\"preferred_policies\": [\n"
+        "        \"increase_military_budget\",\n"
+        "        \"press_censorship\"\n"
+        "    ]",
+        "\"preferred_policies\": \"none\"");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("preferred_policies") != std::string::npos);
+    CHECK(r.error().find("array") != std::string::npos);
+}
+
+TEST_CASE("parse_faction: non-string entry in preferred_policies is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        "\"increase_military_budget\",\n"
+        "        \"press_censorship\"",
+        "\"increase_military_budget\",\n"
+        "        42");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("preferred_policies[1]") != std::string::npos);
+}
+
+TEST_CASE("parse_faction: support above 1.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson, "\"support\":    0.45,", "\"support\":    1.5,");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("support") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")  != std::string::npos);
+}
+
+TEST_CASE("parse_faction: radicalism below 0.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        "\"radicalism\": 0.30,",
+        "\"radicalism\": -0.1,");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("radicalism") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")     != std::string::npos);
+}
+
+TEST_CASE("parse_faction: negative resources is rejected") {
+    const std::string text = replace_first(
+        kCanonicalFactionJson,
+        "\"resources\":  1.20,",
+        "\"resources\":  -0.1,");
+    const auto r = dl::parse_faction(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("resources") != std::string::npos);
+    CHECK(r.error().find(">= 0")      != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("load_faction: canonical data/factions/ger_military.json") {
+    namespace fs = std::filesystem;
+    const fs::path p = fs::path(LEVIATHAN_TEST_DATA_DIR) /
+                       "factions" / "ger_military.json";
+
+    const auto r = dl::load_faction(p);
+    REQUIRE(r.ok());
+    const auto& f = r.value();
+    CHECK(f.id_code         == "GER_military");
+    CHECK(f.country_id_code == "GER");
+    CHECK(f.type            == "military");
+    CHECK(f.name            == "Reichswehr");
+    CHECK(f.support    == doctest::Approx(0.45));
+    CHECK(f.influence  == doctest::Approx(0.70));
+    CHECK(f.radicalism == doctest::Approx(0.30));
+    CHECK(f.loyalty    == doctest::Approx(0.55));
+    CHECK(f.resources  == doctest::Approx(1.20));
+    CHECK(f.preferred_policies.size() == 2);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("load_faction: missing file path is named in the error") {
+    const auto r = dl::load_faction("does-not-exist/faction.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("does-not-exist/faction.json") != std::string::npos);
+}
+
 TEST_CASE("load_simulation_config: missing file names the path") {
     const auto r = dl::load_simulation_config("does-not-exist/sim.json");
     REQUIRE(r.failed());

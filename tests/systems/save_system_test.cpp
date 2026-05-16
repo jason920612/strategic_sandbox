@@ -36,6 +36,7 @@ GameState build_seeded_state() {
     state.rng.seed     = 19300101u;
     state.rng.counter  = 0u;
 
+    // -- countries -----------------------------------------------------
     CountryState germany;
     germany.id           = CountryId{0};
     germany.id_code      = "GER";
@@ -74,6 +75,37 @@ GameState build_seeded_state() {
     france.threat_perception         = 0.40;
     state.countries.push_back(std::move(france));
 
+    // -- factions ------------------------------------------------------
+    leviathan::core::FactionState gm;
+    gm.id              = leviathan::core::FactionId{0};
+    gm.country         = CountryId{0};   // links to Germany above
+    gm.id_code         = "GER_military";
+    gm.country_id_code = "GER";
+    gm.name            = "Reichswehr";
+    gm.type            = "military";
+    gm.support         = 0.45;
+    gm.influence       = 0.70;
+    gm.radicalism      = 0.30;
+    gm.loyalty         = 0.55;
+    gm.resources       = 1.20;
+    gm.preferred_policies = {"increase_military_budget", "press_censorship"};
+    state.factions.push_back(std::move(gm));
+
+    leviathan::core::FactionState fb;
+    fb.id              = leviathan::core::FactionId{1};
+    fb.country         = CountryId{0};
+    fb.id_code         = "GER_bureaucracy";
+    fb.country_id_code = "GER";
+    fb.name            = "Reichsbeamtenschaft";
+    fb.type            = "bureaucracy";
+    fb.support         = 0.55;
+    fb.influence       = 0.60;
+    fb.radicalism      = 0.15;
+    fb.loyalty         = 0.70;
+    fb.resources       = 0.80;
+    fb.preferred_policies = {"administrative_reform"};
+    state.factions.push_back(std::move(fb));
+
     return state;
 }
 
@@ -100,7 +132,7 @@ TEST_CASE("serialize: empty GameState produces a well-formed JSON object") {
     GameState state;
     const std::string text = ss::serialize(state);
     CHECK(text.front() == '{');
-    CHECK(text.find("\"save_version\": 2")          != std::string::npos);
+    CHECK(text.find("\"save_version\": 3")          != std::string::npos);
     CHECK(text.find("\"rng_algorithm_version\": 1") != std::string::npos);
     CHECK(text.find("\"current_date\": \"1930-01-01\"") != std::string::npos);
     // Reserved entity-container keys exist even if empty so a future
@@ -111,20 +143,30 @@ TEST_CASE("serialize: empty GameState produces a well-formed JSON object") {
     CHECK(text.find("\"events\":")    != std::string::npos);
 }
 
-TEST_CASE("serialize: country and log entries appear in the output") {
+TEST_CASE("serialize: country, faction, and log entries appear in the output") {
     GameState state = build_seeded_state();
     lg::log_info(state, "test", "main", "hello",
                  {{"k1", "v1"}, {"k2", "v2"}});
     const std::string text = ss::serialize(state);
 
+    // Countries
     CHECK(text.find("\"id_code\": \"GER\"")     != std::string::npos);
     CHECK(text.find("\"id_code\": \"FRA\"")     != std::string::npos);
     CHECK(text.find("\"gdp\": 100.0")           != std::string::npos);
     CHECK(text.find("\"corruption\": 0.25")     != std::string::npos);
     CHECK(text.find("\"military_power\": 0.5")  != std::string::npos);
-    CHECK(text.find("\"message\": \"hello\"")   != std::string::npos);
-    CHECK(text.find("\"k1\": \"v1\"")           != std::string::npos);
-    CHECK(text.find("\"k2\": \"v2\"")           != std::string::npos);
+
+    // Factions (M1.2)
+    CHECK(text.find("\"id_code\": \"GER_military\"")    != std::string::npos);
+    CHECK(text.find("\"id_code\": \"GER_bureaucracy\"") != std::string::npos);
+    CHECK(text.find("\"type\": \"military\"")           != std::string::npos);
+    CHECK(text.find("\"radicalism\": 0.3")              != std::string::npos);
+    CHECK(text.find("\"increase_military_budget\"")     != std::string::npos);
+
+    // Log
+    CHECK(text.find("\"message\": \"hello\"")  != std::string::npos);
+    CHECK(text.find("\"k1\": \"v1\"")          != std::string::npos);
+    CHECK(text.find("\"k2\": \"v2\"")          != std::string::npos);
 }
 
 // ---------------------------------------------------------------------
@@ -186,6 +228,27 @@ TEST_CASE("round-trip: every documented field survives") {
         CHECK(a.threat_perception         == doctest::Approx(b.threat_perception));
     }
 
+    REQUIRE(after.factions.size() == before.factions.size());
+    for (std::size_t i = 0; i < before.factions.size(); ++i) {
+        const auto& b = before.factions[i];
+        const auto& a = after.factions[i];
+        CHECK(a.id.value()       == b.id.value());
+        CHECK(a.country.value()  == b.country.value());
+        CHECK(a.id_code          == b.id_code);
+        CHECK(a.country_id_code  == b.country_id_code);
+        CHECK(a.name             == b.name);
+        CHECK(a.type             == b.type);
+        CHECK(a.support    == doctest::Approx(b.support));
+        CHECK(a.influence  == doctest::Approx(b.influence));
+        CHECK(a.radicalism == doctest::Approx(b.radicalism));
+        CHECK(a.loyalty    == doctest::Approx(b.loyalty));
+        CHECK(a.resources  == doctest::Approx(b.resources));
+        REQUIRE(a.preferred_policies.size() == b.preferred_policies.size());
+        for (std::size_t k = 0; k < b.preferred_policies.size(); ++k) {
+            CHECK(a.preferred_policies[k] == b.preferred_policies[k]);
+        }
+    }
+
     REQUIRE(after.logs.size() == before.logs.size());
     for (std::size_t i = 0; i < before.logs.size(); ++i) {
         CHECK(after.logs[i].date     == before.logs[i].date);
@@ -244,8 +307,8 @@ const std::string kFullCountryJsonObject = R"(
 }  // namespace
 
 TEST_CASE("deserialize: rejects an unknown save_version") {
-    // 99 is well past every supported version; 2 used to be the unknown
-    // one but it's the current valid version as of M1.1.
+    // 99 is well past every supported version. The current valid
+    // version (kSaveFormatVersion) is now 3 as of M1.2.
     const std::string text = R"({
         "save_version": 99,
         "rng_algorithm_version": 1,
@@ -256,7 +319,7 @@ TEST_CASE("deserialize: rejects an unknown save_version") {
     const auto r = ss::deserialize(text, "fake.json");
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 99") != std::string::npos);
-    CHECK(r.error().find("supports 2") != std::string::npos);
+    CHECK(r.error().find("supports 3") != std::string::npos);
     CHECK(r.error().find("fake.json")  != std::string::npos);
 }
 
@@ -273,12 +336,30 @@ TEST_CASE("deserialize: an old v1 save is rejected loudly") {
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("unsupported save_version 1") != std::string::npos);
-    CHECK(r.error().find("supports 2") != std::string::npos);
+    CHECK(r.error().find("supports 3") != std::string::npos);
+}
+
+TEST_CASE("deserialize: an old v2 save is rejected loudly") {
+    // M1.2 bumped kSaveFormatVersion 2 -> 3. v2 saves had reserved-empty
+    // factions arrays; loading a v3-shaped save with an M1.1 binary
+    // would have silently lost factions, so we gate strictly rather
+    // than rely on the reserved-empty forward-compat note from M0.8.
+    const std::string text = R"({
+        "save_version": 2,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [], "logs": []
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unsupported save_version 2") != std::string::npos);
+    CHECK(r.error().find("supports 3") != std::string::npos);
 }
 
 TEST_CASE("deserialize: rejects an unknown rng_algorithm_version") {
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 99,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -316,7 +397,7 @@ TEST_CASE("deserialize: top-level non-object is rejected") {
 
 TEST_CASE("deserialize: invalid Gregorian current_date is rejected") {
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-02-30",
         "rng": {"seed": 0, "counter": 0}
@@ -331,7 +412,7 @@ TEST_CASE("deserialize: country id above CountryId range is rejected") {
     // CountryId is currently backed by int, so 2^31 must be refused
     // rather than silently truncated. Regression for PR #8 review.
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -356,7 +437,7 @@ TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
     // Boundary case: INT_MAX (2^31 - 1) is the largest representable
     // value and should round-trip without complaint.
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -378,7 +459,7 @@ TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
 
 TEST_CASE("deserialize: country with wrong type names its index") {
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -402,7 +483,7 @@ TEST_CASE("deserialize: country missing a M1.1 required field is rejected") {
     // Drop "legal_tax_burden" from an otherwise-valid country. The
     // loader must reject it rather than silently default to 0.
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -422,9 +503,72 @@ TEST_CASE("deserialize: country missing a M1.1 required field is rejected") {
     CHECK(r.error().find("legal_tax_burden") != std::string::npos);
 }
 
+TEST_CASE("deserialize: faction with wrong type names its index") {
+    // M1.2 regression: corrupted faction must be reported with the
+    // factions[N] context, not the generic field error.
+    const std::string text = R"({
+        "save_version": 3,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "factions": [
+            { "id": 0, "country": 0, "id_code": "GER_military",
+              "country_id_code": "GER", "name": "Reichswehr",
+              "type": "military",
+              "support": "lots", "influence": 0.5, "radicalism": 0.2,
+              "loyalty": 0.5, "resources": 1.0,
+              "preferred_policies": [] }
+        ]
+    })";
+    const auto r = ss::deserialize(text, "bad.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("factions[0]") != std::string::npos);
+    CHECK(r.error().find("support")     != std::string::npos);
+}
+
+TEST_CASE("deserialize: faction missing preferred_policies is rejected") {
+    const std::string text = R"({
+        "save_version": 3,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "factions": [
+            { "id": 0, "country": 0, "id_code": "GER_military",
+              "country_id_code": "GER", "name": "Reichswehr",
+              "type": "military",
+              "support": 0.5, "influence": 0.5, "radicalism": 0.2,
+              "loyalty": 0.5, "resources": 1.0 }
+        ]
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("factions[0]")        != std::string::npos);
+    CHECK(r.error().find("preferred_policies") != std::string::npos);
+}
+
+TEST_CASE("deserialize: faction id above FactionId range is rejected") {
+    const std::string text = R"({
+        "save_version": 3,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "factions": [
+            { "id": 2147483648, "country": 0, "id_code": "BIG",
+              "country_id_code": "GER", "name": "Bad", "type": "x",
+              "support": 0.5, "influence": 0.5, "radicalism": 0.2,
+              "loyalty": 0.5, "resources": 1.0,
+              "preferred_policies": [] }
+        ]
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("factions[0]") != std::string::npos);
+    CHECK(r.error().find("out of range") != std::string::npos);
+}
+
 TEST_CASE("deserialize: unknown severity in log is rejected") {
     const std::string text = R"({
-        "save_version": 2,
+        "save_version": 3,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "rng": {"seed": 0, "counter": 0},
@@ -503,4 +647,21 @@ TEST_CASE("save + load: empty entity containers round-trip cleanly") {
     CHECK(r.value().policies.empty());
     CHECK(r.value().events.empty());
     CHECK(r.value().logs.empty());
+}
+
+TEST_CASE("save + load: factions round-trip via file") {
+    // M1.2 end-to-end: serialise a state with factions, write to disk,
+    // read back, verify the factions vector survives.
+    TempFile tmp("leviathan_test_save_factions.json");
+    GameState before = build_seeded_state();
+
+    REQUIRE(ss::save(before, tmp.path).ok());
+    const auto r = ss::load(tmp.path);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().factions.size() == 2);
+    CHECK(r.value().factions[0].id_code == "GER_military");
+    CHECK(r.value().factions[1].id_code == "GER_bureaucracy");
+    CHECK(r.value().factions[0].type    == "military");
+    CHECK(r.value().factions[1].type    == "bureaucracy");
+    CHECK(r.value().factions[0].preferred_policies.size() == 2);
 }

@@ -1,0 +1,15 @@
+{
+  "id":                "GER_military",
+  "country":           "GER",
+  "type":              "military",
+  "name":              "Reichswehr",
+  "support":           0.45,
+  "influence":         0.70,
+  "radicalism":        0.30,
+  "loyalty":           0.55,
+  "resources":         1.20,
+  "preferred_policies": [
+    "increase_military_budget",
+    "press_censorship"
+  ]
+}

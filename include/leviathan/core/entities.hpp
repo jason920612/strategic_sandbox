@@ -1,10 +1,9 @@
 // Entity placeholders + M1 baseline state.
 //
-// M0 introduced these as ID-only stubs; M1.1 fleshes out CountryState
-// with the runtime numeric fields that M1's economy / stability /
-// budget systems will read and (eventually) write. FactionState,
-// ProvinceState, PolicyData, and EventDefinition remain ID-only stubs
-// in M1.1 and will grow in subsequent sub-milestones (M1.2, M1.4, ...).
+// M0 introduced these as ID-only stubs; M1.1 fleshed out CountryState;
+// M1.2 fleshes out FactionState. ProvinceState, PolicyData, and
+// EventDefinition remain ID-only stubs and will grow in subsequent
+// sub-milestones (M1.4, ...).
 //
 // Naming convention for CountryState numeric fields:
 //   * gdp / tax_revenue / budget_balance      - absolute amounts
@@ -22,6 +21,7 @@
 #define LEVIATHAN_CORE_ENTITIES_HPP
 
 #include <string>
+#include <vector>
 
 #include "leviathan/core/ids.hpp"
 
@@ -61,8 +61,30 @@ struct ProvinceState {
 };
 
 struct FactionState {
-    FactionId id;
-    CountryId country;
+    // Identity
+    FactionId   id;                  // numeric handle (caller-assigned)
+    CountryId   country;             // numeric link to CountryState (caller-resolved)
+    std::string id_code;             // on-disk identifier, e.g. "GER_military"
+    std::string country_id_code;     // links to CountryState::id_code, e.g. "GER"
+    std::string name;                // "German Military"
+    std::string type;                // RFC-010 §2.5: military, bureaucracy,
+                                     // workers, local_elites, media,
+                                     // intelligence, students, technical_elites
+
+    // Behavioural ratios (0..1)
+    double support    = 0.0;   // popular backing for the faction
+    double influence  = 0.0;   // political clout / share of decision power
+    double radicalism = 0.0;   // willingness to escalate
+    double loyalty    = 0.0;   // loyalty to the current regime
+
+    // Absolute resources (>= 0). Units are abstract for now; M1.3
+    // (economy / budget) decides what they map to.
+    double resources  = 0.0;
+
+    // Policy id_codes this faction is inclined to favour. M1.4 will
+    // tighten the semantics once PolicyData has shape; for M1.2 it is
+    // a free-form list of strings that survives the JSON round trip.
+    std::vector<std::string> preferred_policies;
 };
 
 struct PolicyData {

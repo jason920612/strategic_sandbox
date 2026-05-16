@@ -94,6 +94,37 @@ core::Result<core::CountryState> parse_country(
 core::Result<core::CountryState> load_country(
     const std::filesystem::path& path);
 
+// Parse a single-faction JSON document.
+//
+// Expected shape (M1.2):
+//   {
+//     "id":                "GER_military",  // required string code
+//     "country":           "GER",           // required; CountryState id_code link
+//     "type":              "military",      // required (free-form string)
+//     "name":              "Reichswehr",    // required
+//
+//     "support":           0.45,  // required, in [0, 1]
+//     "influence":         0.70,  // required, in [0, 1]
+//     "radicalism":        0.30,  // required, in [0, 1]
+//     "loyalty":           0.55,  // required, in [0, 1]
+//     "resources":         1.20,  // required, >= 0
+//
+//     "preferred_policies": [     // required (may be []); strings only
+//       "increase_military_budget"
+//     ]
+//   }
+//
+// Numeric handles (FactionState::id, FactionState::country) stay at
+// their invalid defaults; the caller assigns numeric IDs after
+// loading. FactionState::country_id_code carries the on-disk link
+// to a CountryState ("GER") for the caller to resolve.
+core::Result<core::FactionState> parse_faction(
+    std::string_view json_text,
+    std::string_view source_label = "<inline>");
+
+core::Result<core::FactionState> load_faction(
+    const std::filesystem::path& path);
+
 }  // namespace leviathan::systems::data_loader
 
 #endif  // LEVIATHAN_SYSTEMS_DATA_LOADER_HPP
