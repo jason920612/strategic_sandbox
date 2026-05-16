@@ -7,17 +7,16 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.12 — economy → stability
-  coupling.** `CountryState` gains `last_gdp_growth_rate`; every
-  `economy::tick` writes it, every `stability::tick` reads it as the
-  RFC-080 §5 `EconomicGrowth` term. The monthly pipeline order is
-  **unchanged** (faction → stability → economy), so the coupling
-  produces an intentional one-month lag — stability sees last
-  month's growth. **Save format bumped v5 → v6** (the first M1
-  save-schema bump). v5 saves rejected by the existing strict
-  version gate.
-- Next sub-milestone candidate: **M1.13 — policy enactment from
-  scenario** (manifest "starting_policies" list + day-0 enactment).
+- Latest shipped sub-milestone: **M1.13 — scenario starting
+  policies.** The scenario manifest gains an optional
+  `starting_policies` array of `{policy, actor}` id_code pairs. After
+  loading countries / factions / policies, the loader applies each
+  entry once via `policy::apply_policy_effects`. M1.11 manifests
+  without the key still load unchanged. **No save-format bump**
+  (stays at v6); no duration queue, no scheduler, no AI.
+- Next sub-milestone candidate: **M1.14** (Diagnostics surfaces
+  `last_gdp_growth_rate`) or **M1.15** (policy duration tracking,
+  would trigger save-format `v6 → v7`).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -39,7 +38,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Twelve sub-milestones merged so far:
+RFC-090 §M1) is in progress. Thirteen sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -57,13 +56,20 @@ test injection); M1.11 scenario loader (`--scenario PATH` flag +
 `scenario_loader::load_into_state` compose the M0.7 / M1.1 / M1.2
 / M1.4 parsers into a manifest-driven loader; `leviathan --days
 365 --scenario data/scenarios/1930_minimal.json` produces a
-non-empty world end-to-end without test-only injection); **M1.12
-economy → stability coupling — new `CountryState::last_gdp_growth_rate`
+non-empty world end-to-end without test-only injection); M1.12
+economy → stability coupling (new `CountryState::last_gdp_growth_rate`
 field, `economy::tick` writes it, `stability::tick` reads it as the
-RFC-080 §5 `EconomicGrowth` term (`kEconomicGrowthWeight = 2.0`).**
-Monthly pipeline order is unchanged, so the coupling has an
-intentional one-month lag. **Save format bumped v5 → v6** (the
-first M1 save-schema bump); old v5 saves rejected.
+RFC-080 §5 `EconomicGrowth` term with `kEconomicGrowthWeight = 2.0`;
+monthly pipeline order unchanged, intentional one-month lag;
+save format bumped v5 → v6, first M1 save-schema bump); **M1.13
+scenario starting policies — manifest gains optional
+`starting_policies` array of `{policy, actor}` id_code pairs;
+loader applies each via `policy::apply_policy_effects` exactly
+once at day 0**, with the new fixture
+`data/scenarios/1930_with_start_policies.json` enacting
+`raise_taxes` + `increase_military_budget` on GER. M1.11 manifests
+without the key still load unchanged. No save-format bump (still
+v6); no duration queue, no scheduler, no AI.
 
 ## Repository layout
 
@@ -79,7 +85,8 @@ first M1 save-schema bump); old v5 saves rejected.
 │                         countries/{germany,france,japan}.json (M0.7-M1.3),
 │                         factions/ger_*.json (M1.2),
 │                         policies/*.json (M1.4),
-│                         scenarios/1930_minimal.json (M1.11)
+│                         scenarios/1930_minimal.json (M1.11),
+│                         scenarios/1930_with_start_policies.json (M1.13)
 ├── tools/                Dev / debug tools, currently empty
 └── docs/                 Per-milestone design notes (m0-N-*.md) +
                           pr-drafts/ (PR write-ups)
@@ -183,23 +190,22 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.12 there are **367 doctest cases**. M0 contributed 179;
+As of M1.13 there are **382 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
-11; M1.10 added 9; M1.11 added 25; M1.12 adds 15 covering the
-**economy → stability coupling**: save-format bump v5 → v6 (v5
-rejected, v6 missing field rejected, round-trip preserves value),
-economy writes (`last_gdp_growth_rate` mirrors `outcome.gdp_growth_rate`;
-gdp=0 still writes; invalid id unchanged), stability reads
-(positive growth raises target, negative lowers, zero matches
-pre-M1.12 target, pathological values clamped, stability doesn't
-write the field), one-month-lag pinned by the monthly-pipeline
-test, ordering-regression test re-derives the M1.9 canonical-order
-target using `last_gdp_growth_rate = 0.0` (only true if stability
-runs before economy), and a runner-scenario test verifies the save
-contains the field. Each `TEST_CASE` is registered with CTest
-individually, so e.g. `ctest -R "last_gdp_growth_rate"` runs just
-the new coupling cases.
+11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 adds 15
+covering the **scenario starting policies**: 7 parse_manifest cases
+(absent key parses empty, happy path, every shape-rejection branch),
+5 load_into_state cases (day-0 apply changes country state,
+unknown-policy and unknown-actor rejections, invalid-target
+propagation, multi-entry cumulative ordering pinned by
+`0.20 + 0.05 + 0.10 = 0.35` exactly), and 3 runner-integration cases
+(`1930_with_start_policies.json` produces `legal_tax_burden = 0.25`
+and `military_power = 0.53` at day 0, same-seed byte-identical
+determinism with 90-day non-empty runs, M1.11 fixture without the
+key still loads cleanly). Save schema remains v6. Each `TEST_CASE`
+is registered with CTest individually, so e.g.
+`ctest -R "starting_policies"` runs just the M1.13 cases.
 
 ## Build options
 

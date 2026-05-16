@@ -67,6 +67,21 @@
 
 namespace leviathan::systems::scenario_loader {
 
+// A scenario can request day-0 policy enactment via the optional
+// `starting_policies` array (M1.13). Each entry names a policy by
+// `id_code` and the country that enacts it. After the manifest's
+// countries / factions / policies have been loaded into GameState,
+// the loader resolves each entry and calls
+// `policy::apply_policy_effects(state, actor, policy)` exactly once.
+//
+// This is NOT a duration queue, NOT a scheduler, NOT AI. It only
+// runs at load time. Subsequent monthly pipeline calls do not look
+// at this list.
+struct StartingPolicy {
+    std::string policy_id_code;  // matches a loaded PolicyData::id_code
+    std::string actor_id_code;   // matches a loaded CountryState::id_code
+};
+
 // Parsed manifest. Paths are stored verbatim from JSON; resolving
 // them against a base directory is the caller's job (or use
 // `load_into_state`, which does it).
@@ -74,13 +89,20 @@ struct ScenarioManifest {
     std::vector<std::filesystem::path> countries;
     std::vector<std::filesystem::path> factions;
     std::vector<std::filesystem::path> policies;
+    // M1.13: optional. Missing key in JSON => empty vector. Manifests
+    // authored before M1.13 (no `starting_policies` field) are
+    // accepted unchanged.
+    std::vector<StartingPolicy> starting_policies;
 };
 
 // Summary returned from a successful `load_into_state`.
 struct ScenarioLoadOutcome {
-    int countries_loaded = 0;
-    int factions_loaded  = 0;
-    int policies_loaded  = 0;
+    int countries_loaded         = 0;
+    int factions_loaded          = 0;
+    int policies_loaded          = 0;
+    // M1.13: count of `starting_policies` entries that were applied
+    // successfully (each entry = one apply_policy_effects call).
+    int starting_policies_applied = 0;
 };
 
 // Parse a scenario manifest from raw JSON text.
@@ -95,6 +117,11 @@ struct ScenarioLoadOutcome {
 //   * `scenario.countries`, `scenario.factions`, `scenario.policies`
 //     missing or not an array.
 //   * Any array element that is not a string.
+//   * (M1.13) If `scenario.starting_policies` is present and not an
+//     array, OR any entry is not an object with string `policy` and
+//     `actor` fields, fail with the offending index.
+//   * (M1.13) `scenario.starting_policies` may be absent; this
+//     parses as an empty vector (no day-0 enactments).
 core::Result<ScenarioManifest> parse_manifest(
     std::string_view json_text,
     std::string_view source_label = "<inline>");
@@ -113,6 +140,14 @@ core::Result<ScenarioManifest> parse_manifest(
 //     non-empty before the call.
 //   * Any of the validation rules in the header comment is violated
 //     (duplicate id_code, missing faction.country reference).
+//   * (M1.13) Any `starting_policies` entry names a `policy` id_code
+//     that doesn't match a loaded policy, or an `actor` id_code that
+//     doesn't match a loaded country.
+//   * (M1.13) Any `policy::apply_policy_effects` call fails (e.g.,
+//     a policy effect targets an unknown country field). The error
+//     bubbles up unchanged; M1.5 already guarantees apply is atomic
+//     per-call, but day-0 enactments earlier in the list have
+//     already mutated state.
 //
 // On any failure the state's vectors are left in whatever partial
 // state the loader produced: M1.11 documents this rather than
