@@ -1,0 +1,26 @@
+{
+  "scenario": {
+    "countries": [
+      "countries/germany.json",
+      "countries/france.json",
+      "countries/japan.json"
+    ],
+    "factions": [
+      "factions/ger_military.json",
+      "factions/ger_workers.json",
+      "factions/ger_bureaucracy.json"
+    ],
+    "policies": [
+      "policies/increase_military_budget.json",
+      "policies/cut_military_budget.json",
+      "policies/raise_taxes.json",
+      "policies/lower_taxes.json",
+      "policies/expand_welfare.json",
+      "policies/increase_education.json",
+      "policies/administrative_reform.json",
+      "policies/intelligence_expansion.json",
+      "policies/press_censorship.json",
+      "policies/press_freedom.json"
+    ]
+  }
+}
