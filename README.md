@@ -7,7 +7,11 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.8 — economy month-end tick (minimal)**
+- Latest shipped sub-milestone: **M1.8 — economy month-end tick (minimal)** (merged on `main`)
+- Next sub-milestone: **M1.9 — monthly pipeline** (composes
+  `policy::apply_policy_effects` + `faction::react` + `stability::tick`
+  + `economy::tick` into a single explicit caller; runner integration
+  decided in that PR).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -26,8 +30,20 @@ Two runs with the same options produce byte-identical save, log,
 and summary-CSV files. M0 closes with a full end-to-end integration
 test (`tests/integration/m0_end_to_end_test.cpp`) that loads three
 country JSON files, ticks 365 days, saves, loads back, and verifies
-the round-trip. **Milestone 1 (single-country internal politics
-prototype, RFC-090 §M1) is the next phase.**
+the round-trip.
+
+**Milestone 1** (single-country internal politics prototype,
+RFC-090 §M1) is in progress. Eight sub-milestones merged so far:
+M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
+(seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
+PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
+gameplay effect, atomic via pre-flight); M1.6 FactionSystem `react`
+(linear-toward-equilibrium loyalty / support drift); M1.7
+StabilitySystem `tick` (first country-side dynamic, stripped-down
+RFC-080 §5); M1.8 EconomySystem `tick` (RFC-080 §3 tax revenue,
+expenditure = `gdp × sum_budget × 0.20`, stripped-down RFC-080 §4
+GDP growth). All four building blocks the M1.9 monthly pipeline
+will compose now exist as explicit-call free functions.
 
 ## Repository layout
 

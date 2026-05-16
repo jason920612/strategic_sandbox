@@ -50,6 +50,21 @@ If you're new to the codebase:
    each other and each one tries to call out the rules a future
    contributor must not silently break.
 
+## What's next
+
+**M1.9 — monthly pipeline.** With M1.5 / M1.6 / M1.7 / M1.8 merged,
+all four explicit-call building blocks exist
+(`policy::apply_policy_effects`, `faction::react`, `stability::tick`,
+`economy::tick`). M1.9 composes them into a single explicit caller and
+decides the canonical ordering, the storage for `last_gdp_growth_rate`
+(probably a new CountryState field — would trigger a save-format
+version bump), and whether to wire the pipeline onto the M0.9 runner's
+`TickResult.month_changed` signal in the same PR.
+
+Per the M1 pacing rule, M1.9 is **not** started until the previous
+sub-milestone (M1.8) is merged. M1.8 merged 2026-05-16; M1.9 awaits a
+go-ahead.
+
 ## When to add a new file
 
 A new design note belongs here whenever a PR lands that does any of:

@@ -63,6 +63,14 @@ M0 / M1 中落地，部分仍是未來工作：
   / WarDamage 與 RFC-080 §5 的 WelfareSatisfaction / EconomicGrowth /
   InequalityProxy / WarWeariness / BudgetCrisis 仍未實作 —— 待
   monthly pipeline 與後續通膨 / 戰爭 / 福利系統補上。
+- **M1.9（下一步，未開始）** — Monthly pipeline。將 M1.5 + M1.6 +
+  M1.7 + M1.8 的四個明確呼叫 free function 合成單一 caller，依
+  RFC-090 §M1 task 1.15 規畫的月底節律執行。M1.9 PR 內要決定的：
+  canonical ordering（多半是 policy → faction → economy →
+  stability，讓 stability 讀到剛更新的 economy growth）、
+  `last_gdp_growth_rate` 存哪（多半 CountryState 新欄位 → 觸發
+  `kSaveFormatVersion` v6）、要不要在同一個 PR 把 monthly_tick 接到
+  M0.9 runner 的 `TickResult.month_changed` 訊號。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
