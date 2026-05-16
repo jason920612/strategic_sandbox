@@ -44,3 +44,28 @@ TEST_CASE("Result with custom error type") {
     REQUIRE(r.failed());
     CHECK(r.error() == ErrCode::kMalformed);
 }
+
+TEST_CASE("Result supports std::string value with default std::string error") {
+    // Default E is std::string, so Result<std::string> means both
+    // alternatives have the same type. Indexing the variant by position
+    // (not by type) keeps this unambiguous.
+    auto ok = Result<std::string>::success("hello");
+    REQUIRE(ok.ok());
+    CHECK(ok.value() == "hello");
+
+    auto err = Result<std::string>::failure("bad");
+    REQUIRE(err.failed());
+    CHECK(err.error() == "bad");
+}
+
+TEST_CASE("Result with identical T and E discriminates by which factory was used") {
+    // Using the same type for value and error is allowed; the discriminator
+    // is the constructor call site, not the type.
+    auto a = Result<std::string, std::string>::success("payload");
+    auto b = Result<std::string, std::string>::failure("payload");
+
+    CHECK(a.ok());
+    CHECK(b.failed());
+    CHECK(a.value() == "payload");
+    CHECK(b.error() == "payload");
+}

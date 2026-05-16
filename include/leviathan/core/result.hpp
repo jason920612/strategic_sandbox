@@ -13,17 +13,17 @@
 
 #include <cassert>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
 namespace leviathan::core {
 
+// T == E is permitted (e.g. Result<std::string> with the default error
+// type). The implementation indexes the underlying std::variant by
+// position (`std::in_place_index`, `std::get<0/1>`), never by type, so
+// there is no ambiguity even when the two alternatives are identical.
 template <typename T, typename E = std::string>
 class Result {
-    static_assert(!std::is_same_v<T, E>,
-                  "Result<T, E> requires T and E to be distinct types");
-
 public:
     static Result success(T value) {
         return Result(std::in_place_index<0>, std::move(value));
