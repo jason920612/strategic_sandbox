@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <limits>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -401,6 +402,38 @@ TEST_CASE("apply: unrecognised op is rejected") {
 // =====================================================================
 // Atomicity
 // =====================================================================
+
+TEST_CASE("apply: non-finite effect value is rejected at pre-flight") {
+    // PR #16 review: a manually constructed PolicyData carrying NaN /
+    // Inf must not slip past the DataLoader and corrupt state. The
+    // DataLoader already rejects non-finite via require_number; this
+    // test pins the same guarantee at the PolicySystem entry point.
+    GameState state;
+    state.countries.push_back(germany_baseline());
+    const auto before_stability = state.countries[0].stability;
+
+    PolicyData p;
+    p.effects.push_back({"country.stability", "add",
+                         std::numeric_limits<double>::quiet_NaN()});
+
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not finite") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(before_stability));
+}
+
+TEST_CASE("apply: positive infinity effect value is rejected at pre-flight") {
+    GameState state;
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.effects.push_back({"country.gdp", "add",
+                         std::numeric_limits<double>::infinity()});
+
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
 
 TEST_CASE("apply: a failure in any effect leaves state unchanged") {
     GameState state;

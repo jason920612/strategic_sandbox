@@ -222,6 +222,16 @@ core::Result<ApplyOutcome> apply_policy_effects(
     for (std::size_t i = 0; i < policy.effects.size(); ++i) {
         const auto& e = policy.effects[i];
 
+        // PR #16 review: reject NaN / Inf at pre-flight so a manually
+        // constructed PolicyData can't slip a non-finite value past
+        // the DataLoader (which already rejects them) and corrupt
+        // state at apply time.
+        if (!std::isfinite(e.value)) {
+            return core::Result<ApplyOutcome>::failure(
+                "effects[" + std::to_string(i) +
+                "]: value is not finite");
+        }
+
         if (!op_recognised(e.op)) {
             return core::Result<ApplyOutcome>::failure(
                 "effects[" + std::to_string(i) + "]: unrecognised op '" +
