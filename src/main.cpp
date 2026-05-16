@@ -1,9 +1,8 @@
 // Stub entry point.
 //
-// M0.7 demos the JSON data loader: parse simulation.json + a country
-// JSON, build a GameState via make_game_state, tick a few days, and
-// dump the JSONL log. Failed reads are routed through LoggingSystem
-// by the caller - DataLoader itself never touches the log.
+// M0.8 extends the M0.7 demo with save / load: after loading config
+// and a country, ticking, and emitting logs, the state is written to
+// out/save.json, then read back, and the round-trip is verified.
 
 #include <cstdlib>
 #include <filesystem>
@@ -15,6 +14,7 @@
 #include "leviathan/core/simulation_config.hpp"
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/logging_system.hpp"
+#include "leviathan/systems/save_system.hpp"
 #include "leviathan/systems/time_system.hpp"
 
 namespace {
@@ -22,9 +22,6 @@ namespace {
 constexpr const char* kProjectName    = "Project Leviathan";
 constexpr const char* kProjectVersion = "0.1.0";
 
-// Resolve a path relative to the project root or fall back to CWD.
-// The headless runner in M0.9 will replace this with a real --config
-// argument. For now we accept an optional argv[1] override.
 std::filesystem::path config_path(int argc, char** argv) {
     if (argc > 1) return argv[1];
     return std::filesystem::path("data") / "config" / "simulation.json";
@@ -34,6 +31,11 @@ std::filesystem::path country_path() {
     return std::filesystem::path("data") / "countries" / "germany.json";
 }
 
+std::filesystem::path save_path(int argc, char** argv) {
+    if (argc > 2) return argv[2];
+    return std::filesystem::path("out") / "save.json";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -41,73 +43,71 @@ int main(int argc, char** argv) {
     namespace lt  = leviathan::systems::time;
     namespace lg  = leviathan::systems::logging;
     namespace dl  = leviathan::systems::data_loader;
+    namespace ss  = leviathan::systems::save_system;
 
     std::cout << kProjectName << " " << kProjectVersion << "\n"
-              << "Milestone 0.7 - JSON data loader.\n";
+              << "Milestone 0.8 - save / load.\n";
 
-    // ---- Load the simulation config -------------------------------------
-    const auto cfg_path = config_path(argc, argv);
-    auto cfg_result = dl::load_simulation_config(cfg_path);
-
-    SimulationConfig cfg;  // falls back to struct defaults on failure
+    // ---- Load config ----------------------------------------------------
+    const auto cfg_p = config_path(argc, argv);
+    auto cfg_result  = dl::load_simulation_config(cfg_p);
+    SimulationConfig cfg;
     if (cfg_result.ok()) {
         cfg = std::move(cfg_result).value();
-        std::cout << "Loaded config from " << cfg_path.string() << "\n";
+        std::cout << "Loaded config from " << cfg_p.string() << "\n";
     } else {
-        // The loader returned Result::failure; OUR job (not the loader's)
-        // is to route that into the log. DataLoader and LoggingSystem
-        // remain decoupled.
-        std::cerr << "WARN: " << cfg_result.error() << "\n"
-                  << "Falling back to default simulation config.\n";
+        std::cerr << "WARN: " << cfg_result.error() << "\n";
     }
-
     GameState state = make_game_state(cfg);
-    if (cfg_result.failed()) {
-        lg::log_warn(state, "config", "main",
-                     "Falling back to default config",
-                     {{"loader_error", cfg_result.error()}});
-    } else {
-        lg::log_info(state, "config", "main",
-                     "Simulation config loaded",
-                     {{"path", cfg_path.string()}});
-    }
 
     // ---- Load a country -------------------------------------------------
-    const auto country_p = country_path();
-    auto country_result = dl::load_country(country_p);
+    auto country_result = dl::load_country(country_path());
     if (country_result.ok()) {
-        CountryState country = std::move(country_result).value();
-        // The numeric id is assigned by us, the caller. DataLoader does
-        // not pick one - that's not its job.
-        country.id = CountryId{0};
-        state.countries.push_back(std::move(country));
-
-        const auto& c = state.countries.back();
-        lg::log_info(state, "country", "main",
-                     "Country loaded",
-                     {{"id_code", c.id_code}, {"name", c.name}});
-        std::cout << "Loaded country: " << c.id_code
-                  << " (" << c.name << ", GDP "
-                  << c.initial_gdp << ", stability "
-                  << c.initial_stability << ")\n";
+        CountryState c = std::move(country_result).value();
+        c.id = CountryId{0};
+        state.countries.push_back(std::move(c));
+        std::cout << "Loaded country: " << state.countries.front().id_code << "\n";
     } else {
-        lg::log_error(state, "country", "main",
-                      "Country load failed",
-                      {{"loader_error", country_result.error()}});
-        std::cerr << "ERROR: " << country_result.error() << "\n";
+        std::cerr << "WARN: " << country_result.error() << "\n";
     }
 
-    // ---- Tick a few days so the log carries a small story ---------------
+    // ---- Tick a few days and log ----------------------------------------
+    lg::log_info(state, "lifecycle", "main", "simulation start");
     for (int i = 0; i < 5; ++i) {
         lt::advance_one_day(state);
     }
-    lg::log_info(state, "time", "main",
-                 "Advanced 5 days from start");
+    lg::log_info(state, "time", "main", "Advanced 5 days from start");
 
-    std::cout << "\n--- JSONL log ---\n";
-    lg::export_jsonl(std::cout, state);
-    std::cout << "\nFinal current_date: " << state.current_date.to_string()
-              << "\nLog entries       : " << state.logs.size() << "\n";
+    // ---- Save -----------------------------------------------------------
+    const auto sp = save_path(argc, argv);
+    const auto save_r = ss::save(state, sp);
+    if (!save_r.ok()) {
+        std::cerr << "ERROR: " << save_r.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    std::cout << "Saved to: " << sp.string() << "\n";
 
-    return EXIT_SUCCESS;
+    // ---- Load it back and verify ----------------------------------------
+    const auto load_r = ss::load(sp);
+    if (!load_r.ok()) {
+        std::cerr << "ERROR: " << load_r.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const GameState& reloaded = load_r.value();
+
+    const bool date_ok      = (reloaded.current_date == state.current_date);
+    const bool seed_ok      = (reloaded.rng.seed     == state.rng.seed);
+    const bool counter_ok   = (reloaded.rng.counter  == state.rng.counter);
+    const bool countries_ok = (reloaded.countries.size() == state.countries.size());
+    const bool logs_ok      = (reloaded.logs.size()      == state.logs.size());
+
+    std::cout << "\n--- Round-trip check ---\n"
+              << "  current_date matches : " << (date_ok      ? "yes" : "NO") << "\n"
+              << "  rng.seed matches     : " << (seed_ok      ? "yes" : "NO") << "\n"
+              << "  rng.counter matches  : " << (counter_ok   ? "yes" : "NO") << "\n"
+              << "  countries.size match : " << (countries_ok ? "yes" : "NO") << "\n"
+              << "  logs.size match      : " << (logs_ok      ? "yes" : "NO") << "\n";
+
+    return (date_ok && seed_ok && counter_ok && countries_ok && logs_ok)
+        ? EXIT_SUCCESS : EXIT_FAILURE;
 }
