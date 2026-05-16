@@ -7,7 +7,7 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.9 — headless simulation runner**
+- Current sub-milestone: **M0.10 — diagnostics output**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is still a passive container. Systems so far:
@@ -15,13 +15,16 @@
 `leviathan::systems::random` (deterministic splitmix64 RNG, no
 `<random>`); `leviathan::systems::logging` (explicit-only logging
 with byte-stable JSONL); `leviathan::systems::data_loader` (JSON
-config + country parsers via nlohmann/json); `leviathan::systems::save_system`
-(JSON round-trip with `save_version` / `rng_algorithm_version` gates);
-and now `leviathan::systems::runner`, which wires those into a real
-CLI (`leviathan --days N [--config ...] [--seed ...] [--output ...]`).
-Two runs with the same options produce byte-identical save and log
-files. The CSV / diagnostics output milestones (M0.10, M0.11) are
-the last pieces of M0.
+config + country parsers via nlohmann/json);
+`leviathan::systems::save_system` (JSON round-trip with `save_version`
+/ `rng_algorithm_version` gates); `leviathan::systems::runner`
+(CLI: `leviathan --days N [--config ...] [--seed ...] [--output ...]
+[--summary-csv ...]`); and now `leviathan::systems::diagnostics`
+(observation-only `snapshot()` + summary CSV + `sanity_check()`
+covering invalid date, invalid CountryId, duplicate CountryId).
+Two runs with the same options produce byte-identical save, log,
+**and summary CSV** files. M0.11 (integration test) is the last
+piece of M0.
 
 ## Repository layout
 
@@ -93,7 +96,8 @@ on Windows).
     --seed 12345 \
     --output out/ \
     --save out/save.json \
-    --log out/events.jsonl
+    --log out/events.jsonl \
+    --summary-csv out/summary.csv
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -105,14 +109,15 @@ Outputs (paths can be overridden):
 
 | File | Format | Source |
 |------|--------|--------|
-| `out/save.json`     | Pretty-printed save (M0.8) | Round-trippable with `save_system::load` |
-| `out/events.jsonl`  | One JSON object per line   | M0.6 logging exporter |
-| stdout              | Plain-text run summary     | start / end dates, log count, output paths |
+| `out/save.json`     | Pretty-printed save (M0.8)            | Round-trippable with `save_system::load` |
+| `out/events.jsonl`  | One JSON object per line              | M0.6 logging exporter |
+| `out/summary.csv`   | Per-snapshot CSV (M0.10, optional)    | `--summary-csv PATH` ; columns: `date,country_count,log_count,seed` |
+| stdout              | Plain-text run summary                | start / end dates, log count, sanity-issue count, output paths |
 
 **Determinism**: the same `--config` + `--days` + `--seed` produces
-byte-identical `save.json` and `events.jsonl`. The
-`run: same seed produces byte-identical save and log files` test in
-`tests/systems/runner_test.cpp` pins this.
+byte-identical `save.json`, `events.jsonl`, **and `summary.csv`**.
+Pinned by tests in `tests/systems/runner_test.cpp`
+(`byte-identical`, `summary-csv same-seed`).
 
 The runner ticks an empty world (no countries, factions, policies)
 in M0.9. Loading countries from a directory will land in a later PR.
@@ -129,14 +134,15 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.9 there are ~156 doctest cases covering all foundational
+As of M0.10 there are ~178 doctest cases covering all foundational
 types, TimeSystem, RandomService, LoggingSystem, DataLoader,
-SaveSystem, and Runner (arg-parse happy and error paths, 3-day and
-365-day end-to-end runs, output-dir auto-create, `--seed` override,
-and the determinism check: same seed produces **byte-identical**
-save and log files). Each `TEST_CASE` is registered with CTest
-individually, so e.g. `ctest -R "byte-identical"` runs just the
-determinism guard.
+SaveSystem, Runner, and Diagnostics (`snapshot` + CSV format pin,
+sanity checks for invalid date / invalid CountryId / duplicate
+CountryId, `--summary-csv` end-to-end including same-seed
+byte-identical CSV, and the M0.9 byte-identical guarantee
+regression-tested against the new sanity-check integration). Each
+`TEST_CASE` is registered with CTest individually, so e.g.
+`ctest -R "duplicate"` runs just the duplicate-id detection.
 
 ## Build options
 
