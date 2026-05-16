@@ -34,6 +34,7 @@ add_executable(leviathan_tests
     core/string_utils_test.cpp
     core/simulation_config_test.cpp
     core/game_state_test.cpp
+    systems/logging_system_test.cpp
     systems/random_service_test.cpp
     systems/time_system_test.cpp
 )

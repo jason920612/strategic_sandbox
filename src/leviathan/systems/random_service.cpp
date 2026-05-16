@@ -128,6 +128,11 @@ std::size_t weighted_choice(core::RandomState& rng,
                "weighted_choice: weights must be non-negative");
         total += w;
     }
+    // Even if every individual weight is finite, the sum can saturate to
+    // +inf if the caller hands us a vector of enormous values. Catch that
+    // up front rather than producing a meaningless choice. (PR #5 review.)
+    assert(std::isfinite(total) &&
+           "weighted_choice: sum of weights overflowed to non-finite");
 
     if (total <= 0.0) {
         // All-zero case. Still consume exactly one draw so the caller's
