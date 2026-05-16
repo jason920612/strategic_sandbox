@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -209,11 +210,22 @@ core::Result<core::CountryState> country_from_json(const json& j,
 
     core::CountryState c;
 
-    auto id_signed = require_u64(j, "id", ctx);
-    if (!id_signed) {
-        return core::Result<core::CountryState>::failure(std::move(id_signed.error()));
+    auto id_value = require_u64(j, "id", ctx);
+    if (!id_value) {
+        return core::Result<core::CountryState>::failure(std::move(id_value.error()));
     }
-    c.id = core::CountryId{static_cast<int>(id_signed.value())};
+    // CountryId::underlying_type is int. A save with an id larger than
+    // INT_MAX would silently truncate under static_cast, so reject it
+    // up front rather than producing a corrupted CountryId.
+    using under = core::CountryId::underlying_type;
+    constexpr auto kMaxId =
+        static_cast<std::uint64_t>(std::numeric_limits<under>::max());
+    if (id_value.value() > kMaxId) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": 'id' is out of range for CountryId (max " +
+            std::to_string(kMaxId) + ")");
+    }
+    c.id = core::CountryId{static_cast<under>(id_value.value())};
 
     auto id_code = require_string(j, "id_code", ctx);
     if (!id_code) {

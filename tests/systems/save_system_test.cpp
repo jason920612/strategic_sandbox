@@ -262,6 +262,47 @@ TEST_CASE("deserialize: invalid Gregorian current_date is rejected") {
     CHECK(r.error().find("1930-02-30") != std::string::npos);
 }
 
+TEST_CASE("deserialize: country id above CountryId range is rejected") {
+    // CountryId is currently backed by int, so 2^31 must be refused
+    // rather than silently truncated. Regression for PR #8 review.
+    const std::string text = R"({
+        "save_version": 1,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [
+            { "id": 2147483648, "id_code": "BIG", "name": "Bad",
+              "display_name": "Bad", "initial_gdp": 1.0,
+              "initial_stability": 0.5 }
+        ]
+    })";
+    const auto r = ss::deserialize(text, "bad-save.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("countries[0]") != std::string::npos);
+    CHECK(r.error().find("id")           != std::string::npos);
+    CHECK(r.error().find("out of range") != std::string::npos);
+}
+
+TEST_CASE("deserialize: country id at exactly INT_MAX is accepted") {
+    // Boundary case: INT_MAX (2^31 - 1) is the largest representable
+    // value and should round-trip without complaint.
+    const std::string text = R"({
+        "save_version": 1,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [
+            { "id": 2147483647, "id_code": "MAX", "name": "Max",
+              "display_name": "Max", "initial_gdp": 1.0,
+              "initial_stability": 0.5 }
+        ]
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().countries.size() == 1);
+    CHECK(r.value().countries.front().id.value() == 2147483647);
+}
+
 TEST_CASE("deserialize: country with wrong type names its index") {
     const std::string text = R"({
         "save_version": 1,
