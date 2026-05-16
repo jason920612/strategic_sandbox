@@ -5,20 +5,29 @@
 // through saves, validating shape. This is where numbers actually
 // change.
 //
-// Scope per the M1.4 review:
+// Scope per the M1.4 review (unchanged through M1.15):
 //   * Targets: country.<field>, country.budget.<category>,
 //              faction:<type>.<field>
 //   * Ops:     "add", "set"
-//   * NO duration queue (effects are instantaneous)
+//   * Effects are instantaneous (NO time-spread application).
 //   * NO AI / automatic enactment
 //   * NO event integration
 //   * NO faction.preferred_policies evaluation
+//
+// M1.15 adds duration TRACKING (not scheduling): each successful
+// apply records an `ActivePolicy{policy.id_code, current_date +
+// duration_days}` in `state.countries[actor].active_policies`. The
+// list is append-only in M1.15 - no scheduler removes expired
+// entries and nothing reverts the effects. The list is what later
+// systems (UI, AI, expiration sweep) will read.
 //
 // Atomicity:
 //   apply_policy_effects pre-flight-checks every effect (target
 //   resolution, op recognition) BEFORE mutating any state. If any
 //   effect fails to resolve, the function returns Result::failure
-//   and state is untouched. Otherwise every effect applies in order.
+//   and state is untouched (NO active_policies entry is added).
+//   Otherwise every effect applies in order and exactly one
+//   ActivePolicy entry is appended.
 
 #ifndef LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP
 #define LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP
@@ -29,6 +38,16 @@
 #include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::policy {
+
+// Runtime cap on `PolicyData::duration_days`. M1.4 stored it as a raw
+// integer; M1.15 made it enter the runtime path
+// (`GameDate::advance_days`, a per-day loop), so a hand-rolled
+// `INT_MAX` duration would stall an apply call indefinitely. We reject
+// anything beyond ~100 years at apply time; the DataLoader does NOT
+// enforce this cap because data_loader -> policy_system would invert
+// the existing module layering. PolicySystem is the last line of
+// defense and is exhaustively unit-tested for both bounds.
+inline constexpr int kMaxTrackedPolicyDurationDays = 36500;  // ~100 years
 
 struct ApplyOutcome {
     // Count of effects that were resolved AND applied. Equal to
@@ -59,6 +78,8 @@ struct ApplyOutcome {
 //
 // Failure cases:
 //   - actor is not a valid index into state.countries
+//   - policy.duration_days is negative or exceeds
+//     kMaxTrackedPolicyDurationDays (M1.15 runtime cap, see above)
 //   - any effect has an unrecognised op or target path
 //   - any effect target's <field> name is unknown
 // On failure, state is unchanged.

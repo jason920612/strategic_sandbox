@@ -4,6 +4,7 @@
 #include <string>
 
 #include "leviathan/core/entities.hpp"
+#include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/policy_system.hpp"
@@ -12,6 +13,7 @@ using leviathan::core::CountryId;
 using leviathan::core::CountryState;
 using leviathan::core::FactionId;
 using leviathan::core::FactionState;
+using leviathan::core::GameDate;
 using leviathan::core::GameState;
 using leviathan::core::PolicyData;
 using leviathan::core::PolicyEffect;
@@ -463,4 +465,191 @@ TEST_CASE("apply: a failure in any effect leaves state unchanged") {
     CHECK(state.countries[0].military_power == doctest::Approx(before_military));
     CHECK(state.countries[0].corruption     == doctest::Approx(before_corruption));
     CHECK(state.factions[0].support         == doctest::Approx(before_fac_support));
+}
+
+// =====================================================================
+// M1.15: duration tracking (active_policies side effect)
+// =====================================================================
+
+TEST_CASE("M1.15 apply: successful enact appends one ActivePolicy to the actor") {
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+    REQUIRE(state.countries[0].active_policies.empty());
+
+    PolicyData p;
+    p.id_code       = "raise_taxes";
+    p.duration_days = 60;
+    p.effects.push_back({"country.legal_tax_burden", "add", 0.05});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    REQUIRE(state.countries[0].active_policies.size() == 1);
+    CHECK(state.countries[0].active_policies[0].policy_id_code == "raise_taxes");
+    // 1930-01-01 + 60 days = 1930-03-02.
+    CHECK(state.countries[0].active_policies[0].expires_on
+          == GameDate(1930, 3, 2));
+}
+
+TEST_CASE("M1.15 apply: pre-flight failure does NOT append to active_policies") {
+    // Atomicity property covers the new side effect too: a rejected
+    // policy must not silently leave a tracking record behind.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "ghost_policy";
+    p.duration_days = 30;
+    p.effects.push_back({"country.stability",      "add", 0.10});
+    p.effects.push_back({"country.does_not_exist", "add", 0.05});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).failed());
+    CHECK(state.countries[0].active_policies.empty());
+}
+
+TEST_CASE("M1.15 apply: duration_days = 0 still records the policy with same-day expiry") {
+    // The duration_days field is allowed to be zero (DataLoader admits
+    // it). Tracking the enactment is still useful (UI / diagnostics);
+    // expires_on simply equals current_date.
+    GameState state;
+    state.current_date = GameDate(1930, 6, 15);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "instant_policy";
+    p.duration_days = 0;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    REQUIRE(state.countries[0].active_policies.size() == 1);
+    CHECK(state.countries[0].active_policies[0].expires_on
+          == GameDate(1930, 6, 15));
+}
+
+TEST_CASE("M1.15 apply: multiple enacts append in call order") {
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData a;
+    a.id_code       = "raise_taxes";
+    a.duration_days = 60;
+    a.effects.push_back({"country.legal_tax_burden", "add", 0.01});
+
+    PolicyData b;
+    b.id_code       = "increase_education";
+    b.duration_days = 120;
+    b.effects.push_back({"country.budget.education", "add", 0.01});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, a).ok());
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, b).ok());
+
+    REQUIRE(state.countries[0].active_policies.size() == 2);
+    CHECK(state.countries[0].active_policies[0].policy_id_code == "raise_taxes");
+    CHECK(state.countries[0].active_policies[1].policy_id_code == "increase_education");
+}
+
+TEST_CASE("M1.15 apply: faction-zero-match enactment still records the policy") {
+    // The faction broadcast may legitimately match zero factions (e.g.
+    // a "tax" policy actor that has no workers faction yet). The
+    // enactment still counts; tracking records it.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+    state.factions.push_back(faction(0, CountryId{0}, "workers", 0.50));
+
+    PolicyData p;
+    p.id_code       = "press_censorship";
+    p.duration_days = 90;
+    p.effects.push_back({"faction:military.support", "add", -0.05});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    REQUIRE(state.countries[0].active_policies.size() == 1);
+    CHECK(state.countries[0].active_policies[0].policy_id_code == "press_censorship");
+}
+
+TEST_CASE("M1.15 apply: negative duration_days is rejected without mutation") {
+    // Pre-flight regression: DataLoader uses require_u64 so JSON cannot
+    // smuggle a negative duration, but apply_policy_effects must still
+    // refuse a hand-built PolicyData with duration_days < 0 rather than
+    // hand it to GameDate::advance_days (which has a non-negative
+    // precondition).
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "bad_duration";
+    p.duration_days = -1;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    const auto before_stability = state.countries[0].stability;
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duration_days") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(before_stability));
+    CHECK(state.countries[0].active_policies.empty());
+}
+
+TEST_CASE("M1.15 apply: duration_days above the runtime cap is rejected") {
+    // M1.15 cap. Without this, an INT_MAX duration would push the
+    // per-day GameDate::advance_days loop into a multi-second stall.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "too_long";
+    p.duration_days = ps::kMaxTrackedPolicyDurationDays + 1;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    const auto before_stability = state.countries[0].stability;
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duration_days")                       != std::string::npos);
+    CHECK(r.error().find("kMaxTrackedPolicyDurationDays")       != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(before_stability));
+    CHECK(state.countries[0].active_policies.empty());
+}
+
+TEST_CASE("M1.15 apply: duration_days at the runtime cap boundary is accepted") {
+    // Boundary case: the cap itself must remain a legal value, so the
+    // bound is `> kMax`, not `>= kMax`. Pin it.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+
+    PolicyData p;
+    p.id_code       = "exactly_cap";
+    p.duration_days = ps::kMaxTrackedPolicyDurationDays;
+    p.effects.push_back({"country.stability", "add", 0.01});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    REQUIRE(state.countries[0].active_policies.size() == 1);
+}
+
+TEST_CASE("M1.15 apply: only the actor's active_policies list grows") {
+    // Cross-country regression: an enactment on GER must not appear in
+    // FRA's list. The country pointer in apply_policy_effects is
+    // resolved from the `actor` argument, so this is mostly a smoke
+    // test, but it guards against a future copy-paste where the wrong
+    // country gets the append.
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    state.countries.push_back(germany_baseline());
+    CountryState fra = germany_baseline();
+    fra.id      = CountryId{1};
+    fra.id_code = "FRA";
+    state.countries.push_back(std::move(fra));
+
+    PolicyData p;
+    p.id_code       = "raise_taxes";
+    p.duration_days = 60;
+    p.effects.push_back({"country.legal_tax_burden", "add", 0.05});
+
+    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
+    CHECK(state.countries[0].active_policies.size() == 1);
+    CHECK(state.countries[1].active_policies.empty());
 }

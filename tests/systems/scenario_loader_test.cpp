@@ -6,6 +6,7 @@
 #include <system_error>
 
 #include "leviathan/core/entities.hpp"
+#include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/scenario_loader.hpp"
@@ -14,6 +15,7 @@ namespace fs  = std::filesystem;
 namespace sl  = leviathan::systems::scenario_loader;
 using leviathan::core::CountryId;
 using leviathan::core::FactionId;
+using leviathan::core::GameDate;
 using leviathan::core::GameState;
 using leviathan::core::PolicyId;
 
@@ -474,6 +476,15 @@ TEST_CASE("load_into_state: starting_policies applies day-0 enactment") {
     // adds 0.05; final value should be 0.25.
     REQUIRE(state.countries.size() == 1u);
     CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.25));
+
+    // M1.15: every successful apply_policy_effects (including the
+    // day-0 path) appends to active_policies. GameState defaults to
+    // 1930-01-01; raise_taxes has duration_days=60, so expires_on
+    // must be 1930-03-02.
+    REQUIRE(state.countries[0].active_policies.size() == 1u);
+    CHECK(state.countries[0].active_policies[0].policy_id_code == "raise_taxes");
+    CHECK(state.countries[0].active_policies[0].expires_on
+          == GameDate(1930, 3, 2));
 }
 
 TEST_CASE("load_into_state: starting_policies unknown policy id_code rejected") {

@@ -652,8 +652,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v6 - M1.12 added CountryState.last_gdp_growth_rate.
-    CHECK(save.find("\"save_version\": 6") != std::string::npos);
+    // Save schema is now v7 - M1.15 added CountryState.active_policies.
+    CHECK(save.find("\"save_version\": 7") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -896,8 +896,8 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v6 (M1.12 bumped from v5 for last_gdp_growth_rate)") {
-    TempDir td("leviathan_runner_m110_save_version");
+TEST_CASE("run: save schema is now v7 (M1.15 bumped from v6 for active_policies)") {
+    TempDir td("leviathan_runner_m115_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
     opts.days        = 31;
@@ -906,7 +906,7 @@ TEST_CASE("run: save schema is now v6 (M1.12 bumped from v5 for last_gdp_growth_
     const std::string save = read_file(td.path / "save.json");
     // Pin the unchanged version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 6") != std::string::npos);
+    CHECK(save.find("\"save_version\": 7") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------

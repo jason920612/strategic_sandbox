@@ -24,9 +24,32 @@
 #include <string>
 #include <vector>
 
+#include "leviathan/core/game_date.hpp"
 #include "leviathan/core/ids.hpp"
 
 namespace leviathan::core {
+
+// One policy currently active on a country (M1.15).
+//
+// Inserted into `CountryState::active_policies` by every successful
+// `policy::apply_policy_effects` call. The pair is purely a record:
+// `expires_on` is the calendar date when the policy's `duration_days`
+// will have elapsed (computed at apply time as `current_date +
+// duration_days`). M1.15 only TRACKS this list. Nothing removes
+// expired entries yet; no system reverts the policy's effects when
+// the date arrives. Those behaviours are deliberate non-goals for
+// this sub-milestone and will land in a later milestone that adds
+// an explicit expiration / revert mechanism.
+//
+// We store `policy_id_code` (the on-disk string identifier) rather
+// than a `PolicyId`. The string is stable across loads even if
+// PolicyId values get reassigned by vector index; the numeric id is
+// always re-resolvable from `state.policies` if a future caller
+// needs it.
+struct ActivePolicy {
+    std::string policy_id_code;
+    GameDate    expires_on{};
+};
 
 // Per-country budget allocation. Each field is the share of total
 // state spending devoted to that category, in [0, 1]. The seven
@@ -86,6 +109,12 @@ struct CountryState {
     // Per-category budget allocation (M1.3). Loaded as a nested
     // JSON object; saved likewise.
     BudgetState budget;
+
+    // Policies currently enacted on this country (M1.15). Appended
+    // by `policy::apply_policy_effects` on each successful call;
+    // never removed in M1.15. Order is insertion-order. Persisted
+    // by SaveSystem as save format v7.
+    std::vector<ActivePolicy> active_policies;
 };
 
 struct ProvinceState {

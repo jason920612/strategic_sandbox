@@ -60,7 +60,14 @@ namespace leviathan::systems::save_system {
 //                an UNINITIALISED runtime growth rate; we reject it
 //                so a v5 save can't silently change post-load
 //                behaviour at the next monthly pipeline call.
-inline constexpr std::uint32_t kSaveFormatVersion   = 6;
+//   v7 (M1.15) - CountryState gained `active_policies` (a vector of
+//                `{policy_id_code, expires_on}` records, appended by
+//                every successful policy::apply_policy_effects).
+//                A v6 save lacks the field entirely, so loading it
+//                would silently drop already-enacted day-0 policies
+//                from any scenario save. We bump rather than tolerate
+//                the missing array.
+inline constexpr std::uint32_t kSaveFormatVersion   = 7;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always
