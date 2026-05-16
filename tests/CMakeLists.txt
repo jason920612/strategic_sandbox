@@ -34,9 +34,14 @@ add_executable(leviathan_tests
     core/string_utils_test.cpp
     core/simulation_config_test.cpp
     core/game_state_test.cpp
+    systems/data_loader_test.cpp
     systems/logging_system_test.cpp
     systems/random_service_test.cpp
     systems/time_system_test.cpp
+)
+
+target_compile_definitions(leviathan_tests PRIVATE
+    LEVIATHAN_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
 )
 
 target_link_libraries(leviathan_tests

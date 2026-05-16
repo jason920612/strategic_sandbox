@@ -1,0 +1,7 @@
+{
+  "id":                "GER",
+  "name":              "Germany",
+  "display_name":      "Germany",
+  "initial_gdp":       100.0,
+  "initial_stability": 0.55
+}
