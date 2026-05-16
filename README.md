@@ -7,18 +7,18 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.5 — deterministic RNG service**
+- Current sub-milestone: **M0.6 — LoggingSystem**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is still a passive container. `leviathan::systems::time`
 provides `advance_one_day` and `advance_days`; `leviathan::systems::random`
-now provides `next_u64`, `draw_int`, `draw_unit`, `draw_double`,
-`draw_bool`, and `weighted_choice` plus a trace-hook for debugging
-non-determinism. The algorithm is a counter-indexed splitmix64 finaliser
-on `(seed, counter)`, deliberately not `<random>` (`std::random_device`
-is non-deterministic and `std::*_distribution` outputs are
-vendor-defined). Logging, data-loader, save/load, and headless-runner
-systems remain stubbed and arrive across M0.6 – M0.11.
+provides `next_u64` / `draw_int` / `draw_unit` / `draw_double` /
+`draw_bool` / `weighted_choice` (deterministic splitmix64 on
+`(seed, counter)`, no `<random>`); `leviathan::systems::logging`
+provides explicit `log()` with `Debug/Info/Warn/Error` severity, a
+deterministic ordered-metadata `LogEntry`, `recent(state, n)`, and
+byte-stable JSONL export. The data-loader, save/load, and
+headless-runner systems remain stubbed and arrive across M0.7 – M0.11.
 
 ## Repository layout
 
@@ -90,15 +90,13 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.5 there are ~80 doctest cases covering all foundational types
-(`StrongId<Tag>`, `GameDate`, `Result<T, E>`, `string_utils::trim`,
-`SimulationConfig`, `GameState` + `make_game_state`), the TimeSystem
-free functions, and the RandomService (determinism, counter advance,
-range bounds, weighted-choice edge cases including all-zero weights,
-NaN-safe `draw_bool`, tag-independence, trace hook round-trip,
-snapshot replay). Each `TEST_CASE` is registered with CTest
-individually, so `ctest -R weighted_choice` runs just the
-weighted-choice tests.
+As of M0.6 there are ~94 doctest cases covering all foundational
+types, TimeSystem, RandomService, and LoggingSystem (log appends,
+severity convenience wrappers, metadata insertion-order preservation,
+`recent(n)`, JSONL snapshot incl. escape and metadata rendering, the
+"TimeSystem must still not auto-log" regression). Each `TEST_CASE`
+is registered with CTest individually, so `ctest -R JSONL` runs just
+the export tests.
 
 ## Build options
 

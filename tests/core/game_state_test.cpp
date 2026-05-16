@@ -55,7 +55,10 @@ TEST_CASE("GameState containers accept their entity types") {
     state.factions.push_back(FactionState{FactionId{100}, CountryId{1}});
     state.policies.push_back(PolicyData{PolicyId{1}, "increase_military_budget"});
     state.events.push_back(EventDefinition{EventId{1}, "labor_strike"});
-    state.logs.push_back(LogEntry{GameDate(1930, 1, 1), "init"});
+    LogEntry init_entry;
+    init_entry.date    = GameDate(1930, 1, 1);
+    init_entry.message = "init";
+    state.logs.push_back(std::move(init_entry));
 
     CHECK(state.countries.size() == 1);
     CHECK(state.provinces.size() == 1);

@@ -2,6 +2,7 @@
 
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
+#include "leviathan/core/log_entry.hpp"
 #include "leviathan/systems/time_system.hpp"
 
 using leviathan::core::GameDate;
@@ -149,7 +150,10 @@ TEST_CASE("TimeSystem does not touch RNG, entity containers, or seed") {
     state.rng.seed     = 99u;
     state.rng.counter  = 7u;
     state.countries.push_back({});
-    state.logs.push_back({GameDate(1930, 6, 14), "marker"});
+    leviathan::core::LogEntry marker;
+    marker.date    = GameDate(1930, 6, 14);
+    marker.message = "marker";
+    state.logs.push_back(std::move(marker));
 
     advance_days(state, 30);
 

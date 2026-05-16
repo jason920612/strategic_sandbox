@@ -10,6 +10,7 @@
 # on systems.
 
 add_library(leviathan_systems STATIC
+    logging_system.cpp
     random_service.cpp
     time_system.cpp
 )
