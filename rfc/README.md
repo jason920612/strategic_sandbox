@@ -73,6 +73,16 @@ M0 / M1 中落地，部分仍是未來工作：
   1.15。**M1.9 不做** policy enactment scheduler / active-policy
   container / runner 整合 / log / RNG / save schema 變更 / `last_gdp_growth_rate`
   新欄位 —— 這些保留給 M1.10+。
+  **M1.10（Runner monthly wiring）** 把 M1.9 的 pipeline 接到 M0.9
+  runner：每次 `TimeSystem.advance_one_day` 回報 `month_changed`，
+  runner 在「month rolled over」log 之後呼叫
+  `monthly::tick_all_countries(state)`，失敗就立刻 fail。`RunOutcome`
+  新增 `monthly_ticks` 計數（並非每國一次，而是每個 month boundary
+  一次）。新增公開 `runner::run_state(state, opts)` 給測試手動建
+  state 注入。對應 RFC-090 §M1 task 1.16（runner / pipeline 接合）。
+  **M1.10 不做** save schema 變更（仍 v5）、country / faction 檔案載入、
+  policy scheduler、CSV 新欄位、月度 pipeline log。determinism property
+  在空 state 與非空 state 兩種情境下都仍成立。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
