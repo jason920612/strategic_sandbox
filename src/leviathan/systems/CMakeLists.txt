@@ -32,6 +32,7 @@ add_library(leviathan_systems STATIC
     data_loader.cpp
     logging_system.cpp
     random_service.cpp
+    save_system.cpp
     time_system.cpp
 )
 add_library(leviathan::systems ALIAS leviathan_systems)
