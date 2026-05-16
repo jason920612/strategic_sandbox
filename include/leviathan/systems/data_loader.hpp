@@ -58,14 +58,31 @@ core::Result<core::SimulationConfig> load_simulation_config(
 
 // Parse a single-country JSON document.
 //
-// Expected shape:
+// Expected shape (M1.1):
 //   {
-//     "id":                "GER",     // required string code
-//     "name":              "Germany", // required
-//     "display_name":      "Germany", // optional, defaults to name
-//     "initial_gdp":       100.0,     // required, finite
-//     "initial_stability": 0.55       // required, finite
+//     "id":                        "GER",      // required string code
+//     "name":                      "Germany",  // required
+//     "display_name":              "Germany",  // optional; defaults to name
+//
+//     "initial_gdp":               100.0,      // required, finite, >= 0
+//                                              // -> CountryState::gdp
+//     "initial_stability":         0.55,       // required, in [0, 1]
+//                                              // -> CountryState::stability
+//
+//     "legal_tax_burden":          0.20,       // required, in [0, 1]
+//     "fiscal_capacity":           0.50,       // required, in [0, 1]
+//     "administrative_efficiency": 0.55,       // required, in [0, 1]
+//     "central_control":           0.60,       // required, in [0, 1]
+//     "corruption":                0.25,       // required, in [0, 1]
+//     "legitimacy":                0.55,       // required, in [0, 1]
+//     "military_power":            0.50,       // required, in [0, 1]
+//     "threat_perception":         0.30        // required, in [0, 1]
 //   }
+//
+// Any required field that is missing, has the wrong type, is
+// non-finite, or violates its declared range produces a failure
+// Result naming the field. Runtime-only fields (tax_revenue,
+// budget_balance) are not read from JSON and start at 0.
 //
 // The numeric `CountryState::id` is left at its invalid default; the
 // caller is responsible for assigning numeric IDs (typically by

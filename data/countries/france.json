@@ -1,7 +1,15 @@
 {
-  "id":                "FRA",
-  "name":              "France",
-  "display_name":      "French Republic",
-  "initial_gdp":       80.0,
-  "initial_stability": 0.60
+  "id":                        "FRA",
+  "name":                      "France",
+  "display_name":              "French Republic",
+  "initial_gdp":               80.0,
+  "initial_stability":         0.60,
+  "legal_tax_burden":          0.22,
+  "fiscal_capacity":           0.55,
+  "administrative_efficiency": 0.60,
+  "central_control":           0.65,
+  "corruption":                0.20,
+  "legitimacy":                0.65,
+  "military_power":            0.55,
+  "threat_perception":         0.40
 }

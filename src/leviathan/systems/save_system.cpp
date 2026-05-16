@@ -65,13 +65,27 @@ core::Result<core::LogSeverity> severity_from_string(std::string_view s) {
 // ----- serialise -----------------------------------------------------------
 
 json country_to_json(const core::CountryState& c) {
+    // M1.1 schema. Field order is fixed; tests pin the on-disk shape.
+    // The save format separates runtime state (gdp / stability /
+    // tax_revenue / budget_balance) from the JSON config's "initial_*"
+    // fields - saves always store runtime values.
     json j = json::object();
-    j["id"]                = c.id.value();
-    j["id_code"]           = c.id_code;
-    j["name"]              = c.name;
-    j["display_name"]      = c.display_name;
-    j["initial_gdp"]       = c.initial_gdp;
-    j["initial_stability"] = c.initial_stability;
+    j["id"]                        = c.id.value();
+    j["id_code"]                   = c.id_code;
+    j["name"]                      = c.name;
+    j["display_name"]              = c.display_name;
+    j["gdp"]                       = c.gdp;
+    j["tax_revenue"]               = c.tax_revenue;
+    j["budget_balance"]            = c.budget_balance;
+    j["legal_tax_burden"]          = c.legal_tax_burden;
+    j["fiscal_capacity"]           = c.fiscal_capacity;
+    j["administrative_efficiency"] = c.administrative_efficiency;
+    j["central_control"]           = c.central_control;
+    j["corruption"]                = c.corruption;
+    j["stability"]                 = c.stability;
+    j["legitimacy"]                = c.legitimacy;
+    j["military_power"]            = c.military_power;
+    j["threat_perception"]         = c.threat_perception;
     return j;
 }
 
@@ -245,17 +259,33 @@ core::Result<core::CountryState> country_from_json(const json& j,
     }
     c.display_name = display.value();
 
-    auto gdp = require_number(j, "initial_gdp", ctx);
-    if (!gdp) {
-        return core::Result<core::CountryState>::failure(std::move(gdp.error()));
-    }
-    c.initial_gdp = gdp.value();
+    // M1.1 schema: read every numeric field. SaveSystem does NOT
+    // enforce [0,1] ratio ranges - if the in-memory state held an
+    // out-of-range value, that's the loader's job (DataLoader) to
+    // reject at config time. Saves of valid in-memory state will
+    // always be in range.
+    auto load_num = [&](const char* key, double& dst)
+        -> core::Result<core::CountryState> {
+        auto r = require_number(j, key, ctx);
+        if (!r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        dst = r.value();
+        return core::Result<core::CountryState>::success(core::CountryState{});
+    };
 
-    auto stab = require_number(j, "initial_stability", ctx);
-    if (!stab) {
-        return core::Result<core::CountryState>::failure(std::move(stab.error()));
-    }
-    c.initial_stability = stab.value();
+    if (auto r = load_num("gdp",                       c.gdp);            !r) return r;
+    if (auto r = load_num("tax_revenue",               c.tax_revenue);    !r) return r;
+    if (auto r = load_num("budget_balance",            c.budget_balance); !r) return r;
+    if (auto r = load_num("legal_tax_burden",          c.legal_tax_burden);          !r) return r;
+    if (auto r = load_num("fiscal_capacity",           c.fiscal_capacity);           !r) return r;
+    if (auto r = load_num("administrative_efficiency", c.administrative_efficiency); !r) return r;
+    if (auto r = load_num("central_control",           c.central_control);           !r) return r;
+    if (auto r = load_num("corruption",                c.corruption);                !r) return r;
+    if (auto r = load_num("stability",                 c.stability);                 !r) return r;
+    if (auto r = load_num("legitimacy",                c.legitimacy);                !r) return r;
+    if (auto r = load_num("military_power",            c.military_power);            !r) return r;
+    if (auto r = load_num("threat_perception",         c.threat_perception);         !r) return r;
 
     return core::Result<core::CountryState>::success(std::move(c));
 }

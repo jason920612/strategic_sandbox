@@ -158,35 +158,71 @@ TEST_CASE("parse_simulation_config: source_label appears in error messages") {
 // Country - happy paths
 // ---------------------------------------------------------------------
 
-TEST_CASE("parse_country: full RFC-070 shape") {
-    const auto r = dl::parse_country(R"({
-        "id":                "GER",
-        "name":              "Germany",
-        "display_name":      "Federal Republic of Germany",
-        "initial_gdp":       100.0,
-        "initial_stability": 0.55
-    })");
+namespace {
+// Canonical full-shape country JSON used as the baseline for parse_country
+// tests. Individual tests can edit one field via search-and-replace before
+// passing it to parse_country.
+const std::string kCanonicalCountryJson = R"({
+    "id":                        "GER",
+    "name":                      "Germany",
+    "display_name":              "Federal Republic of Germany",
+    "initial_gdp":               100.0,
+    "initial_stability":         0.55,
+    "legal_tax_burden":          0.20,
+    "fiscal_capacity":           0.50,
+    "administrative_efficiency": 0.55,
+    "central_control":           0.60,
+    "corruption":                0.25,
+    "legitimacy":                0.55,
+    "military_power":            0.50,
+    "threat_perception":         0.30
+})";
+
+std::string replace_first(std::string s, std::string_view needle,
+                          std::string_view replacement) {
+    const std::size_t pos = s.find(needle);
+    if (pos == std::string::npos) return s;
+    s.replace(pos, needle.size(), replacement);
+    return s;
+}
+}  // namespace
+
+TEST_CASE("parse_country: full RFC-070 + M1.1 shape") {
+    const auto r = dl::parse_country(kCanonicalCountryJson);
     REQUIRE(r.ok());
     const auto& c = r.value();
-    CHECK(c.id_code           == "GER");
-    CHECK(c.name              == "Germany");
-    CHECK(c.display_name      == "Federal Republic of Germany");
-    CHECK(c.initial_gdp       == doctest::Approx(100.0));
-    CHECK(c.initial_stability == doctest::Approx(0.55));
+    CHECK(c.id_code      == "GER");
+    CHECK(c.name         == "Germany");
+    CHECK(c.display_name == "Federal Republic of Germany");
+    // Initial-* fields are loaded into runtime gdp / stability.
+    CHECK(c.gdp                       == doctest::Approx(100.0));
+    CHECK(c.stability                 == doctest::Approx(0.55));
+    // Runtime-only fields start at 0; not read from the config JSON.
+    CHECK(c.tax_revenue               == doctest::Approx(0.0));
+    CHECK(c.budget_balance            == doctest::Approx(0.0));
+    // All ratio fields land directly.
+    CHECK(c.legal_tax_burden          == doctest::Approx(0.20));
+    CHECK(c.fiscal_capacity           == doctest::Approx(0.50));
+    CHECK(c.administrative_efficiency == doctest::Approx(0.55));
+    CHECK(c.central_control           == doctest::Approx(0.60));
+    CHECK(c.corruption                == doctest::Approx(0.25));
+    CHECK(c.legitimacy                == doctest::Approx(0.55));
+    CHECK(c.military_power            == doctest::Approx(0.50));
+    CHECK(c.threat_perception         == doctest::Approx(0.30));
     // The numeric id stays at its invalid default - assignment is the
     // caller's responsibility.
     CHECK_FALSE(c.id.valid());
 }
 
 TEST_CASE("parse_country: display_name defaults to name when omitted") {
-    const auto r = dl::parse_country(R"({
-        "id":   "FRA",
-        "name": "France",
-        "initial_gdp":       80.0,
-        "initial_stability": 0.60
-    })");
+    // Drop the display_name line from the canonical fixture entirely.
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"display_name\":              \"Federal Republic of Germany\",\n",
+        "");
+    const auto r = dl::parse_country(text);
     REQUIRE(r.ok());
-    CHECK(r.value().display_name == "France");
+    CHECK(r.value().display_name == "Germany");
 }
 
 // ---------------------------------------------------------------------
@@ -194,42 +230,34 @@ TEST_CASE("parse_country: display_name defaults to name when omitted") {
 // ---------------------------------------------------------------------
 
 TEST_CASE("parse_country: missing id field") {
-    const auto r = dl::parse_country(R"({
-        "name": "Germany",
-        "initial_gdp":       100.0,
-        "initial_stability": 0.55
-    })");
+    const std::string text = replace_first(
+        kCanonicalCountryJson, "\"id\":                        \"GER\",\n", "");
+    const auto r = dl::parse_country(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("missing") != std::string::npos);
-    // The path is just "id" for the top-level field.
-    CHECK(r.error().find("'id'") != std::string::npos);
+    CHECK(r.error().find("'id'")    != std::string::npos);
 }
 
 TEST_CASE("parse_country: initial_gdp wrong type") {
-    const auto r = dl::parse_country(R"({
-        "id":   "GER",
-        "name": "Germany",
-        "initial_gdp":       "lots",
-        "initial_stability": 0.55
-    })");
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"initial_gdp\":               100.0,",
+        "\"initial_gdp\":               \"lots\",");
+    const auto r = dl::parse_country(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("initial_gdp") != std::string::npos);
-    CHECK(r.error().find("number") != std::string::npos);
+    CHECK(r.error().find("number")      != std::string::npos);
 }
 
 TEST_CASE("parse_country: NaN literal makes the document malformed") {
     // Strict JSON does not permit NaN / Infinity literals, so nlohmann
     // rejects the whole document at parse time - the loader sees a
     // "malformed JSON" error, not a "non-finite number" error.
-    // The std::isfinite check inside require_number is therefore
-    // defensive (in case a future API change ever produces a
-    // non-finite parse result), not exercisable through valid input.
-    const auto r = dl::parse_country(R"({
-        "id":   "GER",
-        "name": "Germany",
-        "initial_gdp":       NaN,
-        "initial_stability": 0.55
-    })");
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"initial_gdp\":               100.0,",
+        "\"initial_gdp\":               NaN,");
+    const auto r = dl::parse_country(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("JSON parse error") != std::string::npos);
 }
@@ -238,6 +266,79 @@ TEST_CASE("parse_country: source label appears in error message") {
     const auto r = dl::parse_country(R"({})", "data/countries/broken.json");
     REQUIRE(r.failed());
     CHECK(r.error().find("data/countries/broken.json") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------
+// Country - M1.1 new field requirements
+// ---------------------------------------------------------------------
+
+TEST_CASE("parse_country: missing legal_tax_burden is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson, "\"legal_tax_burden\":          0.20,\n", "");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("missing")            != std::string::npos);
+    CHECK(r.error().find("'legal_tax_burden'") != std::string::npos);
+}
+
+TEST_CASE("parse_country: missing administrative_efficiency is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson, "\"administrative_efficiency\": 0.55,\n", "");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'administrative_efficiency'") != std::string::npos);
+}
+
+TEST_CASE("parse_country: missing legitimacy is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson, "\"legitimacy\":                0.55,\n", "");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'legitimacy'") != std::string::npos);
+}
+
+TEST_CASE("parse_country: negative initial_gdp is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"initial_gdp\":               100.0,",
+        "\"initial_gdp\":               -1.0,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("initial_gdp") != std::string::npos);
+    CHECK(r.error().find(">= 0")        != std::string::npos);
+}
+
+TEST_CASE("parse_country: ratio above 1.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"corruption\":                0.25,",
+        "\"corruption\":                1.5,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("corruption")   != std::string::npos);
+    CHECK(r.error().find("[0, 1]")       != std::string::npos);
+}
+
+TEST_CASE("parse_country: ratio below 0.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"central_control\":           0.60,",
+        "\"central_control\":           -0.1,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("central_control") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")          != std::string::npos);
+}
+
+TEST_CASE("parse_country: initial_stability above 1.0 is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"initial_stability\":         0.55,",
+        "\"initial_stability\":         1.5,");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("initial_stability") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")            != std::string::npos);
 }
 
 // ---------------------------------------------------------------------
@@ -267,11 +368,20 @@ TEST_CASE("load_country: canonical data/countries/germany.json") {
 
     const auto r = dl::load_country(p);
     REQUIRE(r.ok());
-    CHECK(r.value().id_code      == "GER");
-    CHECK(r.value().name         == "Germany");
-    CHECK(r.value().display_name == "Germany");
-    CHECK(r.value().initial_gdp       == doctest::Approx(100.0));
-    CHECK(r.value().initial_stability == doctest::Approx(0.55));
+    const auto& c = r.value();
+    CHECK(c.id_code      == "GER");
+    CHECK(c.name         == "Germany");
+    CHECK(c.display_name == "Germany");
+    CHECK(c.gdp                       == doctest::Approx(100.0));
+    CHECK(c.stability                 == doctest::Approx(0.55));
+    CHECK(c.legal_tax_burden          == doctest::Approx(0.20));
+    CHECK(c.fiscal_capacity           == doctest::Approx(0.50));
+    CHECK(c.administrative_efficiency == doctest::Approx(0.55));
+    CHECK(c.central_control           == doctest::Approx(0.60));
+    CHECK(c.corruption                == doctest::Approx(0.25));
+    CHECK(c.legitimacy                == doctest::Approx(0.55));
+    CHECK(c.military_power            == doctest::Approx(0.50));
+    CHECK(c.threat_perception         == doctest::Approx(0.30));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

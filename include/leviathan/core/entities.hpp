@@ -1,15 +1,22 @@
-// Entity placeholders.
+// Entity placeholders + M1 baseline state.
 //
-// M0.3 only needs each entity to be addressable by its strong ID so
-// GameState's containers have something to hold. Real fields (GDP,
-// stability, faction relations, policy effects, etc.) land in
-// Milestone 1 as the per-entity systems come online.
+// M0 introduced these as ID-only stubs; M1.1 fleshes out CountryState
+// with the runtime numeric fields that M1's economy / stability /
+// budget systems will read and (eventually) write. FactionState,
+// ProvinceState, PolicyData, and EventDefinition remain ID-only stubs
+// in M1.1 and will grow in subsequent sub-milestones (M1.2, M1.4, ...).
 //
-// The minimal field set was chosen so that:
-//   - every entity has its own ID (you can write `country.id` rather
-//     than tracking ID via container index);
-//   - human-readable names (where natural) survive a round-trip
-//     through save / load tests in M0.8.
+// Naming convention for CountryState numeric fields:
+//   * gdp / tax_revenue / budget_balance      - absolute amounts
+//   * legal_tax_burden, fiscal_capacity, ...  - 0-to-1 ratios
+//   * stability, legitimacy                   - 0-to-1 ratios
+//   * military_power, threat_perception       - 0-to-1 ratios
+//
+// The DataLoader (M0.7) maps JSON "initial_gdp" / "initial_stability"
+// onto the runtime `gdp` / `stability` fields; the other fields share
+// names with their JSON counterparts. This keeps the on-disk config
+// readable ("initial_..." reads as a baseline) while keeping the
+// runtime struct compact.
 
 #ifndef LEVIATHAN_CORE_ENTITIES_HPP
 #define LEVIATHAN_CORE_ENTITIES_HPP
@@ -21,24 +28,31 @@
 namespace leviathan::core {
 
 struct CountryState {
-    // Numeric handle. Default-constructed = invalid. Assigning real
-    // numeric IDs (e.g. by insertion order in state.countries) is the
-    // caller's job; the JSON loader leaves this as invalid because
-    // the on-disk identifier is the string `id_code`.
+    // Identity
     CountryId   id;
-
-    // On-disk identifier from JSON, e.g. "GER". Stable across saves
-    // and human-authored data, unlike the numeric `id`.
     std::string id_code;
-
     std::string name;
     std::string display_name;
 
-    // Economic / political baselines, loaded from JSON. M0.7 stores
-    // them; the simulation systems that consume them arrive in
-    // Milestone 1 (M1.1 onwards).
-    double initial_gdp       = 0.0;
-    double initial_stability = 0.0;
+    // Absolute economic state
+    double gdp            = 0.0;
+    double tax_revenue    = 0.0;   // runtime-only, derived; not in JSON config
+    double budget_balance = 0.0;   // runtime-only, can be negative
+
+    // Fiscal / administrative ratios (0..1)
+    double legal_tax_burden          = 0.0;
+    double fiscal_capacity           = 0.0;
+    double administrative_efficiency = 0.0;
+    double central_control           = 0.0;
+    double corruption                = 0.0;
+
+    // Political ratios (0..1)
+    double stability  = 0.0;
+    double legitimacy = 0.0;
+
+    // Strategic ratios (0..1)
+    double military_power     = 0.0;
+    double threat_perception  = 0.0;
 };
 
 struct ProvinceState {

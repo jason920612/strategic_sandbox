@@ -1,7 +1,15 @@
 {
-  "id":                "JPN",
-  "name":              "Japan",
-  "display_name":      "Empire of Japan",
-  "initial_gdp":       60.0,
-  "initial_stability": 0.50
+  "id":                        "JPN",
+  "name":                      "Japan",
+  "display_name":              "Empire of Japan",
+  "initial_gdp":               60.0,
+  "initial_stability":         0.50,
+  "legal_tax_burden":          0.18,
+  "fiscal_capacity":           0.50,
+  "administrative_efficiency": 0.65,
+  "central_control":           0.70,
+  "corruption":                0.30,
+  "legitimacy":                0.50,
+  "military_power":            0.60,
+  "threat_perception":         0.40
 }

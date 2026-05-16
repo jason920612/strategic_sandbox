@@ -34,8 +34,15 @@ namespace leviathan::systems::save_system {
 // values it does not recognise. Bump these when the schema or the RNG
 // algorithm changes incompatibly; old saves then fail loudly rather
 // than silently produce a different draw sequence.
-inline constexpr std::uint32_t kSaveFormatVersion        = 1;
-inline constexpr std::uint32_t kRngAlgorithmVersion      = 1;
+//
+// M1.1 bumped kSaveFormatVersion from 1 to 2: CountryState gained the
+// runtime numeric fields (gdp / stability replaced initial_gdp /
+// initial_stability, plus tax_revenue / budget_balance /
+// legal_tax_burden / fiscal_capacity / administrative_efficiency /
+// central_control / corruption / legitimacy / military_power /
+// threat_perception). v1 saves are not loadable under v2.
+inline constexpr std::uint32_t kSaveFormatVersion   = 2;
+inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always
 // succeeds for any valid GameState - serialisation never fails.

@@ -1,7 +1,15 @@
 {
-  "id":                "GER",
-  "name":              "Germany",
-  "display_name":      "Germany",
-  "initial_gdp":       100.0,
-  "initial_stability": 0.55
+  "id":                        "GER",
+  "name":                      "Germany",
+  "display_name":              "Germany",
+  "initial_gdp":               100.0,
+  "initial_stability":         0.55,
+  "legal_tax_burden":          0.20,
+  "fiscal_capacity":           0.50,
+  "administrative_efficiency": 0.55,
+  "central_control":           0.60,
+  "corruption":                0.25,
+  "legitimacy":                0.55,
+  "military_power":            0.50,
+  "threat_perception":         0.30
 }

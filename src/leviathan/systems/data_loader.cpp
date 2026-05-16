@@ -92,6 +92,42 @@ core::Result<double> require_number(const json& root,
     return core::Result<double>::success(d);
 }
 
+// Returns the number iff it parses as finite AND is >= 0. Used for
+// quantities like GDP that have a physical floor of zero.
+core::Result<double> require_nonneg_number(const json& root,
+                                           std::string_view path,
+                                           std::string_view source) {
+    auto n = require_number(root, path, source);
+    if (!n) return core::Result<double>::failure(std::move(n.error()));
+    if (n.value() < 0.0) {
+        std::string msg = "'";
+        msg.append(path.data(), path.size());
+        msg += "' must be >= 0 (got ";
+        msg += std::to_string(n.value());
+        msg += ")";
+        return core::Result<double>::failure(fmt_err(source, msg));
+    }
+    return n;
+}
+
+// Returns the number iff it parses as finite AND is in [0, 1]. Used for
+// the many M1.1 ratio fields (stability, legitimacy, corruption, ...).
+core::Result<double> require_ratio(const json& root,
+                                   std::string_view path,
+                                   std::string_view source) {
+    auto n = require_number(root, path, source);
+    if (!n) return core::Result<double>::failure(std::move(n.error()));
+    if (n.value() < 0.0 || n.value() > 1.0) {
+        std::string msg = "'";
+        msg.append(path.data(), path.size());
+        msg += "' must be in [0, 1] (got ";
+        msg += std::to_string(n.value());
+        msg += ")";
+        return core::Result<double>::failure(fmt_err(source, msg));
+    }
+    return n;
+}
+
 core::Result<core::GameDate> require_date(const json& root,
                                           std::string_view path,
                                           std::string_view source) {
@@ -244,19 +280,74 @@ core::Result<core::CountryState> parse_country(
         country.display_name = country.name;
     }
 
-    auto gdp = require_number(root, "initial_gdp", source_label);
+    // ---- absolute economic baseline ---------------------------------
+    auto gdp = require_nonneg_number(root, "initial_gdp", source_label);
     if (!gdp) {
-        return core::Result<core::CountryState>::failure(
-            std::move(gdp.error()));
+        return core::Result<core::CountryState>::failure(std::move(gdp.error()));
     }
-    country.initial_gdp = gdp.value();
+    country.gdp = gdp.value();   // initial_gdp -> runtime gdp
 
-    auto stab = require_number(root, "initial_stability", source_label);
+    // ---- ratio fields (0..1) ----------------------------------------
+    // Each field is REQUIRED. M1.1 prioritises data quality over
+    // forgiving defaults, so missing fields produce clear errors
+    // rather than silent zeroes.
+    auto stab = require_ratio(root, "initial_stability", source_label);
     if (!stab) {
-        return core::Result<core::CountryState>::failure(
-            std::move(stab.error()));
+        return core::Result<core::CountryState>::failure(std::move(stab.error()));
     }
-    country.initial_stability = stab.value();
+    country.stability = stab.value();   // initial_stability -> runtime stability
+
+    auto ltb = require_ratio(root, "legal_tax_burden", source_label);
+    if (!ltb) {
+        return core::Result<core::CountryState>::failure(std::move(ltb.error()));
+    }
+    country.legal_tax_burden = ltb.value();
+
+    auto fc = require_ratio(root, "fiscal_capacity", source_label);
+    if (!fc) {
+        return core::Result<core::CountryState>::failure(std::move(fc.error()));
+    }
+    country.fiscal_capacity = fc.value();
+
+    auto ae = require_ratio(root, "administrative_efficiency", source_label);
+    if (!ae) {
+        return core::Result<core::CountryState>::failure(std::move(ae.error()));
+    }
+    country.administrative_efficiency = ae.value();
+
+    auto cc = require_ratio(root, "central_control", source_label);
+    if (!cc) {
+        return core::Result<core::CountryState>::failure(std::move(cc.error()));
+    }
+    country.central_control = cc.value();
+
+    auto corr = require_ratio(root, "corruption", source_label);
+    if (!corr) {
+        return core::Result<core::CountryState>::failure(std::move(corr.error()));
+    }
+    country.corruption = corr.value();
+
+    auto leg = require_ratio(root, "legitimacy", source_label);
+    if (!leg) {
+        return core::Result<core::CountryState>::failure(std::move(leg.error()));
+    }
+    country.legitimacy = leg.value();
+
+    auto mp = require_ratio(root, "military_power", source_label);
+    if (!mp) {
+        return core::Result<core::CountryState>::failure(std::move(mp.error()));
+    }
+    country.military_power = mp.value();
+
+    auto tp = require_ratio(root, "threat_perception", source_label);
+    if (!tp) {
+        return core::Result<core::CountryState>::failure(std::move(tp.error()));
+    }
+    country.threat_perception = tp.value();
+
+    // tax_revenue and budget_balance are runtime-only. They are not
+    // read from the config JSON; they start at 0 and will be updated
+    // by future economy systems (M1.3+).
 
     return core::Result<core::CountryState>::success(std::move(country));
 }
