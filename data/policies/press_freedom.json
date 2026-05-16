@@ -1,0 +1,12 @@
+{
+  "id":            "press_freedom",
+  "name":          "Strengthen Press Freedom",
+  "category":      "media",
+  "duration_days": 30,
+  "admin_cost":    0.05,
+  "effects": [
+    { "target": "country.legitimacy",       "op": "add", "value":  0.04 },
+    { "target": "faction:media.support",    "op": "add", "value":  0.08 },
+    { "target": "faction:military.support", "op": "add", "value": -0.03 }
+  ]
+}

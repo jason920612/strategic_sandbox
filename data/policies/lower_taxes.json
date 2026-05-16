@@ -1,0 +1,13 @@
+{
+  "id":            "lower_taxes",
+  "name":          "Lower Taxes",
+  "category":      "tax",
+  "duration_days": 60,
+  "admin_cost":    0.08,
+  "effects": [
+    { "target": "country.legal_tax_burden", "op": "add", "value": -0.04 },
+    { "target": "faction:workers.support",  "op": "add", "value":  0.04 },
+    { "target": "faction:local_elites.support", "op": "add", "value":  0.05 },
+    { "target": "country.budget_balance",   "op": "add", "value": -0.06 }
+  ]
+}

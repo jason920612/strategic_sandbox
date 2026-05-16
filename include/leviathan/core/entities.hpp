@@ -1,9 +1,10 @@
 // Entity placeholders + M1 baseline state.
 //
 // M0 introduced these as ID-only stubs; M1.1 fleshed out CountryState;
-// M1.2 fleshed out FactionState; M1.3 adds BudgetState (embedded in
-// CountryState). ProvinceState, PolicyData, and EventDefinition remain
-// ID-only stubs and will grow in subsequent sub-milestones (M1.4, ...).
+// M1.2 fleshed out FactionState; M1.3 added BudgetState (embedded in
+// CountryState); M1.4 fleshes out PolicyData with its effects vector.
+// ProvinceState and EventDefinition remain ID-only stubs and will grow
+// in subsequent sub-milestones.
 //
 // Naming convention for CountryState numeric fields:
 //   * gdp / tax_revenue / budget_balance      - absolute amounts
@@ -111,9 +112,34 @@ struct FactionState {
     std::vector<std::string> preferred_policies;
 };
 
+// One change a policy applies when it is enacted.
+//
+// `target` is a free-form path string ("country.military_power",
+// "faction:military.support", ...). `op` is currently a free-form
+// operation string ("add", "set", ...). M1.4 stores these as
+// strings; M1.5 (PolicySystem) interprets them. If branch-on-`op`
+// dispatch gets unwieldy, a future PR can introduce an enum.
+struct PolicyEffect {
+    std::string target;
+    std::string op;
+    double      value = 0.0;
+};
+
 struct PolicyData {
-    PolicyId    id;
-    std::string name;
+    // Identity
+    PolicyId    id;             // numeric, caller-assigned
+    std::string id_code;        // on-disk identifier, e.g. "increase_military_budget"
+    std::string name;           // "Increase Military Budget"
+
+    // Classification
+    std::string category;       // "budget" / "tax" / "media" / "intelligence" / ...
+
+    // Activation cost
+    int    duration_days = 0;   // >= 0
+    double admin_cost    = 0.0; // [0, 1] - share of administrative capacity consumed
+
+    // Effects applied on enactment (M1.5 will interpret them).
+    std::vector<PolicyEffect> effects;
 };
 
 struct EventDefinition {

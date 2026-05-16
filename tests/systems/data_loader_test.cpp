@@ -673,6 +673,178 @@ TEST_CASE("load_faction: missing file path is named in the error") {
     CHECK(r.error().find("does-not-exist/faction.json") != std::string::npos);
 }
 
+// ---------------------------------------------------------------------
+// Policy (M1.4)
+// ---------------------------------------------------------------------
+
+namespace {
+const std::string kCanonicalPolicyJson = R"({
+    "id":            "increase_military_budget",
+    "name":          "Increase Military Budget",
+    "category":      "budget",
+    "duration_days": 30,
+    "admin_cost":    0.10,
+    "effects": [
+        { "target": "country.military_power",   "op": "add", "value":  0.03 },
+        { "target": "faction:military.support", "op": "add", "value":  0.08 },
+        { "target": "faction:workers.support",  "op": "add", "value": -0.03 }
+    ]
+})";
+}  // namespace
+
+TEST_CASE("parse_policy: full M1.4 shape") {
+    const auto r = dl::parse_policy(kCanonicalPolicyJson);
+    REQUIRE(r.ok());
+    const auto& p = r.value();
+    CHECK(p.id_code       == "increase_military_budget");
+    CHECK(p.name          == "Increase Military Budget");
+    CHECK(p.category      == "budget");
+    CHECK(p.duration_days == 30);
+    CHECK(p.admin_cost    == doctest::Approx(0.10));
+    REQUIRE(p.effects.size() == 3);
+    CHECK(p.effects[0].target == "country.military_power");
+    CHECK(p.effects[0].op     == "add");
+    CHECK(p.effects[0].value  == doctest::Approx(0.03));
+    CHECK(p.effects[2].target == "faction:workers.support");
+    CHECK(p.effects[2].value  == doctest::Approx(-0.03));
+    CHECK_FALSE(p.id.valid());
+}
+
+TEST_CASE("parse_policy: empty effects array is allowed") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "\"effects\": [\n"
+        "        { \"target\": \"country.military_power\",   \"op\": \"add\", \"value\":  0.03 },\n"
+        "        { \"target\": \"faction:military.support\", \"op\": \"add\", \"value\":  0.08 },\n"
+        "        { \"target\": \"faction:workers.support\",  \"op\": \"add\", \"value\": -0.03 }\n"
+        "    ]",
+        "\"effects\": []");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.ok());
+    CHECK(r.value().effects.empty());
+}
+
+TEST_CASE("parse_policy: missing id is rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "\"id\":            \"increase_military_budget\",\n    ", "");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'id'") != std::string::npos);
+}
+
+TEST_CASE("parse_policy: missing category is rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson, "\"category\":      \"budget\",\n    ", "");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'category'") != std::string::npos);
+}
+
+TEST_CASE("parse_policy: missing effects is rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        ",\n    \"effects\": [\n"
+        "        { \"target\": \"country.military_power\",   \"op\": \"add\", \"value\":  0.03 },\n"
+        "        { \"target\": \"faction:military.support\", \"op\": \"add\", \"value\":  0.08 },\n"
+        "        { \"target\": \"faction:workers.support\",  \"op\": \"add\", \"value\": -0.03 }\n"
+        "    ]",
+        "");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("effects") != std::string::npos);
+}
+
+TEST_CASE("parse_policy: effects wrong type rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "\"effects\": [\n"
+        "        { \"target\": \"country.military_power\",   \"op\": \"add\", \"value\":  0.03 },\n"
+        "        { \"target\": \"faction:military.support\", \"op\": \"add\", \"value\":  0.08 },\n"
+        "        { \"target\": \"faction:workers.support\",  \"op\": \"add\", \"value\": -0.03 }\n"
+        "    ]",
+        "\"effects\": \"none\"");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("effects") != std::string::npos);
+    CHECK(r.error().find("array")   != std::string::npos);
+}
+
+TEST_CASE("parse_policy: effect with missing target is rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "{ \"target\": \"country.military_power\",   \"op\": \"add\", \"value\":  0.03 }",
+        "{ \"op\": \"add\", \"value\":  0.03 }");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("effects[0]") != std::string::npos);
+    CHECK(r.error().find("'target'")   != std::string::npos);
+}
+
+TEST_CASE("parse_policy: effect with wrong-type value rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "{ \"target\": \"country.military_power\",   \"op\": \"add\", \"value\":  0.03 }",
+        "{ \"target\": \"country.military_power\", \"op\": \"add\", \"value\": \"big\" }");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("effects[0]") != std::string::npos);
+    CHECK(r.error().find("value")      != std::string::npos);
+}
+
+TEST_CASE("parse_policy: negative duration_days rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "\"duration_days\": 30,",
+        "\"duration_days\": -5,");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duration_days") != std::string::npos);
+}
+
+TEST_CASE("parse_policy: admin_cost out of range rejected") {
+    const std::string text = replace_first(
+        kCanonicalPolicyJson,
+        "\"admin_cost\":    0.10,",
+        "\"admin_cost\":    1.5,");
+    const auto r = dl::parse_policy(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("admin_cost") != std::string::npos);
+    CHECK(r.error().find("[0, 1]")     != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("load_policy: canonical data/policies/increase_military_budget.json") {
+    namespace fs = std::filesystem;
+    const fs::path p = fs::path(LEVIATHAN_TEST_DATA_DIR) /
+                       "policies" / "increase_military_budget.json";
+    const auto r = dl::load_policy(p);
+    REQUIRE(r.ok());
+    CHECK(r.value().id_code == "increase_military_budget");
+    CHECK(r.value().category == "budget");
+    CHECK(r.value().duration_days == 30);
+    CHECK(r.value().effects.size() == 3);
+}
+
+TEST_CASE("load_policy: canonical data/policies/administrative_reform.json") {
+    namespace fs = std::filesystem;
+    const fs::path p = fs::path(LEVIATHAN_TEST_DATA_DIR) /
+                       "policies" / "administrative_reform.json";
+    const auto r = dl::load_policy(p);
+    REQUIRE(r.ok());
+    CHECK(r.value().duration_days == 180);
+    CHECK(r.value().effects.size() == 4);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("load_policy: missing file path is named in the error") {
+    const auto r = dl::load_policy("does-not-exist/policy.json");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("does-not-exist/policy.json") != std::string::npos);
+}
+
 TEST_CASE("load_simulation_config: missing file names the path") {
     const auto r = dl::load_simulation_config("does-not-exist/sim.json");
     REQUIRE(r.failed());

@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "internal/json_helpers.hpp"
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/log_entry.hpp"
@@ -19,25 +20,16 @@ namespace leviathan::systems::save_system {
 
 namespace {
 
-// nlohmann::json (default) backs objects with std::map, which sorts
-// keys alphabetically on dump. That breaks the M0.6 "metadata
-// insertion order is byte-stable" invariant when we round-trip
-// through a save file. ordered_json preserves insertion order both
-// in object construction (used by serialize) and during parsing
-// (used by deserialize, so the order in the file is what comes back
-// out).
-using json = nlohmann::ordered_json;
-
-// ----- error formatting ----------------------------------------------------
-
-std::string fmt_err(std::string_view source, std::string_view msg) {
-    std::string out;
-    out.reserve(source.size() + msg.size() + 2);
-    out.append(source.data(), source.size());
-    out.append(": ");
-    out.append(msg.data(), msg.size());
-    return out;
-}
+// Shared JSON helpers live in internal/json_helpers.hpp. The detail
+// namespace's json type is nlohmann::ordered_json (chosen for the
+// M0.6 / M0.8 byte-stable-metadata invariant), so save_system gets
+// the right behaviour automatically.
+using leviathan::systems::detail::fmt_err;
+using leviathan::systems::detail::navigate;
+using leviathan::systems::detail::require_string;
+using leviathan::systems::detail::require_number;
+using leviathan::systems::detail::require_u64;
+using leviathan::systems::detail::json;
 
 // ----- severity <-> string -------------------------------------------------
 
@@ -123,6 +115,28 @@ json faction_to_json(const core::FactionState& f) {
     return j;
 }
 
+json policy_to_json(const core::PolicyData& p) {
+    // M1.4 schema. Field order is fixed and pinned by tests.
+    json j = json::object();
+    j["id"]            = p.id.value();
+    j["id_code"]       = p.id_code;
+    j["name"]          = p.name;
+    j["category"]      = p.category;
+    j["duration_days"] = p.duration_days;
+    j["admin_cost"]    = p.admin_cost;
+
+    json effects = json::array();
+    for (const auto& e : p.effects) {
+        json eff = json::object();
+        eff["target"] = e.target;
+        eff["op"]     = e.op;
+        eff["value"]  = e.value;
+        effects.push_back(std::move(eff));
+    }
+    j["effects"] = std::move(effects);
+    return j;
+}
+
 json log_entry_to_json(const core::LogEntry& e) {
     json j = json::object();
     j["date"]     = e.date.to_string();
@@ -141,91 +155,11 @@ json log_entry_to_json(const core::LogEntry& e) {
 
 // ----- deserialise helpers -------------------------------------------------
 
-const json* navigate(const json& root, std::string_view dotted_path) {
-    const json* cur = &root;
-    std::size_t pos = 0;
-    while (pos <= dotted_path.size()) {
-        const std::size_t dot = dotted_path.find('.', pos);
-        const std::size_t end = (dot == std::string_view::npos)
-                                ? dotted_path.size()
-                                : dot;
-        const std::string segment(dotted_path.substr(pos, end - pos));
-        if (!cur->is_object()) return nullptr;
-        if (!cur->contains(segment)) return nullptr;
-        cur = &cur->at(segment);
-        if (dot == std::string_view::npos) break;
-        pos = dot + 1;
-    }
-    return cur;
-}
-
-core::Result<std::string> require_string(const json& root,
-                                         std::string_view path,
-                                         std::string_view source) {
-    const json* v = navigate(root, path);
-    if (v == nullptr) {
-        std::string msg = "missing required field '";
-        msg.append(path.data(), path.size());
-        msg += "'";
-        return core::Result<std::string>::failure(fmt_err(source, msg));
-    }
-    if (!v->is_string()) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' has wrong type (expected string)";
-        return core::Result<std::string>::failure(fmt_err(source, msg));
-    }
-    return core::Result<std::string>::success(v->get<std::string>());
-}
-
-core::Result<std::uint64_t> require_u64(const json& root,
-                                        std::string_view path,
-                                        std::string_view source) {
-    const json* v = navigate(root, path);
-    if (v == nullptr) {
-        std::string msg = "missing required field '";
-        msg.append(path.data(), path.size());
-        msg += "'";
-        return core::Result<std::uint64_t>::failure(fmt_err(source, msg));
-    }
-    if (v->is_number_unsigned()) {
-        return core::Result<std::uint64_t>::success(v->get<std::uint64_t>());
-    }
-    if (v->is_number_integer()) {
-        const auto s = v->get<std::int64_t>();
-        if (s < 0) {
-            std::string msg = "'";
-            msg.append(path.data(), path.size());
-            msg += "' is negative";
-            return core::Result<std::uint64_t>::failure(fmt_err(source, msg));
-        }
-        return core::Result<std::uint64_t>::success(static_cast<std::uint64_t>(s));
-    }
-    std::string msg = "'";
-    msg.append(path.data(), path.size());
-    msg += "' has wrong type (expected unsigned integer)";
-    return core::Result<std::uint64_t>::failure(fmt_err(source, msg));
-}
-
-core::Result<double> require_number(const json& root,
-                                    std::string_view path,
-                                    std::string_view source) {
-    const json* v = navigate(root, path);
-    if (v == nullptr) {
-        std::string msg = "missing required field '";
-        msg.append(path.data(), path.size());
-        msg += "'";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    if (!v->is_number()) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' has wrong type (expected number)";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    return core::Result<double>::success(v->get<double>());
-}
-
+// SaveSystem-specific date helper (DataLoader has its own copy because
+// only it uses simulation.start_date / simulation.end_date). The shared
+// require_date is a candidate for extraction if it ever ends up in
+// three places; for now SaveSystem reads dates only in current_date
+// and in log entries, both via this helper.
 core::Result<core::GameDate> require_date(const json& root,
                                           std::string_view path,
                                           std::string_view source) {
@@ -461,6 +395,110 @@ core::Result<core::FactionState> faction_from_json(const json& j,
     return core::Result<core::FactionState>::success(std::move(f));
 }
 
+core::Result<core::PolicyData> policy_from_json(const json& j,
+                                                std::size_t array_index,
+                                                std::string_view source) {
+    const std::string ctx =
+        std::string(source) + ": policies[" + std::to_string(array_index) + "]";
+
+    if (!j.is_object()) {
+        return core::Result<core::PolicyData>::failure(
+            ctx + ": expected JSON object");
+    }
+
+    core::PolicyData p;
+
+    auto id_value = require_u64(j, "id", ctx);
+    if (!id_value) {
+        return core::Result<core::PolicyData>::failure(std::move(id_value.error()));
+    }
+    using under = core::PolicyId::underlying_type;
+    constexpr auto kMaxId =
+        static_cast<std::uint64_t>(std::numeric_limits<under>::max());
+    if (id_value.value() > kMaxId) {
+        return core::Result<core::PolicyData>::failure(
+            ctx + ": 'id' is out of range for PolicyId (max " +
+            std::to_string(kMaxId) + ")");
+    }
+    p.id = core::PolicyId{static_cast<under>(id_value.value())};
+
+    auto id_code = require_string(j, "id_code", ctx);
+    if (!id_code) {
+        return core::Result<core::PolicyData>::failure(std::move(id_code.error()));
+    }
+    p.id_code = id_code.value();
+
+    auto name = require_string(j, "name", ctx);
+    if (!name) {
+        return core::Result<core::PolicyData>::failure(std::move(name.error()));
+    }
+    p.name = name.value();
+
+    auto category = require_string(j, "category", ctx);
+    if (!category) {
+        return core::Result<core::PolicyData>::failure(std::move(category.error()));
+    }
+    p.category = category.value();
+
+    auto duration = require_u64(j, "duration_days", ctx);
+    if (!duration) {
+        return core::Result<core::PolicyData>::failure(std::move(duration.error()));
+    }
+    constexpr std::uint64_t kIntMax =
+        static_cast<std::uint64_t>(2147483647);
+    if (duration.value() > kIntMax) {
+        return core::Result<core::PolicyData>::failure(
+            ctx + ": 'duration_days' exceeds INT_MAX (got " +
+            std::to_string(duration.value()) + ")");
+    }
+    p.duration_days = static_cast<int>(duration.value());
+
+    auto admin_cost = require_number(j, "admin_cost", ctx);
+    if (!admin_cost) {
+        return core::Result<core::PolicyData>::failure(std::move(admin_cost.error()));
+    }
+    p.admin_cost = admin_cost.value();
+
+    // effects array
+    if (!j.contains("effects")) {
+        return core::Result<core::PolicyData>::failure(
+            ctx + ": missing required field 'effects'");
+    }
+    const auto& effs = j.at("effects");
+    if (!effs.is_array()) {
+        return core::Result<core::PolicyData>::failure(
+            ctx + ": 'effects' has wrong type (expected array)");
+    }
+    p.effects.reserve(effs.size());
+    for (std::size_t i = 0; i < effs.size(); ++i) {
+        const std::string eff_ctx = ctx + ": effects[" + std::to_string(i) + "]";
+        const auto& e = effs[i];
+        if (!e.is_object()) {
+            return core::Result<core::PolicyData>::failure(
+                eff_ctx + ": expected JSON object");
+        }
+        auto target = require_string(e, "target", eff_ctx);
+        if (!target) {
+            return core::Result<core::PolicyData>::failure(std::move(target.error()));
+        }
+        auto op = require_string(e, "op", eff_ctx);
+        if (!op) {
+            return core::Result<core::PolicyData>::failure(std::move(op.error()));
+        }
+        auto value = require_number(e, "value", eff_ctx);
+        if (!value) {
+            return core::Result<core::PolicyData>::failure(std::move(value.error()));
+        }
+        core::PolicyEffect pe;
+        pe.target = target.value();
+        pe.op     = op.value();
+        pe.value  = value.value();
+        p.effects.push_back(std::move(pe));
+    }
+
+    return core::Result<core::PolicyData>::success(std::move(p));
+}
+
 core::Result<core::LogEntry> log_entry_from_json(const json& j,
                                                  std::size_t array_index,
                                                  std::string_view source) {
@@ -574,7 +612,12 @@ std::string serialize(const core::GameState& state) {
     }
     root["factions"] = std::move(factions);
 
-    root["policies"]  = json::array();
+    json policies = json::array();
+    for (const auto& p : state.policies) {
+        policies.push_back(policy_to_json(p));
+    }
+    root["policies"] = std::move(policies);
+
     root["events"]    = json::array();
 
     json logs = json::array();
@@ -701,6 +744,23 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                 return core::Result<core::GameState>::failure(std::move(f.error()));
             }
             state.factions.push_back(std::move(f).value());
+        }
+    }
+
+    // policies (M1.4)
+    if (root.contains("policies")) {
+        const auto& arr = root.at("policies");
+        if (!arr.is_array()) {
+            return core::Result<core::GameState>::failure(
+                fmt_err(source_label, "'policies' is not an array"));
+        }
+        state.policies.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            auto p = policy_from_json(arr[i], i, source_label);
+            if (!p) {
+                return core::Result<core::GameState>::failure(std::move(p.error()));
+            }
+            state.policies.push_back(std::move(p).value());
         }
     }
 

@@ -1,0 +1,13 @@
+{
+  "id":            "press_censorship",
+  "name":          "Press Censorship",
+  "category":      "media",
+  "duration_days": 30,
+  "admin_cost":    0.12,
+  "effects": [
+    { "target": "country.central_control",      "op": "add", "value":  0.03 },
+    { "target": "faction:media.support",        "op": "add", "value": -0.10 },
+    { "target": "faction:intelligence.support", "op": "add", "value":  0.05 },
+    { "target": "country.legitimacy",           "op": "add", "value": -0.03 }
+  ]
+}

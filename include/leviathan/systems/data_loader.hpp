@@ -135,6 +135,34 @@ core::Result<core::FactionState> parse_faction(
 core::Result<core::FactionState> load_faction(
     const std::filesystem::path& path);
 
+// Parse a single-policy JSON document.
+//
+// Expected shape (M1.4):
+//   {
+//     "id":            "increase_military_budget",  // required
+//     "name":          "Increase Military Budget",   // required
+//     "category":      "budget",                     // required
+//     "duration_days": 30,                           // required, integer >= 0
+//     "admin_cost":    0.1,                          // required, [0, 1]
+//     "effects": [                                   // required (may be [])
+//       { "target": "country.military_power", "op": "add", "value": 0.03 },
+//       { "target": "faction:workers.support", "op": "add", "value": -0.03 }
+//     ]
+//   }
+//
+// Each effect has required `target` (string), `op` (string), and
+// `value` (finite number) fields. `target` and `op` are stored as
+// free-form strings; M1.4 does NOT interpret them. M1.5 will.
+//
+// Numeric `PolicyData::id` stays at its invalid default; the caller
+// assigns numeric IDs after loading.
+core::Result<core::PolicyData> parse_policy(
+    std::string_view json_text,
+    std::string_view source_label = "<inline>");
+
+core::Result<core::PolicyData> load_policy(
+    const std::filesystem::path& path);
+
 }  // namespace leviathan::systems::data_loader
 
 #endif  // LEVIATHAN_SYSTEMS_DATA_LOADER_HPP
