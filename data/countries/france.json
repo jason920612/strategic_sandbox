@@ -1,0 +1,7 @@
+{
+  "id":                "FRA",
+  "name":              "France",
+  "display_name":      "French Republic",
+  "initial_gdp":       80.0,
+  "initial_stability": 0.60
+}
