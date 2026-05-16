@@ -45,6 +45,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> summary_csv_path;    // unset = no CSV written
     std::optional<std::filesystem::path> scenario_path;       // unset = empty-world run (M1.11)
     std::optional<std::filesystem::path> countries_csv_path;  // unset = no per-country CSV (M1.14)
+    std::optional<std::filesystem::path> factions_csv_path;   // unset = no per-faction CSV (M1.16)
     bool                                 show_help   = false;
 };
 
@@ -84,6 +85,10 @@ struct RunOutcome {
     // (NOT including the header) written across all snapshot points.
     std::optional<std::filesystem::path> countries_csv_path;
     std::size_t            countries_csv_rows   = 0;
+    // M1.16: per-faction diagnostic CSV output. Same shape as the
+    // M1.14 country variant; mirrors the same snapshot cadence.
+    std::optional<std::filesystem::path> factions_csv_path;
+    std::size_t            factions_csv_rows    = 0;
 };
 
 // Execute one simulation run.

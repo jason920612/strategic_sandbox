@@ -168,6 +168,24 @@ M0 / M1 中落地，部分仍是未來工作：
   動 enactment、event-triggered enactment、dedup（同一 policy 在
   同一 country 重複 enact 會記兩筆）、新 log line、新 CSV 欄位、
   monthly pipeline 變更、JSON-config / DataLoader shape 變更。
+  **M1.16（Faction-level diagnostics CSV）** 為 `systems::diagnostics`
+  新增 `FactionSummaryRow` 與 `faction_snapshot(state, faction)`
+  觀察函式，並補上 `write_faction_csv_header` /
+  `write_faction_csv_row`；runner 多了 opt-in 的 `--factions-csv PATH`
+  旗標，會在每個 snapshot 點（start + 每個 `month_changed` + final
+  post-sanity）對每個 faction 各寫一行，欄位為
+  `date,id_code,country_id_code,type,support,influence,radicalism,
+  loyalty,resources` 共 9 欄。`country_id_code` 與 `type` 是
+  denormalised 字串欄位，方便外部工具直接以 country 或 faction type
+  分組而無需 re-join 其他檔案。doubles 沿用 M1.14 的 `std::scientific`
+  + `setprecision(17)` 規則。原本 `--summary-csv` 與 `--countries-csv`
+  的 byte format 完全不變，保留 M0.10 與 M1.14 的 byte-identical
+  determinism contract。對應 RFC-090 §M1 task 1.22（per-faction
+  diagnostics surface）。Drive-by: `main()` 順手補上 per-country /
+  per-faction CSV row count 的 stdout 輸出（M1.14 的遺漏）。**M1.16
+  不做** save schema 變更（仍 v7）、CountryState / FactionState /
+  PolicyData shape 變更、JSON 變體、streaming I/O、新 sanity check、
+  per-country 聚合、AI / events / war / monthly pipeline 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

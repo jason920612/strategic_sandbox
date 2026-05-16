@@ -588,6 +588,165 @@ TEST_CASE("run: --countries-csv does NOT change --summary-csv output (M0.10 cont
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
 
+// =====================================================================
+// M1.16 - --factions-csv flag
+// =====================================================================
+
+TEST_CASE("parse_args: --factions-csv flag is plumbed through") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "3",
+        "--factions-csv", "out/factions.csv"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().factions_csv_path.has_value());
+    CHECK(r.value().factions_csv_path.value() ==
+          fs::path("out/factions.csv"));
+}
+
+TEST_CASE("parse_args: --factions-csv without a value is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--factions-csv"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--factions-csv") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --factions-csv defaults to unset when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().factions_csv_path.has_value());
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: without --factions-csv no per-faction CSV is written") {
+    TempDir td("leviathan_runner_m116_no_factions_csv");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    // factions_csv_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().factions_csv_rows == 0u);
+    CHECK_FALSE(fs::exists(td.path / "factions.csv"));
+}
+
+TEST_CASE("run: --factions-csv with empty state writes header-only file") {
+    // No --scenario, so state.factions is empty. The CSV is header only.
+    TempDir td("leviathan_runner_m116_empty_factions_csv");
+    rn::RunnerOptions opts;
+    opts.config_path       = kCanonicalConfig;
+    opts.days              = 31;
+    opts.output_dir        = td.path;
+    opts.factions_csv_path = td.path / "factions.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().factions_csv_rows == 0u);
+    REQUIRE(fs::exists(td.path / "factions.csv"));
+    const std::string text = read_file(td.path / "factions.csv");
+    CHECK(text ==
+          "date,id_code,country_id_code,type,support,influence,"
+          "radicalism,loyalty,resources\n");
+}
+
+TEST_CASE("run: --factions-csv + scenario emits one row per faction per snapshot point") {
+    // Snapshot cadence: start + each month_changed + final post-sanity.
+    // 31 days from 1930-01-01 crosses one month boundary → 3 snapshot
+    // points. Canonical scenario has 3 GER factions → 9 data rows.
+    TempDir td("leviathan_runner_m116_canonical_factions_csv");
+    rn::RunnerOptions opts;
+    opts.config_path       = kCanonicalConfig;
+    opts.days              = 31;
+    opts.output_dir        = td.path;
+    opts.scenario_path     = kCanonicalScenario;
+    opts.factions_csv_path = td.path / "factions.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().factions_csv_rows == 9u);
+
+    const std::string text = read_file(td.path / "factions.csv");
+    // All three canonical GER factions appear by id_code.
+    CHECK(text.find("GER_military")    != std::string::npos);
+    CHECK(text.find("GER_workers")     != std::string::npos);
+    CHECK(text.find("GER_bureaucracy") != std::string::npos);
+    // Doubles use scientific notation; sanity-check the marker.
+    CHECK(text.find("e-") != std::string::npos);
+}
+
+TEST_CASE("run: --factions-csv preserves byte-identical determinism on same seed") {
+    TempDir td_a("leviathan_runner_m116_det_a");
+    TempDir td_b("leviathan_runner_m116_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path       = kCanonicalConfig;
+        o.days              = 90;
+        o.output_dir        = dir;
+        o.seed_override     = std::uint64_t{0xDA7AB00B};
+        o.scenario_path     = kCanonicalScenario;
+        o.factions_csv_path = dir / "factions.csv";
+        return o;
+    };
+
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "factions.csv") == read_file(td_b.path / "factions.csv"));
+}
+
+TEST_CASE("run: --factions-csv does NOT change --summary-csv output (M0.10 contract)") {
+    // M0.10 contract: opting into faction CSV must not perturb the
+    // summary CSV byte stream.
+    TempDir td_a("leviathan_runner_m116_summary_iso_a");
+    TempDir td_b("leviathan_runner_m116_summary_iso_b");
+
+    rn::RunnerOptions opts_a;
+    opts_a.config_path      = kCanonicalConfig;
+    opts_a.days             = 60;
+    opts_a.output_dir       = td_a.path;
+    opts_a.seed_override    = std::uint64_t{0xCAFE};
+    opts_a.summary_csv_path = td_a.path / "summary.csv";
+
+    rn::RunnerOptions opts_b = opts_a;
+    opts_b.output_dir        = td_b.path;
+    opts_b.summary_csv_path  = td_b.path / "summary.csv";
+    opts_b.factions_csv_path = td_b.path / "factions.csv";  // extra opt-in
+
+    REQUIRE(rn::run(opts_a).ok());
+    REQUIRE(rn::run(opts_b).ok());
+
+    CHECK(read_file(td_a.path / "summary.csv") == read_file(td_b.path / "summary.csv"));
+}
+
+TEST_CASE("run: --factions-csv does NOT change --countries-csv output (M1.14 contract)") {
+    // M1.14 contract: adding faction CSV must not perturb the per-
+    // country CSV either.
+    TempDir td_a("leviathan_runner_m116_countries_iso_a");
+    TempDir td_b("leviathan_runner_m116_countries_iso_b");
+
+    rn::RunnerOptions opts_a;
+    opts_a.config_path        = kCanonicalConfig;
+    opts_a.days               = 60;
+    opts_a.output_dir         = td_a.path;
+    opts_a.seed_override      = std::uint64_t{0xC0DE};
+    opts_a.scenario_path      = kCanonicalScenario;
+    opts_a.countries_csv_path = td_a.path / "countries.csv";
+
+    rn::RunnerOptions opts_b = opts_a;
+    opts_b.output_dir         = td_b.path;
+    opts_b.countries_csv_path = td_b.path / "countries.csv";
+    opts_b.factions_csv_path  = td_b.path / "factions.csv";  // extra opt-in
+
+    REQUIRE(rn::run(opts_a).ok());
+    REQUIRE(rn::run(opts_b).ok());
+
+    CHECK(read_file(td_a.path / "countries.csv") ==
+          read_file(td_b.path / "countries.csv"));
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
 TEST_CASE("parse_args: --scenario flag is plumbed through") {
     Argv arg(std::array<const char*, 5>{
         "leviathan", "--days", "3",
