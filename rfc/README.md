@@ -34,7 +34,7 @@ M0 / M1 中落地，部分仍是未來工作：
   shape、RFC-080 §3 fiscal capacity / corruption 變數定義（M1.1 起作為
   state 欄位），以及 RFC-090 §M0 列出的全部 sub-tasks。
   詳見 `../docs/milestone-0-result.md`。
-- **M1（進行中）** — 單國內政原型。M1.1 落實 RFC-060 §3
+- **M1（已完成）** — 單國內政原型。M1.1 落實 RFC-060 §3
   `CountryState` 主要欄位；M1.2 落實 RFC-060 §3 / RFC-070 §2
   `FactionState`（含 RFC-010 §2.5 列出的派系類型）；M1.3 落實
   RFC-060 §3 / RFC-010 §2.4 `BudgetState`（七類別預算分配，作為巢狀
@@ -186,6 +186,29 @@ M0 / M1 中落地，部分仍是未來工作：
   不做** save schema 變更（仍 v7）、CountryState / FactionState /
   PolicyData shape 變更、JSON 變體、streaming I/O、新 sanity check、
   per-country 聚合、AI / events / war / monthly pipeline 變更。
+  **M1.17（M1 exit / integration tests）** 為 `tests/integration/`
+  新增 `m1_end_to_end_test.cpp`，透過 runner 跑完整 M1 pipeline 三
+  個 case：(1) 1 年 scenario run（`1930_with_start_policies.json`
+  + `--summary-csv` + `--countries-csv` + `--factions-csv`），驗證
+  scenario loader 載入 3 國 / 3 派系 / 10 政策、day-0 enactment 在
+  GER 留下兩筆 `active_policies`（`raise_taxes` 60 天 →
+  `1930-03-02`、`increase_military_budget` 30 天 → `1930-01-31`）、
+  monthly_ticks == 12、save round-trip 保留 `active_policies` 與
+  `last_gdp_growth_rate`；(2) 10 年 soak run（3652 天 → 1940-01-01，
+  120 個 monthly pipeline）對應 RFC-090 §1.17 「跑 10 年單國測試」
+  acceptance criterion，驗證 sanity_check 沒有 issue、每國的 gdp /
+  stability / legitimacy / last_gdp_growth_rate 都 finite 且 ratio
+  欄位仍 clamp 在 `[0, 1]`；(3) 5-artefact byte-identical
+  determinism（save / events / summary CSV / countries CSV /
+  factions CSV）pin 整個 M1 的決定性 contract。新增
+  `docs/milestone-1-result.md` 為 M1 exit report，整理 M1.1–M1.17
+  ledger、deferred 項目（expiration sweep、effect revert、scheduler、
+  AI / events / war、faction react extension、CSV quoting、多國 /
+  外交層、replay）、M2 建議（player-operation prototype per
+  RFC-090 §M2）、保留的架構規則。Drive-by：`main()` 過時的
+  `Milestone 0.10` label 改成 milestone-neutral 字串。**M1.17 不做**
+  save schema 變更（仍 v7）、新 system / flag / CSV、policy
+  expiration / revert、AI、events、M2 work。**M1 在此收尾。**
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

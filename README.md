@@ -6,27 +6,25 @@
 
 ## Status
 
-- Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.16 — Faction-level
-  diagnostics CSV.** New `FactionSummaryRow` +
-  `faction_snapshot(state, faction)` +
-  `write_faction_csv_header` / `write_faction_csv_row` in
-  `systems::diagnostics`. New opt-in `--factions-csv PATH` runner
-  flag emits 9 columns per faction per snapshot point
-  (`date,id_code,country_id_code,type,support,influence,
-  radicalism,loyalty,resources`). Same snapshot cadence as
-  `--summary-csv` and `--countries-csv`. Existing summary CSV and
-  per-country CSV both byte-for-byte unchanged (M0.10 and M1.14
-  contracts preserved). No save-format bump (still v7). Drive-by:
-  `main()` now prints the per-country / per-faction CSV row counts
-  alongside the existing summary print, matching the data already
-  in `RunOutcome`.
-- Next sub-milestone candidates: **M1.17** (policy expiration
-  sweep — first consumer of `active_policies.expires_on`; would add
-  a monthly pipeline step but no save schema change) or **M1.18**
-  (faction `react` extension — type-specific reactions beyond the
-  M1.6 linear-drift rules).
-- M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
+- Phase: **Milestone 1 closed — single-country internal politics prototype complete.**
+- Latest shipped sub-milestone: **M1.17 — M1 exit / integration
+  tests.** New `tests/integration/m1_end_to_end_test.cpp` exercising
+  the full runner pipeline against the canonical
+  `1930_with_start_policies.json` scenario: 1-year run with all
+  three CSV outputs + save round-trip, 10-year soak run pinning the
+  RFC-090 §1.17 acceptance criterion (120 monthly pipelines,
+  finite-numerics guard, zero sanity issues), and a 5-artefact
+  byte-identical determinism test. New `docs/milestone-1-result.md`
+  collects the M1.1–M1.17 ledger, deferred items, M2 recommendations,
+  and the preserved architectural invariants. No save-format bump
+  (still v7); no new system; no new CLI flag. Drive-by: `main()`'s
+  stale milestone label rewritten to be milestone-neutral.
+- **M1 is closed.** Next phase is **Milestone 2 — player-operation
+  prototype** (RFC-090 §M2): `--player COUNTRY_IDCODE` selection,
+  pause / resume / step, command queue, command log. The runtime
+  systems M1 ships are exactly what M2 will react to.
+- M0 closed. See `docs/milestone-0-result.md` for the M0 exit report,
+  `docs/milestone-1-result.md` for the M1 exit report, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
@@ -47,7 +45,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Sixteen sub-milestones merged so far:
+RFC-090 §M1) is complete. Seventeen sub-milestones merged:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -97,7 +95,13 @@ a per-day loop; **M1.16 Faction-level diagnostics CSV — new
 writers, plus opt-in `--factions-csv PATH` runner flag emitting
 9 columns per faction per snapshot point. Existing summary CSV
 and per-country CSV both byte-for-byte unchanged (M0.10 + M1.14
-contracts preserved). No save-format bump (still v7).**
+contracts preserved). No save-format bump (still v7); **M1.17 M1
+exit / integration tests — new
+`tests/integration/m1_end_to_end_test.cpp` (1-year scenario run +
+10-year soak run + 5-artefact byte-identical determinism), new
+`docs/milestone-1-result.md` exit report, drive-by `main()`
+milestone-label cleanup. No new system, no new flag, no save
+schema change. M1 closes here.**
 
 ## Repository layout
 
@@ -199,6 +203,14 @@ on Windows).
     --scenario data/scenarios/1930_minimal.json \
     --countries-csv out/countries.csv \
     --factions-csv  out/factions.csv
+
+# M1.17 - 10-year soak (RFC-090 §1.17 acceptance criterion).
+# Loads the canonical day-0-policies scenario and ticks 3652 days
+# (1930-01-01 -> 1940-01-01). 120 monthly pipeline runs.
+./build/bin/Debug/leviathan \
+    --days     3652 \
+    --seed     12345 \
+    --scenario data/scenarios/1930_with_start_policies.json
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -235,12 +247,23 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.16 there are **432 doctest cases**. M0 contributed 179;
+As of M1.17 there are **435 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
-M1.14 added 17; M1.15 added 15; M1.16 adds 18 covering the
-**per-faction CSV**: 9 diagnostics cases (faction_snapshot reads
+M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 adds 3
+end-to-end integration tests in `tests/integration/m1_end_to_end_test.cpp`:
+(1) 1-year run that loads the canonical day-0-policies scenario via
+the runner, asserts the `active_policies` round-trip (`expires_on
+= 1930-03-02` for `raise_taxes`, `1930-01-31` for
+`increase_military_budget`), checks `monthly_ticks == 12` and CSV
+row counts (1+12+1 snapshot points × N entities); (2) 10-year soak
+run pinning RFC-090 §1.17 (3652 days, 120 monthly pipelines, zero
+sanity issues, every country's gdp / stability / legitimacy /
+last_gdp_growth_rate finite and clamped); (3) 5-artefact
+byte-identical determinism check (save / events / summary CSV /
+countries CSV / factions CSV) over the 1-year scenario. M1.16
+previously added 18 covering the **per-faction CSV**: 9 diagnostics cases (faction_snapshot reads
 every field, invalid id rejected with bad index in message,
 default-id rejected, empty state rejects any index, header
 byte-exact, row well-formed with 8 commas / 9 columns, negative
