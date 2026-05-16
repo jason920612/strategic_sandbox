@@ -43,6 +43,8 @@ using leviathan::core::FactionId;
 using leviathan::core::FactionState;
 using leviathan::core::GameDate;
 using leviathan::core::GameState;
+using leviathan::core::PolicyData;
+using leviathan::core::PolicyId;
 namespace dl = leviathan::systems::data_loader;
 namespace lg = leviathan::systems::logging;
 namespace lt = leviathan::systems::time;
@@ -124,6 +126,24 @@ TEST_CASE("M0 end-to-end: load -> tick 365 -> save -> load -> round-trip") {
     CHECK(state.factions[0].id_code == "GER_military");
     CHECK(state.factions[1].id_code == "GER_bureaucracy");
     CHECK(state.factions[2].id_code == "GER_workers");
+
+    // ---- Step 3b (M1.4): load three policy fixtures -----------------
+    const std::vector<fs::path> policy_paths = {
+        data_root / "policies" / "increase_military_budget.json",
+        data_root / "policies" / "expand_welfare.json",
+        data_root / "policies" / "administrative_reform.json",
+    };
+    for (int i = 0; i < static_cast<int>(policy_paths.size()); ++i) {
+        auto r = dl::load_policy(policy_paths[i]);
+        REQUIRE_MESSAGE(r.ok(), policy_paths[i].string());
+        auto p = std::move(r).value();
+        p.id = PolicyId{i};
+        state.policies.push_back(std::move(p));
+    }
+    REQUIRE(state.policies.size() == 3);
+    CHECK(state.policies[0].id_code == "increase_military_budget");
+    CHECK(state.policies[1].id_code == "expand_welfare");
+    CHECK(state.policies[2].id_code == "administrative_reform");
 
     // ---- Step 4: tick 365 days with explicit logging ------------------
     lg::log_info(state, "lifecycle", "integration_test", "simulation start",

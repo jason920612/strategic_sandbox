@@ -49,7 +49,11 @@ namespace leviathan::systems::save_system {
 //                "forward-compat" assumption from the M0.8 design note.
 //   v4 (M1.3)  - CountryState gained a nested BudgetState (7-category
 //                budget allocation). v3 saves miss the budget block.
-inline constexpr std::uint32_t kSaveFormatVersion   = 4;
+//   v5 (M1.4)  - PolicyData gained id_code, name, category,
+//                duration_days, admin_cost, and an effects vector
+//                ({target, op, value}). The policies array is now
+//                populated in saves.
+inline constexpr std::uint32_t kSaveFormatVersion   = 5;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

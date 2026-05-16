@@ -31,11 +31,18 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(leviathan_systems STATIC
     data_loader.cpp
     diagnostics.cpp
+    internal/json_helpers.cpp
     logging_system.cpp
     random_service.cpp
     runner.cpp
     save_system.cpp
     time_system.cpp
+)
+
+# Private include path so .cpp files can do `#include "internal/...".
+# The public surface (include/) never references internal/.
+target_include_directories(leviathan_systems PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_library(leviathan::systems ALIAS leviathan_systems)
 

@@ -1,0 +1,12 @@
+{
+  "id":            "raise_taxes",
+  "name":          "Raise Taxes",
+  "category":      "tax",
+  "duration_days": 60,
+  "admin_cost":    0.12,
+  "effects": [
+    { "target": "country.legal_tax_burden", "op": "add", "value":  0.05 },
+    { "target": "faction:workers.support",  "op": "add", "value": -0.05 },
+    { "target": "faction:local_elites.support", "op": "add", "value": -0.04 }
+  ]
+}

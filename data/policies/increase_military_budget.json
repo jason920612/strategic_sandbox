@@ -1,0 +1,12 @@
+{
+  "id":            "increase_military_budget",
+  "name":          "Increase Military Budget",
+  "category":      "budget",
+  "duration_days": 30,
+  "admin_cost":    0.10,
+  "effects": [
+    { "target": "country.military_power",   "op": "add", "value":  0.03 },
+    { "target": "faction:military.support", "op": "add", "value":  0.08 },
+    { "target": "faction:workers.support",  "op": "add", "value": -0.03 }
+  ]
+}

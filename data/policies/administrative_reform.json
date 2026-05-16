@@ -1,0 +1,13 @@
+{
+  "id":            "administrative_reform",
+  "name":          "Administrative Reform",
+  "category":      "admin",
+  "duration_days": 180,
+  "admin_cost":    0.20,
+  "effects": [
+    { "target": "country.administrative_efficiency", "op": "add", "value":  0.05 },
+    { "target": "country.corruption",                "op": "add", "value": -0.03 },
+    { "target": "country.fiscal_capacity",           "op": "add", "value":  0.02 },
+    { "target": "faction:bureaucracy.support",       "op": "add", "value": -0.05 }
+  ]
+}

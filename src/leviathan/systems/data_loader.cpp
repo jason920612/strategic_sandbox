@@ -1,6 +1,5 @@
 #include "leviathan/systems/data_loader.hpp"
 
-#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -8,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "internal/json_helpers.hpp"
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/result.hpp"
 
@@ -15,118 +15,17 @@ namespace leviathan::systems::data_loader {
 
 namespace {
 
-using nlohmann::json;
-
-std::string fmt_err(std::string_view source, std::string_view msg) {
-    std::string out;
-    out.reserve(source.size() + msg.size() + 2);
-    out.append(source.data(), source.size());
-    out.append(": ");
-    out.append(msg.data(), msg.size());
-    return out;
-}
-
-const json* navigate(const json& root, std::string_view dotted_path) {
-    // Walks a dotted path like "simulation.start_date". Returns null
-    // if any segment is missing or any intermediate value is not an
-    // object.
-    const json* cur = &root;
-    std::size_t pos = 0;
-    while (pos <= dotted_path.size()) {
-        const std::size_t dot = dotted_path.find('.', pos);
-        const std::size_t end = (dot == std::string_view::npos)
-                                ? dotted_path.size()
-                                : dot;
-        const std::string segment(dotted_path.substr(pos, end - pos));
-        if (!cur->is_object()) return nullptr;
-        if (!cur->contains(segment)) return nullptr;
-        cur = &cur->at(segment);
-        if (dot == std::string_view::npos) break;
-        pos = dot + 1;
-    }
-    return cur;
-}
-
-core::Result<std::string> require_string(const json& root,
-                                         std::string_view path,
-                                         std::string_view source) {
-    const json* v = navigate(root, path);
-    if (v == nullptr) {
-        std::string msg = "missing required field '";
-        msg.append(path.data(), path.size());
-        msg += "'";
-        return core::Result<std::string>::failure(fmt_err(source, msg));
-    }
-    if (!v->is_string()) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' has wrong type (expected string)";
-        return core::Result<std::string>::failure(fmt_err(source, msg));
-    }
-    return core::Result<std::string>::success(v->get<std::string>());
-}
-
-core::Result<double> require_number(const json& root,
-                                    std::string_view path,
-                                    std::string_view source) {
-    const json* v = navigate(root, path);
-    if (v == nullptr) {
-        std::string msg = "missing required field '";
-        msg.append(path.data(), path.size());
-        msg += "'";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    if (!v->is_number()) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' has wrong type (expected number)";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    const double d = v->get<double>();
-    if (!std::isfinite(d)) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' is not finite";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    return core::Result<double>::success(d);
-}
-
-// Returns the number iff it parses as finite AND is >= 0. Used for
-// quantities like GDP that have a physical floor of zero.
-core::Result<double> require_nonneg_number(const json& root,
-                                           std::string_view path,
-                                           std::string_view source) {
-    auto n = require_number(root, path, source);
-    if (!n) return core::Result<double>::failure(std::move(n.error()));
-    if (n.value() < 0.0) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' must be >= 0 (got ";
-        msg += std::to_string(n.value());
-        msg += ")";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    return n;
-}
-
-// Returns the number iff it parses as finite AND is in [0, 1]. Used for
-// the many M1.1 ratio fields (stability, legitimacy, corruption, ...).
-core::Result<double> require_ratio(const json& root,
-                                   std::string_view path,
-                                   std::string_view source) {
-    auto n = require_number(root, path, source);
-    if (!n) return core::Result<double>::failure(std::move(n.error()));
-    if (n.value() < 0.0 || n.value() > 1.0) {
-        std::string msg = "'";
-        msg.append(path.data(), path.size());
-        msg += "' must be in [0, 1] (got ";
-        msg += std::to_string(n.value());
-        msg += ")";
-        return core::Result<double>::failure(fmt_err(source, msg));
-    }
-    return n;
-}
+// Re-export the shared helpers so the existing call sites compile
+// unchanged. The detail namespace lives in internal/json_helpers.hpp
+// and is shared with save_system.cpp.
+using leviathan::systems::detail::fmt_err;
+using leviathan::systems::detail::navigate;
+using leviathan::systems::detail::require_string;
+using leviathan::systems::detail::require_number;
+using leviathan::systems::detail::require_nonneg_number;
+using leviathan::systems::detail::require_ratio;
+using leviathan::systems::detail::require_u64;
+using leviathan::systems::detail::json;
 
 core::Result<core::GameDate> require_date(const json& root,
                                           std::string_view path,
@@ -521,6 +420,117 @@ core::Result<core::FactionState> load_faction(
             std::move(text_result.error()));
     }
     return parse_faction(text_result.value(), path.string());
+}
+
+// =========================================================================
+// PolicyData (M1.4)
+// =========================================================================
+
+core::Result<core::PolicyData> parse_policy(
+        std::string_view json_text,
+        std::string_view source_label) {
+    json root = json::parse(json_text, /*cb=*/nullptr,
+                            /*allow_exceptions=*/false);
+    if (root.is_discarded()) {
+        return core::Result<core::PolicyData>::failure(
+            fmt_err(source_label, "JSON parse error (malformed document)"));
+    }
+    if (!root.is_object()) {
+        return core::Result<core::PolicyData>::failure(
+            fmt_err(source_label, "top-level JSON value is not an object"));
+    }
+
+    core::PolicyData p;
+
+    auto id_code = require_string(root, "id", source_label);
+    if (!id_code) {
+        return core::Result<core::PolicyData>::failure(std::move(id_code.error()));
+    }
+    p.id_code = id_code.value();
+
+    auto name = require_string(root, "name", source_label);
+    if (!name) {
+        return core::Result<core::PolicyData>::failure(std::move(name.error()));
+    }
+    p.name = name.value();
+
+    auto category = require_string(root, "category", source_label);
+    if (!category) {
+        return core::Result<core::PolicyData>::failure(std::move(category.error()));
+    }
+    p.category = category.value();
+
+    auto duration = require_u64(root, "duration_days", source_label);
+    if (!duration) {
+        return core::Result<core::PolicyData>::failure(std::move(duration.error()));
+    }
+    constexpr std::uint64_t kIntMax =
+        static_cast<std::uint64_t>(2147483647);   // INT_MAX
+    if (duration.value() > kIntMax) {
+        return core::Result<core::PolicyData>::failure(
+            fmt_err(source_label,
+                    "'duration_days' exceeds INT_MAX (got " +
+                    std::to_string(duration.value()) + ")"));
+    }
+    p.duration_days = static_cast<int>(duration.value());
+
+    auto admin_cost = require_ratio(root, "admin_cost", source_label);
+    if (!admin_cost) {
+        return core::Result<core::PolicyData>::failure(std::move(admin_cost.error()));
+    }
+    p.admin_cost = admin_cost.value();
+
+    // effects: required array of objects (may be empty).
+    const json* effects_node = navigate(root, "effects");
+    if (effects_node == nullptr) {
+        return core::Result<core::PolicyData>::failure(
+            fmt_err(source_label, "missing required field 'effects'"));
+    }
+    if (!effects_node->is_array()) {
+        return core::Result<core::PolicyData>::failure(
+            fmt_err(source_label,
+                    "'effects' has wrong type (expected array of objects)"));
+    }
+    p.effects.reserve(effects_node->size());
+    for (std::size_t i = 0; i < effects_node->size(); ++i) {
+        const auto& e = (*effects_node)[i];
+        const std::string eff_ctx =
+            std::string(source_label) + ": effects[" + std::to_string(i) + "]";
+
+        if (!e.is_object()) {
+            return core::Result<core::PolicyData>::failure(
+                eff_ctx + ": expected JSON object");
+        }
+        auto target = require_string(e, "target", eff_ctx);
+        if (!target) {
+            return core::Result<core::PolicyData>::failure(std::move(target.error()));
+        }
+        auto op = require_string(e, "op", eff_ctx);
+        if (!op) {
+            return core::Result<core::PolicyData>::failure(std::move(op.error()));
+        }
+        auto value = require_number(e, "value", eff_ctx);
+        if (!value) {
+            return core::Result<core::PolicyData>::failure(std::move(value.error()));
+        }
+        core::PolicyEffect pe;
+        pe.target = target.value();
+        pe.op     = op.value();
+        pe.value  = value.value();
+        p.effects.push_back(std::move(pe));
+    }
+
+    return core::Result<core::PolicyData>::success(std::move(p));
+}
+
+core::Result<core::PolicyData> load_policy(
+        const std::filesystem::path& path) {
+    auto text_result = read_whole_file(path);
+    if (!text_result) {
+        return core::Result<core::PolicyData>::failure(
+            std::move(text_result.error()));
+    }
+    return parse_policy(text_result.value(), path.string());
 }
 
 }  // namespace leviathan::systems::data_loader
