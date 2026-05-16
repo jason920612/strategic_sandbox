@@ -1,0 +1,15 @@
+{
+  "id":                "GER_workers",
+  "country":           "GER",
+  "type":              "workers",
+  "name":              "Free Trade Unions",
+  "support":           0.50,
+  "influence":         0.35,
+  "radicalism":        0.45,
+  "loyalty":           0.40,
+  "resources":         0.50,
+  "preferred_policies": [
+    "expand_welfare",
+    "labour_protections"
+  ]
+}

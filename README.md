@@ -7,7 +7,7 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.1 — `CountryState` real fields**
+- Current sub-milestone: **M1.2 — `FactionState` real fields**
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -40,7 +40,8 @@ prototype, RFC-090 §M1) is the next phase.**
 ├── src/                  Simulation core + executable entry point
 ├── tests/                Unit / integration tests (doctest, per-module)
 ├── data/                 Game data (JSON): config/simulation.json,
-│                         countries/germany.json (M0.7 canonical samples)
+│                         countries/{germany,france,japan}.json (M0.7-M1.1),
+│                         factions/ger_*.json (M1.2)
 ├── tools/                Dev / debug tools, currently empty
 └── docs/                 Per-milestone design notes (m0-N-*.md) +
                           pr-drafts/ (PR write-ups)
@@ -137,13 +138,14 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.1 there are **188 doctest cases**. M0's 179 cases all still
-pass; M1.1 added 9 more covering the new `CountryState` field set
-(range checks for negative GDP / out-of-range ratios, missing
-required field errors, the `v1 → v2` save-format rejection
-regression, and round-trip preservation of every numeric field).
-Each `TEST_CASE` is registered with CTest individually, so e.g.
-`ctest -R "ratio"` runs just the range-check tests.
+As of M1.2 there are **205 doctest cases**. M0's 179 cases all still
+pass; M1.1 added 9 new ones (`CountryState` field set, range checks,
+v1→v2 rejection); M1.2 added 17 more covering the new `FactionState`
+field set (parse happy / errors / range, round-trip via save file,
+the `v2 → v3` save-format rejection regression, faction loading in
+the M0.11 integration test). Each `TEST_CASE` is registered with
+CTest individually, so e.g. `ctest -R "parse_faction"` runs just the
+faction parser cases.
 
 ## Build options
 

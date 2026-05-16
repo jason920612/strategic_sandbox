@@ -35,13 +35,19 @@ namespace leviathan::systems::save_system {
 // algorithm changes incompatibly; old saves then fail loudly rather
 // than silently produce a different draw sequence.
 //
-// M1.1 bumped kSaveFormatVersion from 1 to 2: CountryState gained the
-// runtime numeric fields (gdp / stability replaced initial_gdp /
-// initial_stability, plus tax_revenue / budget_balance /
-// legal_tax_burden / fiscal_capacity / administrative_efficiency /
-// central_control / corruption / legitimacy / military_power /
-// threat_perception). v1 saves are not loadable under v2.
-inline constexpr std::uint32_t kSaveFormatVersion   = 2;
+// Version history:
+//   v1 (M0.8)  - initial schema. CountryState had only id/id_code/name/
+//                display_name/initial_gdp/initial_stability. factions /
+//                provinces / policies / events were reserved as empty
+//                arrays.
+//   v2 (M1.1)  - CountryState gained 11 runtime numeric fields and
+//                renamed initial_gdp/initial_stability to gdp/stability.
+//   v3 (M1.2)  - FactionState gained 7+ runtime fields and is now
+//                populated in saves. Loading a v2 save with an M1.2
+//                binary would have lost factions silently, so we bump
+//                rather than rely on the reserved-empty-array
+//                "forward-compat" assumption from the M0.8 design note.
+inline constexpr std::uint32_t kSaveFormatVersion   = 3;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

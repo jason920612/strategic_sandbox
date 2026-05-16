@@ -39,6 +39,8 @@
 namespace fs = std::filesystem;
 using leviathan::core::CountryId;
 using leviathan::core::CountryState;
+using leviathan::core::FactionId;
+using leviathan::core::FactionState;
 using leviathan::core::GameDate;
 using leviathan::core::GameState;
 namespace dl = leviathan::systems::data_loader;
@@ -100,6 +102,29 @@ TEST_CASE("M0 end-to-end: load -> tick 365 -> save -> load -> round-trip") {
     }
     REQUIRE(state.countries.size() == 3);
 
+    // ---- Step 3a (M1.2): load three Germany factions ------------------
+    // The runner doesn't load factions either (by M1.2 design); this
+    // integration test exercises the manual composition path.
+    const std::vector<fs::path> faction_paths = {
+        data_root / "factions" / "ger_military.json",
+        data_root / "factions" / "ger_bureaucracy.json",
+        data_root / "factions" / "ger_workers.json",
+    };
+    for (int i = 0; i < static_cast<int>(faction_paths.size()); ++i) {
+        auto r = dl::load_faction(faction_paths[i]);
+        REQUIRE_MESSAGE(r.ok(), faction_paths[i].string());
+        auto f = std::move(r).value();
+        // Caller assigns numeric ids and resolves the country link by
+        // matching country_id_code against state.countries.
+        f.id      = FactionId{i};
+        f.country = state.countries.front().id;   // all three belong to GER (index 0)
+        state.factions.push_back(std::move(f));
+    }
+    REQUIRE(state.factions.size() == 3);
+    CHECK(state.factions[0].id_code == "GER_military");
+    CHECK(state.factions[1].id_code == "GER_bureaucracy");
+    CHECK(state.factions[2].id_code == "GER_workers");
+
     // ---- Step 4: tick 365 days with explicit logging ------------------
     lg::log_info(state, "lifecycle", "integration_test", "simulation start",
                  {{"days_requested", "365"},
@@ -154,7 +179,8 @@ TEST_CASE("M0 end-to-end: load -> tick 365 -> save -> load -> round-trip") {
     CHECK(reloaded.rng.seed     == 19300101u);
     CHECK(reloaded.rng.counter  == state.rng.counter);
     CHECK(reloaded.countries.size() == 3);
-    CHECK(reloaded.logs.size()       == state.logs.size());
+    CHECK(reloaded.factions.size()  == 3);
+    CHECK(reloaded.logs.size()      == state.logs.size());
 
     // Each country's identity (numeric id, on-disk code, names) must
     // survive the round trip.
@@ -172,6 +198,25 @@ TEST_CASE("M0 end-to-end: load -> tick 365 -> save -> load -> round-trip") {
     CHECK(reloaded.countries[0].id_code == "GER");
     CHECK(reloaded.countries[1].id_code == "FRA");
     CHECK(reloaded.countries[2].id_code == "JPN");
+
+    // Factions also round-trip with their numeric ids, country link,
+    // type strings, and preferred_policies order intact.
+    REQUIRE(reloaded.factions.size() == state.factions.size());
+    for (std::size_t i = 0; i < state.factions.size(); ++i) {
+        const auto& before = state.factions[i];
+        const auto& after  = reloaded.factions[i];
+        CHECK(after.id.value()      == before.id.value());
+        CHECK(after.country.value() == before.country.value());
+        CHECK(after.id_code         == before.id_code);
+        CHECK(after.type            == before.type);
+        REQUIRE(after.preferred_policies.size() == before.preferred_policies.size());
+        for (std::size_t k = 0; k < before.preferred_policies.size(); ++k) {
+            CHECK(after.preferred_policies[k] == before.preferred_policies[k]);
+        }
+    }
+    CHECK(reloaded.factions[0].id_code == "GER_military");
+    CHECK(reloaded.factions[1].id_code == "GER_bureaucracy");
+    CHECK(reloaded.factions[2].id_code == "GER_workers");
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

@@ -1,0 +1,14 @@
+{
+  "id":                "GER_bureaucracy",
+  "country":           "GER",
+  "type":              "bureaucracy",
+  "name":              "Reichsbeamtenschaft",
+  "support":           0.55,
+  "influence":         0.60,
+  "radicalism":        0.15,
+  "loyalty":           0.70,
+  "resources":         0.80,
+  "preferred_policies": [
+    "administrative_reform"
+  ]
+}

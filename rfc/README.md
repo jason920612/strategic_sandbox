@@ -23,3 +23,23 @@
 - 開發環境：純 C++，無引擎，SVG 優先
 - 主要開發者：你 + AI agents
 - 規格風格：RFC / GDD / TDD / Roadmap 混合
+
+## 實作進度（與 RFC 對應）
+
+RFC 是設計意圖；實作版本由 milestone PR 推進。RFC 的部分內容已在
+M0 / M1 中落地，部分仍是未來工作：
+
+- **M0（已完成）** — 技術骨架。實作 RFC-060（純 C++ 架構）、
+  RFC-070 §6 simulation config 載入、RFC-070 §1 country JSON minimal
+  shape、RFC-080 §3 fiscal capacity / corruption 變數定義（M1.1 起作為
+  state 欄位），以及 RFC-090 §M0 列出的全部 sub-tasks。
+  詳見 `../docs/milestone-0-result.md`。
+- **M1（進行中）** — 單國內政原型。M1.1 落實 RFC-060 §3
+  `CountryState` 主要欄位；M1.2 落實 RFC-060 §3 / RFC-070 §2
+  `FactionState`（含 RFC-010 §2.5 列出的派系類型）。RFC-080 §3 §4 §5
+  的公式本體仍未實作 —— M1 後續才會接上。
+- 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
+  RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
+
+實作 PR 對應的 design notes 全部在 `../docs/`，索引見
+`../docs/README.md`。

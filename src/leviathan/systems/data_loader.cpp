@@ -362,4 +362,118 @@ core::Result<core::CountryState> load_country(
     return parse_country(text_result.value(), path.string());
 }
 
+// =========================================================================
+// FactionState
+// =========================================================================
+
+core::Result<core::FactionState> parse_faction(
+        std::string_view json_text,
+        std::string_view source_label) {
+    json root = json::parse(json_text, /*cb=*/nullptr,
+                            /*allow_exceptions=*/false);
+    if (root.is_discarded()) {
+        return core::Result<core::FactionState>::failure(
+            fmt_err(source_label, "JSON parse error (malformed document)"));
+    }
+    if (!root.is_object()) {
+        return core::Result<core::FactionState>::failure(
+            fmt_err(source_label, "top-level JSON value is not an object"));
+    }
+
+    core::FactionState f;
+
+    auto id_code = require_string(root, "id", source_label);
+    if (!id_code) {
+        return core::Result<core::FactionState>::failure(std::move(id_code.error()));
+    }
+    f.id_code = id_code.value();
+
+    auto country = require_string(root, "country", source_label);
+    if (!country) {
+        return core::Result<core::FactionState>::failure(std::move(country.error()));
+    }
+    f.country_id_code = country.value();
+
+    auto type = require_string(root, "type", source_label);
+    if (!type) {
+        return core::Result<core::FactionState>::failure(std::move(type.error()));
+    }
+    f.type = type.value();
+
+    auto name = require_string(root, "name", source_label);
+    if (!name) {
+        return core::Result<core::FactionState>::failure(std::move(name.error()));
+    }
+    f.name = name.value();
+
+    // Behavioural ratios
+    auto support = require_ratio(root, "support", source_label);
+    if (!support) {
+        return core::Result<core::FactionState>::failure(std::move(support.error()));
+    }
+    f.support = support.value();
+
+    auto influence = require_ratio(root, "influence", source_label);
+    if (!influence) {
+        return core::Result<core::FactionState>::failure(std::move(influence.error()));
+    }
+    f.influence = influence.value();
+
+    auto radicalism = require_ratio(root, "radicalism", source_label);
+    if (!radicalism) {
+        return core::Result<core::FactionState>::failure(std::move(radicalism.error()));
+    }
+    f.radicalism = radicalism.value();
+
+    auto loyalty = require_ratio(root, "loyalty", source_label);
+    if (!loyalty) {
+        return core::Result<core::FactionState>::failure(std::move(loyalty.error()));
+    }
+    f.loyalty = loyalty.value();
+
+    // Resources are absolute and non-negative.
+    auto resources = require_nonneg_number(root, "resources", source_label);
+    if (!resources) {
+        return core::Result<core::FactionState>::failure(std::move(resources.error()));
+    }
+    f.resources = resources.value();
+
+    // preferred_policies is a required array of strings (may be empty).
+    {
+        const json* arr = navigate(root, "preferred_policies");
+        if (arr == nullptr) {
+            return core::Result<core::FactionState>::failure(
+                fmt_err(source_label,
+                        "missing required field 'preferred_policies'"));
+        }
+        if (!arr->is_array()) {
+            return core::Result<core::FactionState>::failure(
+                fmt_err(source_label,
+                        "'preferred_policies' has wrong type (expected array of strings)"));
+        }
+        f.preferred_policies.reserve(arr->size());
+        for (std::size_t i = 0; i < arr->size(); ++i) {
+            if (!(*arr)[i].is_string()) {
+                return core::Result<core::FactionState>::failure(
+                    fmt_err(source_label,
+                            "preferred_policies[" + std::to_string(i) +
+                            "] is not a string"));
+            }
+            f.preferred_policies.push_back((*arr)[i].get<std::string>());
+        }
+    }
+
+    return core::Result<core::FactionState>::success(std::move(f));
+}
+
+core::Result<core::FactionState> load_faction(
+        const std::filesystem::path& path) {
+    auto text_result = read_whole_file(path);
+    if (!text_result) {
+        return core::Result<core::FactionState>::failure(
+            std::move(text_result.error()));
+    }
+    return parse_faction(text_result.value(), path.string());
+}
+
 }  // namespace leviathan::systems::data_loader
