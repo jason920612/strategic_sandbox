@@ -7,17 +7,21 @@
 ## Status
 
 - Phase: **Milestone 0 — technical skeleton**
-- Current sub-milestone: **M0.7 — JSON data loader**
+- Current sub-milestone: **M0.8 — JSON save / load**
 - See `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is still a passive container. Systems so far:
 `leviathan::systems::time` (date advance + boundary detection);
 `leviathan::systems::random` (deterministic splitmix64 RNG, no
 `<random>`); `leviathan::systems::logging` (explicit-only logging
-with byte-stable JSONL); and now `leviathan::systems::data_loader`
+with byte-stable JSONL); `leviathan::systems::data_loader`
 (JSON config + country parsers via nlohmann/json, returning `Result<T>`
-with clear path-prefixed error messages). The save/load and headless-
-runner systems remain stubbed and arrive across M0.8 – M0.11.
+with clear path-prefixed error messages); and now
+`leviathan::systems::save_system` (round-trip serialise / deserialise
+of a `GameState` to JSON, with explicit `save_version` and
+`rng_algorithm_version` so old saves fail loudly rather than silently
+diverge). CSV export and the headless-runner remain stubbed and arrive
+across M0.9 – M0.11.
 
 ## Repository layout
 
@@ -26,12 +30,14 @@ runner systems remain stubbed and arrive across M0.8 – M0.11.
 ├── CMakeLists.txt        Top-level build
 ├── README.md             This file
 ├── rfc/                  Design RFCs — read these before changing scope
-├── include/              Public headers (currently empty)
+├── include/leviathan/    Public headers (core/ + systems/)
 ├── src/                  Simulation core + executable entry point
-├── tests/                Unit / integration tests
-├── data/                 Game data (JSON), currently empty
+├── tests/                Unit / integration tests (doctest, per-module)
+├── data/                 Game data (JSON): config/simulation.json,
+│                         countries/germany.json (M0.7 canonical samples)
 ├── tools/                Dev / debug tools, currently empty
-└── docs/                 Long-form developer docs, currently empty
+└── docs/                 Per-milestone design notes (m0-N-*.md) +
+                          pr-drafts/ (PR write-ups)
 ```
 
 ## Requirements
@@ -89,14 +95,17 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M0.7 there are ~115 doctest cases covering all foundational
-types, TimeSystem, RandomService, LoggingSystem, and DataLoader
+As of M0.8 there are ~135 doctest cases covering all foundational
+types, TimeSystem, RandomService, LoggingSystem, DataLoader
 (happy-path parses, every required-field error variant with path-
 prefixed messages, malformed JSON, file-not-found, file-load against
 the canonical `data/config/simulation.json` and
-`data/countries/germany.json`). Each `TEST_CASE` is registered with
-CTest individually, so `ctest -R parse_country` runs just the country
-parse cases.
+`data/countries/germany.json`), and SaveSystem (serialise →
+deserialise round-trip equality, rejection of unknown
+`save_version` / `rng_algorithm_version`, malformed JSON, missing
+required fields, and disk round-trip via a temp file). Each
+`TEST_CASE` is registered with CTest individually, so e.g.
+`ctest -R save_system` runs just the save/load cases.
 
 ## Build options
 
@@ -121,3 +130,7 @@ Read the RFCs in order before changing scope:
 
 Each Milestone 0 sub-milestone (M0.1 – M0.11) ships as its own PR to
 `main`. Do not bundle multiple sub-milestones in one PR.
+
+Per-milestone design notes (locked-in schemas, error formats,
+architectural rules) live under `docs/m0-N-*.md`; PR write-ups live
+under `docs/pr-drafts/`.
