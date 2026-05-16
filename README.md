@@ -7,7 +7,7 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Current sub-milestone: **M1.6 — faction reaction logic (minimal)**
+- Current sub-milestone: **M1.7 — stability tick (minimal)**
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -139,19 +139,18 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.6 there are **272 doctest cases**. M0 contributed 179;
-M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
-added 24; M1.6 adds 17 covering the **first faction-side
-dynamics**: FactionSystem `react` with two linear-toward-equilibrium
-rules (loyalty drifts toward stability at 0.10, support drifts
-toward legitimacy at 0.05), exact one-step delta math, multi-step
-convergence at the documented rates, clamping at both bounds for
-pathological inputs, country-filter (only target country's
-factions touched), untouched-field guarantees, and the new
-non-finite-value regression in PolicySystem (NaN / Inf in
-`PolicyEffect.value` now fails pre-flight). Each `TEST_CASE` is
-registered with CTest individually, so e.g. `ctest -R "react:"`
-runs just the M1.6 reaction cases.
+As of M1.7 there are **288 doctest cases**. M0 contributed 179;
+M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17;
+M1.5 added 24; M1.6 added 17; M1.7 adds 16 covering the **first
+country-side dynamic**: StabilitySystem `tick` with a stripped-
+down RFC-080 §5 formula. Tests pin exact one-step delta math for
+both up-pull and down-pull, the rate / weight / no-factions-default
+constants, both clamp bounds against pathological inputs, 50-step
+geometric convergence, the country filter (averaging only own
+factions), the "faction state untouched" guarantee, and every
+invalid-id path. Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "tick:"` runs just the M1.7
+stability cases.
 
 ## Build options
 

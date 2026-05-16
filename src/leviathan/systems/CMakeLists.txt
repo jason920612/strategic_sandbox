@@ -38,6 +38,7 @@ add_library(leviathan_systems STATIC
     random_service.cpp
     runner.cpp
     save_system.cpp
+    stability_system.cpp
     time_system.cpp
 )
 
