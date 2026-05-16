@@ -7,16 +7,17 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.11 — scenario loader for runner**
-  — new `--scenario PATH` flag, new `scenario_loader::load_into_state`
-  that composes the M0.7 / M1.1 / M1.2 / M1.4 parsers, canonical
-  `data/scenarios/1930_minimal.json` fixture. The runner can finally
-  produce a non-empty world end-to-end without test injection.
-  No new state shape; no save-format bump (still v5); no policy
-  enactment.
-- Next sub-milestone candidate: **M1.12 — economy → stability
-  coupling** (adds `last_gdp_growth_rate` to `CountryState` →
-  triggers save-format `v5 → v6`).
+- Latest shipped sub-milestone: **M1.12 — economy → stability
+  coupling.** `CountryState` gains `last_gdp_growth_rate`; every
+  `economy::tick` writes it, every `stability::tick` reads it as the
+  RFC-080 §5 `EconomicGrowth` term. The monthly pipeline order is
+  **unchanged** (faction → stability → economy), so the coupling
+  produces an intentional one-month lag — stability sees last
+  month's growth. **Save format bumped v5 → v6** (the first M1
+  save-schema bump). v5 saves rejected by the existing strict
+  version gate.
+- Next sub-milestone candidate: **M1.13 — policy enactment from
+  scenario** (manifest "starting_policies" list + day-0 enactment).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -38,7 +39,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Eleven sub-milestones merged so far:
+RFC-090 §M1) is in progress. Twelve sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -52,12 +53,17 @@ GDP growth); M1.9 MonthlyPipeline `tick_country` /
 order `faction::react → stability::tick → economy::tick`); M1.10
 runner monthly pipeline wiring (every `month_changed` invokes
 `monthly::tick_all_countries`; `run_state(state, opts)` exposed for
-test injection); **M1.11 scenario loader — `--scenario PATH` flag
-+ `scenario_loader::load_into_state` compose the M0.7 / M1.1 / M1.2
-/ M1.4 parsers into a manifest-driven loader.** `leviathan --days
-365 --scenario data/scenarios/1930_minimal.json` finally produces a
-non-empty world end-to-end without test-only injection (3 countries
-+ 3 factions + 10 policies, all canonical fixtures).
+test injection); M1.11 scenario loader (`--scenario PATH` flag +
+`scenario_loader::load_into_state` compose the M0.7 / M1.1 / M1.2
+/ M1.4 parsers into a manifest-driven loader; `leviathan --days
+365 --scenario data/scenarios/1930_minimal.json` produces a
+non-empty world end-to-end without test-only injection); **M1.12
+economy → stability coupling — new `CountryState::last_gdp_growth_rate`
+field, `economy::tick` writes it, `stability::tick` reads it as the
+RFC-080 §5 `EconomicGrowth` term (`kEconomicGrowthWeight = 2.0`).**
+Monthly pipeline order is unchanged, so the coupling has an
+intentional one-month lag. **Save format bumped v5 → v6** (the
+first M1 save-schema bump); old v5 saves rejected.
 
 ## Repository layout
 
@@ -177,20 +183,23 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.11 there are **352 doctest cases**. M0 contributed 179;
+As of M1.12 there are **367 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
-11; M1.10 added 9; M1.11 adds 25 covering the **scenario loader**:
-17 `scenario_loader_test.cpp` cases (manifest happy path, every
-schema rejection, end-to-end synthetic temp-dir layout, every
-duplicate-id and missing-reference rejection, canonical
-`data/scenarios/1930_minimal.json`) plus 8 runner-integration
-cases (`--scenario` flag plumbing, with-vs-without-scenario
-behaviour, non-empty save round-trip, byte-identical determinism
-with countries, mid-load failure stops before file writes). Save
-schema is still v5 — pinned by test. Each `TEST_CASE` is
-registered with CTest individually, so e.g.
-`ctest -R "scenario"` runs just the scenario-loader cases.
+11; M1.10 added 9; M1.11 added 25; M1.12 adds 15 covering the
+**economy → stability coupling**: save-format bump v5 → v6 (v5
+rejected, v6 missing field rejected, round-trip preserves value),
+economy writes (`last_gdp_growth_rate` mirrors `outcome.gdp_growth_rate`;
+gdp=0 still writes; invalid id unchanged), stability reads
+(positive growth raises target, negative lowers, zero matches
+pre-M1.12 target, pathological values clamped, stability doesn't
+write the field), one-month-lag pinned by the monthly-pipeline
+test, ordering-regression test re-derives the M1.9 canonical-order
+target using `last_gdp_growth_rate = 0.0` (only true if stability
+runs before economy), and a runner-scenario test verifies the save
+contains the field. Each `TEST_CASE` is registered with CTest
+individually, so e.g. `ctest -R "last_gdp_growth_rate"` runs just
+the new coupling cases.
 
 ## Build options
 

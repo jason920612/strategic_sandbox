@@ -382,3 +382,43 @@ TEST_CASE("tick: empty state (no countries) -> invalid id rejected") {
     const auto r = econ::tick(state, CountryId{0});
     REQUIRE(r.failed());
 }
+
+// =====================================================================
+// M1.12: last_gdp_growth_rate publish
+// =====================================================================
+
+TEST_CASE("tick: writes c.last_gdp_growth_rate equal to outcome.gdp_growth_rate") {
+    GameState state;
+    auto c = germany_baseline();
+    c.last_gdp_growth_rate = 999.0;  // seed with a wrong value; tick must overwrite
+    state.countries.push_back(c);
+
+    const auto r = econ::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    CHECK(state.countries[0].last_gdp_growth_rate
+          == doctest::Approx(r.value().gdp_growth_rate));
+    CHECK(state.countries[0].last_gdp_growth_rate == doctest::Approx(0.00350));
+}
+
+TEST_CASE("tick: gdp == 0 still writes computed last_gdp_growth_rate") {
+    GameState state;
+    auto c = germany_baseline();
+    c.gdp = 0.0;
+    state.countries.push_back(c);
+
+    const auto r = econ::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    // Formula doesn't depend on GDP; rate is the same 0.00350.
+    CHECK(state.countries[0].last_gdp_growth_rate == doctest::Approx(0.00350));
+    CHECK(state.countries[0].gdp                 == doctest::Approx(0.0));
+}
+
+TEST_CASE("tick: invalid CountryId leaves last_gdp_growth_rate unchanged") {
+    GameState state;
+    auto c = germany_baseline();
+    c.last_gdp_growth_rate = 0.123;  // arbitrary sentinel
+    state.countries.push_back(c);
+
+    REQUIRE(econ::tick(state, CountryId{99}).failed());
+    CHECK(state.countries[0].last_gdp_growth_rate == doctest::Approx(0.123));
+}

@@ -62,6 +62,13 @@ core::Result<EconomyOutcome> tick(core::GameState& state,
                                     // recessions
     out.new_gdp = c.gdp;
 
+    // M1.12: publish the just-computed growth rate so the next
+    // monthly stability::tick can pick it up as the RFC-080 §5
+    // EconomicGrowth term. The write happens UNCONDITIONALLY for any
+    // successful tick (including the gdp == 0 edge case); the
+    // invalid-id failure path returned earlier without mutating state.
+    c.last_gdp_growth_rate = out.gdp_growth_rate;
+
     return core::Result<EconomyOutcome>::success(out);
 }
 

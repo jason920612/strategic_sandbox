@@ -53,7 +53,14 @@ namespace leviathan::systems::save_system {
 //                duration_days, admin_cost, and an effects vector
 //                ({target, op, value}). The policies array is now
 //                populated in saves.
-inline constexpr std::uint32_t kSaveFormatVersion   = 5;
+//   v6 (M1.12) - CountryState gained `last_gdp_growth_rate` (the
+//                most recent gdp_growth_rate written by economy::tick;
+//                stability::tick consumes it as the RFC-080 §5
+//                EconomicGrowth term). A v5 save would re-load with
+//                an UNINITIALISED runtime growth rate; we reject it
+//                so a v5 save can't silently change post-load
+//                behaviour at the next monthly pipeline call.
+inline constexpr std::uint32_t kSaveFormatVersion   = 6;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

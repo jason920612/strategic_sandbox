@@ -344,3 +344,94 @@ TEST_CASE("tick: outcome struct carries previous / new / target") {
     // new_stability == state.countries[0].stability after the call
     CHECK(r.value().new_stability == doctest::Approx(state.countries[0].stability));
 }
+
+// =====================================================================
+// M1.12: EconomicGrowth term
+// =====================================================================
+
+TEST_CASE("tick: kEconomicGrowthWeight constant matches the spec") {
+    CHECK(st_sys::kEconomicGrowthWeight == doctest::Approx(2.0));
+}
+
+TEST_CASE("tick: positive last_gdp_growth_rate raises target stability") {
+    // Baseline (growth = 0): target = 0.5*0.5 + 0.5*0.5 - 0 - 0 = 0.50.
+    // With growth = 0.0035: target = 0.50 + 2.0 * 0.0035 = 0.50 + 0.007 = 0.507.
+    GameState state;
+    auto c = country_with(0, /*stab=*/0.50, /*legitimacy=*/0.50,
+                          /*corruption=*/0.0);
+    c.last_gdp_growth_rate = 0.0035;  // canonical GER 1930 monthly growth
+    state.countries.push_back(c);
+    state.factions.push_back(faction_with(0, CountryId{0},
+                                          /*support=*/0.50, /*radicalism=*/0.0));
+
+    const auto r = st_sys::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    CHECK(r.value().target_stability == doctest::Approx(0.507));
+}
+
+TEST_CASE("tick: negative last_gdp_growth_rate lowers target stability") {
+    // raw_target = 0.50 + 2.0 * -0.010 = 0.50 - 0.020 = 0.480.
+    GameState state;
+    auto c = country_with(0, 0.50, 0.50, 0.0);
+    c.last_gdp_growth_rate = -0.010;  // recession case
+    state.countries.push_back(c);
+    state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+
+    const auto r = st_sys::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    CHECK(r.value().target_stability == doctest::Approx(0.480));
+}
+
+TEST_CASE("tick: zero last_gdp_growth_rate is identical to pre-M1.12 behaviour") {
+    // Regression guard: with the field at its default 0.0, every
+    // existing test that pre-dates M1.12 must continue to compute
+    // the same target. We re-derive the M1.7 formula here.
+    GameState state;
+    auto c = country_with(0, 0.50, 0.50, 0.0);
+    // last_gdp_growth_rate defaults to 0.0 - left untouched.
+    state.countries.push_back(c);
+    state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+
+    const auto r = st_sys::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    // Pre-M1.12: target = 0.5*0.5 + 0.5*0.5 - 0 - 0 = 0.50.
+    CHECK(r.value().target_stability == doctest::Approx(0.50));
+}
+
+TEST_CASE("tick: pathological last_gdp_growth_rate is still clamped to [0,1]") {
+    // A wildly out-of-range growth value (e.g. caused by future
+    // economy bugs) should not break stability::tick's contract.
+    // target = clamp(0.5 + 2.0 * 1.0, 0, 1) = clamp(2.5, 0, 1) = 1.0.
+    GameState state;
+    auto c = country_with(0, 0.50, 0.50, 0.0);
+    c.last_gdp_growth_rate = 1.0;
+    state.countries.push_back(c);
+    state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+
+    const auto r = st_sys::tick(state, CountryId{0});
+    REQUIRE(r.ok());
+    CHECK(r.value().target_stability == doctest::Approx(1.0));
+
+    // And on the negative end: target = clamp(0.5 + 2.0 * -1.0, 0, 1) = 0.0.
+    GameState state_neg;
+    auto c2 = country_with(0, 0.50, 0.50, 0.0);
+    c2.last_gdp_growth_rate = -1.0;
+    state_neg.countries.push_back(c2);
+    state_neg.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+
+    const auto r2 = st_sys::tick(state_neg, CountryId{0});
+    REQUIRE(r2.ok());
+    CHECK(r2.value().target_stability == doctest::Approx(0.0));
+}
+
+TEST_CASE("tick: stability::tick does NOT modify last_gdp_growth_rate") {
+    GameState state;
+    auto c = country_with(0, 0.50, 0.50, 0.0);
+    c.last_gdp_growth_rate = 0.0035;
+    state.countries.push_back(c);
+    state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+
+    REQUIRE(st_sys::tick(state, CountryId{0}).ok());
+    // The field is only WRITTEN by economy::tick. Stability reads it.
+    CHECK(state.countries[0].last_gdp_growth_rate == doctest::Approx(0.0035));
+}

@@ -39,6 +39,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-9-monthly-pipeline.md`](m1-9-monthly-pipeline.md) | M1.9 | **First composition sub-milestone.** `leviathan::systems::monthly::tick_country(state, country)` runs `faction::react` → `stability::tick` → `economy::tick` in canonical order. `tick_all_countries(state)` iterates `state.countries` in vector order with fail-fast semantics; empty state succeeds with `processed=0`. `CountryMonthlyOutcome` aggregates the three sub-outcomes. The canonical order is **observable** — pinned by an exact-arithmetic test where any reordering produces a different result. No new state fields; no save schema change; no RNG / log / date side effects; no runner wiring (M1.10's job); no policy step (caller-driven). Mid-pipeline failure is documented as non-atomic. |
 | [`m1-10-runner-monthly-wiring.md`](m1-10-runner-monthly-wiring.md) | M1.10 | **Runner monthly pipeline wiring.** `runner::run` now invokes `monthly::tick_all_countries(state)` on every `TickResult.month_changed` boundary, after the canonical "month rolled over" log line. `RunOutcome` gains `int monthly_ticks` counting boundaries crossed. A new `run_state(state, opts)` public entry point operates on a pre-built `GameState` so tests can inject countries / factions before the loop. No save-format bump (still v5); no new log lines; no new CSV column; no country-file loading (deferred to a scenario-loader sub-milestone). Determinism property survives for both empty and non-empty state — pinned by same-seed byte-identical save / log tests. |
 | [`m1-11-scenario-loader.md`](m1-11-scenario-loader.md) | M1.11 | **Scenario loader for runner.** `leviathan::systems::scenario_loader::load_into_state(state, manifest_path)` composes the M0.7 / M1.1 / M1.2 / M1.4 parsers into a manifest-driven loader. Manifest schema: `{ "scenario": { "countries":[…], "factions":[…], "policies":[…] } }` — paths are relative to `manifest_path.parent_path().parent_path()`. IDs assigned by vector index; duplicate `id_code` or missing faction → country reference is rejected. New `--scenario PATH` CLI flag; without it the runner ticks an empty world (M1.10 contract preserved). Canonical `data/scenarios/1930_minimal.json` loads 3 countries + 3 factions + 10 policies. **No save-format bump (still v5)**, no policy enactment, no new state shape, no RNG / log / date side effects, no atomic-load rollback. |
+| [`m1-12-economy-stability-coupling.md`](m1-12-economy-stability-coupling.md) | M1.12 | **Economy → stability coupling.** `CountryState` gains `last_gdp_growth_rate` (default 0.0; runtime-only at load time). `economy::tick` writes it on every successful tick. `stability::tick` reads it as the RFC-080 §5 `EconomicGrowth` term with `kEconomicGrowthWeight = 2.0`. Monthly pipeline order is unchanged (faction → stability → economy) — produces an intentional one-month lag where stability sees last month's growth. **Save format bumped v5 → v6** (first M1 save-schema bump); v5 saves and v6 saves missing the field both rejected loudly. No policy scheduling, no AI / events / war, no balance pass — `kEconomicGrowthWeight` is a placeholder. |
 
 ## Reading order
 
@@ -50,25 +51,26 @@ If you're new to the codebase:
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
-   → M1.11). They build on each other and each one tries to call
-   out the rules a future contributor must not silently break.
+   → M1.11 → M1.12). They build on each other and each one tries to
+   call out the rules a future contributor must not silently break.
 
 ## What's next
 
-**M1.12 — economy → stability coupling.** Add
-`last_gdp_growth_rate` to `CountryState` (save-format `v5 → v6`)
-and feed it into `stability::tick` as the RFC-080 §5
-`EconomicGrowth` input. With M1.11 having shipped fixtures the
-runner can drive, this stops being hypothetical and starts producing
-observable effects in multi-month runs.
+**M1.13 — policy enactment from scenario.** Extend the manifest
+with a "starting_policies" list and hook the loader into
+`policy::apply_policy_effects` so a scenario can declare the policy
+state at day 0. M1.11 already loads policy *templates* into
+`state.policies`; M1.13 would let a scenario request that some of
+those be enacted on tick zero, producing the corresponding country /
+faction effects before the first monthly pipeline runs.
 
-A follow-up candidate is **M1.13 — policy enactment from scenario**:
-extend the manifest with a "starting policies" list and hook the
-loader into `policy::apply_policy_effects` so a scenario can declare
-the policy state on day 0.
+A follow-up candidate is **M1.14 — Diagnostics surfaces
+`last_gdp_growth_rate`**: add the field to the snapshot CSV column
+list (or expose a similar inspectability hook) so multi-month runs
+are debuggable without round-tripping the save file.
 
 Per the M1 pacing rule, the next sub-milestone is **not** started
-until M1.11 is merged.
+until M1.12 is merged.
 
 ## When to add a new file
 

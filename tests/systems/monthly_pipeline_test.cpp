@@ -333,3 +333,84 @@ TEST_CASE("tick_country outcome carries every sub-system outcome") {
     CHECK(r.value().economy.tax_revenue == doctest::Approx(state.countries[0].tax_revenue));
     CHECK(r.value().economy.new_gdp     == doctest::Approx(state.countries[0].gdp));
 }
+
+// =====================================================================
+// M1.12: economy -> stability one-month lag
+// =====================================================================
+
+TEST_CASE("tick_country: stability sees PREVIOUS month's growth (M1.12 one-month lag)") {
+    // Canonical order is faction -> stability -> economy. M1.12 means
+    // stability::tick reads CountryState::last_gdp_growth_rate, which
+    // economy::tick writes at the END of every tick. Pipeline order is
+    // NOT changed (that's the explicit M1.12 design decision), so the
+    // first monthly tick sees last_gdp_growth_rate = 0.0 (default),
+    // and only the SECOND monthly tick's stability sees the growth
+    // rate published by the first tick's economy.
+    GameState state;
+    auto c = germany_baseline();
+    // Pre-condition: pristine default for last_gdp_growth_rate.
+    REQUIRE(c.last_gdp_growth_rate == doctest::Approx(0.0));
+    state.countries.push_back(c);
+    state.factions.push_back(make_faction(0, 0, 0.4, 0.3));
+
+    // --- First monthly tick -----------------------------------------
+    // Stability runs BEFORE economy in the same call, so it reads
+    // last_gdp_growth_rate = 0.0. EconomicGrowth contributes nothing
+    // to this tick's stability target.
+    const auto r1 = monthly::tick_country(state, CountryId{0});
+    REQUIRE(r1.ok());
+    const double target_first = r1.value().stability.target_stability;
+    const double growth_first = r1.value().economy.gdp_growth_rate;
+
+    // After the first tick, economy has published its growth rate.
+    CHECK(state.countries[0].last_gdp_growth_rate == doctest::Approx(growth_first));
+    CHECK(growth_first != doctest::Approx(0.0));  // sanity: GER 1930 has positive growth
+
+    // --- Second monthly tick ----------------------------------------
+    // Now stability::tick reads the non-zero last_gdp_growth_rate set
+    // by tick #1. The target should be different from the first call's
+    // target, all else being equal (here support / radicalism barely
+    // moved since the canonical state isn't far from equilibrium).
+    const auto r2 = monthly::tick_country(state, CountryId{0});
+    REQUIRE(r2.ok());
+    const double target_second = r2.value().stability.target_stability;
+
+    // The EconomicGrowth term is + 2.0 * 0.00350 = +0.007 — small but
+    // non-zero. tick #2's target should be HIGHER than tick #1's by
+    // approximately that amount, modulo the small drift in
+    // faction.support / radicalism.
+    CHECK(target_second > target_first);
+}
+
+TEST_CASE("tick_country: pipeline ordering is unchanged (faction -> stability -> economy)") {
+    // Regression for the M1.12 design decision: do NOT reorder so that
+    // economy runs before stability "to fix the lag". The one-month
+    // lag is intentional, and the canonical M1.9 ordering test still
+    // pins faction -> stability -> economy. This test re-asserts that
+    // the M1.12 coupling did NOT silently reorder the pipeline.
+    GameState state;
+    auto c = germany_baseline();
+    c.stability  = 0.0;
+    c.legitimacy = 1.0;
+    c.corruption = 0.0;
+    c.administrative_efficiency = 0.0;
+    c.budget.education      = 0.0;
+    c.budget.infrastructure = 0.0;
+    c.budget.industry       = 0.0;
+    // Critical: last_gdp_growth_rate starts at 0.0 (default). If
+    // economy ran before stability, stability would see the growth
+    // rate from this tick and produce a different target.
+    state.countries.push_back(c);
+    state.factions.push_back(make_faction(0, 0, /*support*/ 0.0,
+                                          /*loyalty*/ 0.0,
+                                          /*radicalism*/ 0.5));
+
+    const auto r = monthly::tick_country(state, CountryId{0});
+    REQUIRE(r.ok());
+
+    // Re-derive the M1.9 canonical-order assertion: stability::tick
+    // saw faction.support = 0.05 (after react) and last_gdp_growth_rate
+    // = 0.0 (because economy hasn't run yet this tick). So:
+    //   target = 0.5*0.05 + 0.5*1.0 - 0 - 0.2*0.5 + 2.0*0.0 = 0.425
+    CHECK(r.value().stability.target_stability == doctest::Approx(0.425));
+}

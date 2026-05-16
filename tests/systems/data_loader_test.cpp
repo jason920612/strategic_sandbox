@@ -209,6 +209,10 @@ TEST_CASE("parse_country: full RFC-070 + M1.1 shape") {
     // Runtime-only fields start at 0; not read from the config JSON.
     CHECK(c.tax_revenue               == doctest::Approx(0.0));
     CHECK(c.budget_balance            == doctest::Approx(0.0));
+    // M1.12: last_gdp_growth_rate is runtime-only; DataLoader does NOT
+    // require it in country JSON and leaves it at the default 0.0.
+    // economy::tick fills it on every monthly tick.
+    CHECK(c.last_gdp_growth_rate      == doctest::Approx(0.0));
     // All ratio fields land directly.
     CHECK(c.legal_tax_burden          == doctest::Approx(0.20));
     CHECK(c.fiscal_capacity           == doctest::Approx(0.50));
