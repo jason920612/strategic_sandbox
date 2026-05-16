@@ -32,6 +32,8 @@ add_executable(leviathan_tests
     core/result_test.cpp
     core/game_date_test.cpp
     core/string_utils_test.cpp
+    core/simulation_config_test.cpp
+    core/game_state_test.cpp
 )
 
 target_link_libraries(leviathan_tests

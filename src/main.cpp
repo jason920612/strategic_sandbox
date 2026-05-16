@@ -1,13 +1,15 @@
 // Stub entry point.
 //
-// M0.2 adds a tiny GameDate demo so the binary visibly exercises the new
-// core library. The real CLI (config loading, headless run, save/log
-// output) lands in M0.9.
+// M0.3 demos the new GameState container: build a SimulationConfig,
+// hand it to make_game_state(), and print a short summary. No
+// simulation systems run yet - TimeSystem lands in M0.4, RNG in M0.5,
+// LoggingSystem in M0.6, the real CLI runner in M0.9.
 
 #include <cstdlib>
 #include <iostream>
 
-#include "leviathan/core/game_date.hpp"
+#include "leviathan/core/game_state.hpp"
+#include "leviathan/core/simulation_config.hpp"
 
 namespace {
 
@@ -17,16 +19,26 @@ constexpr const char* kProjectVersion = "0.1.0";
 }  // namespace
 
 int main(int /*argc*/, char** /*argv*/) {
+    using namespace leviathan::core;
+
     std::cout << kProjectName << " " << kProjectVersion << "\n"
-              << "Milestone 0.2 - core types only.\n"
+              << "Milestone 0.3 - GameState container only.\n"
               << "No simulation logic is wired up yet.\n";
 
-    leviathan::core::GameDate today{1930, 1, 1};
-    std::cout << "Demo start date : " << today.to_string() << "\n";
-    today.advance_days(31);
-    std::cout << "After 31 days   : " << today.to_string() << "\n";
-    today.advance_days(365);
-    std::cout << "After 365 days  : " << today.to_string() << "\n";
+    SimulationConfig config;
+    config.seed = 19300101u;
+
+    GameState state = make_game_state(config);
+
+    std::cout << "Start date       : " << state.current_date.to_string() << "\n"
+              << "RNG seed         : " << state.rng.seed << "\n"
+              << "RNG counter      : " << state.rng.counter << "\n"
+              << "Countries        : " << state.countries.size() << "\n"
+              << "Provinces        : " << state.provinces.size() << "\n"
+              << "Factions         : " << state.factions.size() << "\n"
+              << "Policies         : " << state.policies.size() << "\n"
+              << "Events           : " << state.events.size() << "\n"
+              << "Logs             : " << state.logs.size() << "\n";
 
     return EXIT_SUCCESS;
 }
