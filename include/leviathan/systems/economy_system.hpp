@@ -46,8 +46,8 @@
 //
 //      Constants are sized so a country in the canonical "GER 1930"
 //      shape (sum_budget = 1.0, stability = 0.55, corruption = 0.25)
-//      produces a slightly positive monthly growth; 12 ticks
-//      compounds to ~6% annual baseline.
+//      produces a monthly growth_rate = 0.00350, which compounds
+//      across 12 ticks to ~4.3% annual ((1.0035)^12 ≈ 1.0428).
 //
 // RFC-080 §4 also references `InflationPressure` and `WarDamage`.
 // Neither has input data yet; they're additive future extensions
