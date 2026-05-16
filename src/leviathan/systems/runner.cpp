@@ -15,6 +15,7 @@
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/diagnostics.hpp"
 #include "leviathan/systems/logging_system.hpp"
+#include "leviathan/systems/monthly_pipeline.hpp"
 #include "leviathan/systems/save_system.hpp"
 #include "leviathan/systems/time_system.hpp"
 
@@ -193,11 +194,7 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
 // ===========================================================================
 
 core::Result<RunOutcome> run(const RunnerOptions& opts) {
-    namespace lt = leviathan::systems::time;
-    namespace lg = leviathan::systems::logging;
     namespace dl = leviathan::systems::data_loader;
-    namespace ss = leviathan::systems::save_system;
-    namespace dg = leviathan::systems::diagnostics;
 
     if (opts.days < 0) {
         return core::Result<RunOutcome>::failure("--days must be >= 0");
@@ -215,6 +212,26 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
 
     // ---- Build state ------------------------------------------------------
     auto state = core::make_game_state(cfg);
+
+    // M0.9 runner does not load country / faction / policy fixtures.
+    // The monthly pipeline (M1.9) still runs at each month boundary in
+    // run_state; with an empty state.countries it simply processes 0
+    // countries per call.
+    return run_state(state, opts);
+}
+
+core::Result<RunOutcome> run_state(core::GameState& state,
+                                   const RunnerOptions& opts) {
+    namespace lt = leviathan::systems::time;
+    namespace lg = leviathan::systems::logging;
+    namespace ss = leviathan::systems::save_system;
+    namespace dg = leviathan::systems::diagnostics;
+    namespace mp = leviathan::systems::monthly;
+
+    if (opts.days < 0) {
+        return core::Result<RunOutcome>::failure("--days must be >= 0");
+    }
+
     const core::GameDate start_date = state.current_date;
 
     // Snapshot buffer for --summary-csv. We collect rows in-memory and
@@ -223,11 +240,13 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     std::vector<dg::SummaryRow> summary_rows;
     const bool want_csv = opts.summary_csv_path.has_value();
 
+    int monthly_ticks = 0;
+
     // Initial log. Metadata is intentionally path-independent so two
     // runs with the same options produce byte-identical event logs.
     lg::log_info(state, "lifecycle", "runner", "simulation start",
                  {{"days_requested", std::to_string(opts.days)},
-                  {"seed",           std::to_string(cfg.seed)}});
+                  {"seed",           std::to_string(state.rng.seed)}});
 
     if (want_csv) {
         summary_rows.push_back(dg::snapshot(state));
@@ -241,6 +260,19 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         }
         if (r.year_changed) {
             lg::log_info(state, "time", "runner", "year rolled over");
+        }
+        // M1.10: monthly pipeline runs at each month boundary, AFTER
+        // the month-rolled-over log line so the canonical M0.9 log
+        // ordering is preserved. The pipeline itself writes no logs.
+        if (r.month_changed) {
+            auto pipe_r = mp::tick_all_countries(state);
+            if (!pipe_r) {
+                return core::Result<RunOutcome>::failure(
+                    "monthly pipeline failed on " +
+                    state.current_date.to_string() + ": " +
+                    std::move(pipe_r.error()));
+            }
+            ++monthly_ticks;
         }
         if (want_csv && r.month_changed) {
             summary_rows.push_back(dg::snapshot(state));
@@ -306,6 +338,7 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     outcome.summary_csv_path     = opts.summary_csv_path;
     outcome.summary_rows         = summary_rows.size();
     outcome.sanity_issues_logged = issues.size();
+    outcome.monthly_ticks        = monthly_ticks;
     return core::Result<RunOutcome>::success(std::move(outcome));
 }
 

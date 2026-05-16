@@ -7,13 +7,16 @@
 ## Status
 
 - Phase: **Milestone 1 — single-country internal politics prototype**
-- Latest shipped sub-milestone: **M1.9 — monthly pipeline (minimal)**
-  — explicit-call composition of `faction::react` + `stability::tick`
-  + `economy::tick` in canonical order. No runner wiring yet.
-- Next sub-milestone: **M1.10** — wire
-  `monthly::tick_all_countries` to `TickResult.month_changed` from
-  the M0.9 runner so `leviathan --days N` runs the monthly chain
-  automatically.
+- Latest shipped sub-milestone: **M1.10 — runner monthly pipeline
+  wiring** — every month boundary in `leviathan --days N` invokes
+  `monthly::tick_all_countries(state)`. `RunOutcome.monthly_ticks`
+  counts crossings. No new state fields; no save-format bump (still
+  v5). `run_state(state, opts)` is exposed so tests can inject
+  pre-built countries / factions.
+- Next sub-milestone candidates: **M1.11** (economy → stability
+  coupling via a new `last_gdp_growth_rate` field — would trigger
+  save-format v5 → v6) or **M1.12** (scenario loader reading
+  `data/countries/*.json` + `data/factions/*.json`).
 - M0 closed. See `docs/milestone-0-result.md` for the M0 exit report and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
@@ -35,7 +38,7 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is in progress. Nine sub-milestones merged so far:
+RFC-090 §M1) is in progress. Ten sub-milestones merged so far:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -44,11 +47,16 @@ gameplay effect, atomic via pre-flight); M1.6 FactionSystem `react`
 StabilitySystem `tick` (first country-side dynamic, stripped-down
 RFC-080 §5); M1.8 EconomySystem `tick` (RFC-080 §3 tax revenue,
 expenditure = `gdp × sum_budget × 0.20`, stripped-down RFC-080 §4
-GDP growth); **M1.9 MonthlyPipeline `tick_country` /
-`tick_all_countries` — first composition sub-milestone**
-(canonical order `faction::react → stability::tick → economy::tick`,
-pinned by exact-arithmetic order-proof test). Pipeline is explicit-
-call only — runner wiring deferred to M1.10.
+GDP growth); M1.9 MonthlyPipeline `tick_country` /
+`tick_all_countries` (first composition sub-milestone with canonical
+order `faction::react → stability::tick → economy::tick`); **M1.10
+runner monthly pipeline wiring — the M0.9 runner now invokes
+`monthly::tick_all_countries` on every month boundary**, and a new
+`run_state(state, opts)` entry point lets tests inject pre-built
+state. `leviathan --days 365` runs the monthly pipeline 12 times
+(over an empty country list by default, since the canonical M0.9
+runner does not load country fixtures — that's a future scenario-
+loader sub-milestone).
 
 ## Repository layout
 
@@ -160,19 +168,19 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M1.9 there are **318 doctest cases**. M0 contributed 179;
+As of M1.10 there are **327 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
-added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9
-adds 11 covering the **first composition sub-milestone**:
-`monthly::tick_country` and `monthly::tick_all_countries`. The
-key test (`"tick_country runs faction -> stability -> economy in
-canonical order"`) builds a state where any reordering of the three
-sub-systems produces a different result, and pins the canonical
-chain with exact arithmetic. Other cases pin country filter,
-vector-order iteration, empty state, invalid-id paths, and the
-"no date / log / RNG / save-schema side effect" invariants. Each
-`TEST_CASE` is registered with CTest individually, so e.g.
-`ctest -R "tick_country"` runs just the M1.9 cases.
+added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
+11; M1.10 adds 9 covering the **runner monthly-pipeline wiring**:
+`monthly_ticks` counter for 10 / 31 / 365 days (matched against
+TimeSystem's `month_changed` semantics with the canonical 1930-01-01
+start), empty-state determinism preserved, save schema still v5,
+and `run_state` integration with a hand-built 1-country / 1-faction
+state where every expected country / faction field actually
+mutates. Existing 365-day `log_count == 15` invariant still holds
+because M1.10 introduces no new logs. Each `TEST_CASE` is
+registered with CTest individually, so e.g.
+`ctest -R "m110"` runs just the M1.10 cases.
 
 ## Build options
 

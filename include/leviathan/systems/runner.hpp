@@ -24,6 +24,7 @@
 #include <string>
 
 #include "leviathan/core/game_date.hpp"
+#include "leviathan/core/game_state.hpp"
 #include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::runner {
@@ -70,6 +71,11 @@ struct RunOutcome {
     std::optional<std::filesystem::path> summary_csv_path;
     std::size_t            summary_rows         = 0;
     std::size_t            sanity_issues_logged = 0;
+    // M1.10: how many month-boundary monthly-pipeline ticks ran. With
+    // an empty `state.countries`, `monthly::tick_all_countries` still
+    // executes but processes zero countries; the counter increments
+    // once per crossed month boundary regardless.
+    int                    monthly_ticks        = 0;
 };
 
 // Execute one simulation run.
@@ -78,21 +84,34 @@ struct RunOutcome {
 //   1. Load config from opts.config_path via DataLoader.
 //   2. If opts.seed_override is set, replace config.seed.
 //   3. Build GameState via make_game_state.
-//   4. Log start (info).
-//   5. Tick opts.days days. Log month and year boundaries (info)
-//      via the TickResult flags; per-day logging is suppressed to
-//      keep long-run logs manageable.
-//   6. Log end (info).
-//   7. Create output_dir (and any parents) if missing.
-//   8. Write save.json (M0.8) and events.jsonl (M0.6) to the
-//      resolved paths.
-//   9. Return RunOutcome summary.
+//   4. Delegate to run_state(state, opts) for the tick loop +
+//      diagnostics + file writes.
 //
 // Returns failure if config load fails, if opts.days < 0, or if any
 // file write fails. opts.days == 0 is permitted (the simulation
 // simply does not advance) but `--days` is REQUIRED at the CLI;
 // parse_args() rejects the unset case.
 core::Result<RunOutcome> run(const RunnerOptions& opts);
+
+// Same as run() but operates on a pre-built GameState. Used by tests
+// that need to inject countries / factions / policies BEFORE the
+// tick loop (the canonical M0.9 runner intentionally does not load
+// country files - that's a future scenario-loader sub-milestone).
+//
+// On each day:
+//   - advance_one_day (M0.4); month / year boundary log lines as M0.9.
+//   - When TickResult.month_changed is true, call
+//     monthly::tick_all_countries(state) (M1.9). Any sub-system
+//     failure aborts the run with a failure Result; partial state
+//     is left as-is (the M1.9 pipeline is documented as non-atomic).
+//   - Snapshots for --summary-csv are taken at month boundaries.
+//
+// The monthly pipeline is invoked AFTER the month-changed log line
+// so the log retains its canonical M0.9 ordering. RunOutcome.monthly_ticks
+// counts month boundaries crossed (one per pipeline call). With an
+// empty state.countries the pipeline still runs but processes 0.
+core::Result<RunOutcome> run_state(core::GameState& state,
+                                   const RunnerOptions& opts);
 
 }  // namespace leviathan::systems::runner
 

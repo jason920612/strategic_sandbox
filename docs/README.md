@@ -37,6 +37,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-7-stability-tick.md`](m1-7-stability-tick.md) | M1.7 | **First country-side dynamic.** `leviathan::systems::stability::tick(state, country)`: stripped-down RFC-080 §5 formula. Target = `0.5*avg_support + 0.5*legitimacy − 0.3*corruption − 0.2*avg_radicalism`, clamped `[0,1]`. `stability` drifts toward target at rate 0.10. No factions → 0.5 / 0.5 defaults. Reads faction state but never writes it. Skipped RFC-080 §5 inputs (welfare / economic growth / inequality / war / budget crisis) wait for M1.8+ systems to land. |
 | [`m1-8-economy-tick.md`](m1-8-economy-tick.md) | M1.8 | **Second country-side dynamic.** `leviathan::systems::economy::tick(state, country)`: three formulas. Tax revenue = `gdp × legal_tax_burden × fiscal_capacity × central_control × (1 - corruption)` (RFC-080 §3 verbatim). Expenditure = `gdp × sum_budget × 0.20`. `budget_balance += (revenue - expenditure)`. GDP growth = `kBase + kEdu*budget.education + kInfra*budget.infrastructure + kInd*budget.industry + kAdmin*admin_efficiency − kPolitical*(1−stability) − kCorruption*corruption`; `gdp *= 1 + growth`. Skipped RFC-080 §4 terms (InflationPressure, WarDamage) await their input systems. |
 | [`m1-9-monthly-pipeline.md`](m1-9-monthly-pipeline.md) | M1.9 | **First composition sub-milestone.** `leviathan::systems::monthly::tick_country(state, country)` runs `faction::react` → `stability::tick` → `economy::tick` in canonical order. `tick_all_countries(state)` iterates `state.countries` in vector order with fail-fast semantics; empty state succeeds with `processed=0`. `CountryMonthlyOutcome` aggregates the three sub-outcomes. The canonical order is **observable** — pinned by an exact-arithmetic test where any reordering produces a different result. No new state fields; no save schema change; no RNG / log / date side effects; no runner wiring (M1.10's job); no policy step (caller-driven). Mid-pipeline failure is documented as non-atomic. |
+| [`m1-10-runner-monthly-wiring.md`](m1-10-runner-monthly-wiring.md) | M1.10 | **Runner monthly pipeline wiring.** `runner::run` now invokes `monthly::tick_all_countries(state)` on every `TickResult.month_changed` boundary, after the canonical "month rolled over" log line. `RunOutcome` gains `int monthly_ticks` counting boundaries crossed. A new `run_state(state, opts)` public entry point operates on a pre-built `GameState` so tests can inject countries / factions before the loop. No save-format bump (still v5); no new log lines; no new CSV column; no country-file loading (deferred to a scenario-loader sub-milestone). Determinism property survives for both empty and non-empty state — pinned by same-seed byte-identical save / log tests. |
 
 ## Reading order
 
@@ -47,28 +48,25 @@ If you're new to the codebase:
 2. Skim `rfc/README.md` and the RFC documents it indexes for the
    high-level design intent.
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
-   → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9). They
-   build on each other and each one tries to call out the rules a
-   future contributor must not silently break.
+   → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10).
+   They build on each other and each one tries to call out the rules
+   a future contributor must not silently break.
 
 ## What's next
 
-**M1.10 — runner wiring.** With M1.9 merged, the four single-country
-behaviours can be composed via `monthly::tick_all_countries`. M1.10
-wires that composition onto the M0.9 runner's
-`TickResult.month_changed` signal so `leviathan --days N` actually
-runs the monthly chain. The M0.9 determinism property (same seed →
-byte-identical save / log / summary CSV) needs to be re-verified
-once the pipeline runs.
+Two candidates after M1.10 merges:
 
-A follow-up candidate is **M1.11 — economy → stability coupling**:
-decide where `last_gdp_growth_rate` lives (probably a new
-CountryState field, which would trigger a save-format `v5 → v6`
-bump) and feed it into the stability tick as RFC-080 §5
-`EconomicGrowth`.
+- **M1.11 — economy → stability coupling.** Add
+  `last_gdp_growth_rate` to `CountryState` (save-format `v5 → v6`)
+  and feed it into `stability::tick` as the RFC-080 §5
+  `EconomicGrowth` input.
+- **M1.12 — scenario loader.** Read `data/countries/*.json` and
+  `data/factions/*.json` from the runner so `leviathan --days N`
+  produces real per-country state changes end-to-end without
+  hand-built state in tests.
 
-Per the M1 pacing rule, M1.10 is **not** started until M1.9 is
-merged.
+Per the M1 pacing rule, the next sub-milestone is **not** started
+until M1.10 is merged.
 
 ## When to add a new file
 

@@ -9,7 +9,12 @@
 #include <system_error>
 #include <vector>
 
+#include "leviathan/core/entities.hpp"
+#include "leviathan/core/game_date.hpp"
+#include "leviathan/core/game_state.hpp"
+#include "leviathan/core/ids.hpp"
 #include "leviathan/systems/runner.hpp"
+#include "leviathan/systems/save_system.hpp"
 
 namespace fs = std::filesystem;
 namespace rn = leviathan::systems::runner;
@@ -445,6 +450,250 @@ TEST_CASE("parse_args: --summary-csv without a value is rejected") {
     auto r = rn::parse_args(arg2.argc, arg2.argv());
     REQUIRE(r.failed());
     CHECK(r.error().find("--summary-csv") != std::string::npos);
+}
+
+// =====================================================================
+// M1.10 - Runner monthly-pipeline wiring
+// =====================================================================
+//
+// The runner invokes monthly::tick_all_countries on every month
+// boundary detected by TimeSystem. With an empty state.countries the
+// pipeline still runs (processes 0 countries). RunOutcome.monthly_ticks
+// counts crossings.
+
+TEST_CASE("run: monthly_ticks == 0 for 10 days starting 1930-01-01 (no boundary)") {
+    TempDir td("leviathan_runner_m110_10day");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 10;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 0);
+}
+
+TEST_CASE("run: monthly_ticks == 1 for 31 days starting 1930-01-01") {
+    // 31 days from 1930-01-01 lands on 1930-02-01 - exactly one
+    // month_changed boundary crossed.
+    TempDir td("leviathan_runner_m110_31day");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 1);
+    CHECK(r.value().end_date.year()  == 1930);
+    CHECK(r.value().end_date.month() == 2);
+    CHECK(r.value().end_date.day()   == 1);
+}
+
+TEST_CASE("run: monthly_ticks == 12 for 365 days starting 1930-01-01") {
+    // 365 days from 1930-01-01 = 1931-01-01: 12 month boundaries
+    // crossed (Feb..Jan).
+    TempDir td("leviathan_runner_m110_365day");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 365;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 12);
+    // Existing log_count == 15 invariant must still hold: M1.10
+    // monthly pipeline does NOT write any new logs.
+    CHECK(r.value().log_count == 15);
+}
+
+TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") {
+    // Same-seed determinism property survives the M1.9 pipeline call:
+    // with no countries the pipeline is a no-op and the byte-identical
+    // guarantee from M0.9 still holds.
+    TempDir td_a("leviathan_runner_m110_empty_det_a");
+    TempDir td_b("leviathan_runner_m110_empty_det_b");
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path  = kCanonicalConfig;
+        o.days         = 365;
+        o.output_dir   = dir;
+        o.seed_override = std::uint64_t{0xD06F00D};
+        return o;
+    };
+
+    REQUIRE(rn::run(make_opts(td_a.path)).ok());
+    REQUIRE(rn::run(make_opts(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "save.json")    == read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
+}
+
+TEST_CASE("run: save schema is still v5 (M1.10 introduces no persistent state)") {
+    TempDir td("leviathan_runner_m110_save_version");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    REQUIRE(rn::run(opts).ok());
+    const std::string save = read_file(td.path / "save.json");
+    // Pin the unchanged version: M0.8 documented strict equality.
+    CHECK(save.find("\"save_version\":") != std::string::npos);
+    CHECK(save.find("\"save_version\": 5") != std::string::npos);
+}
+
+// ---- run_state: integration with hand-built state -------------------
+
+namespace {
+
+using leviathan::core::CountryId;
+using leviathan::core::CountryState;
+using leviathan::core::FactionId;
+using leviathan::core::FactionState;
+using leviathan::core::GameDate;
+using leviathan::core::GameState;
+
+CountryState m110_germany() {
+    CountryState c;
+    c.id           = CountryId{0};
+    c.id_code      = "GER";
+    c.name         = "Germany";
+    c.gdp                       = 100.0;
+    c.legal_tax_burden          = 0.20;
+    c.fiscal_capacity           = 0.50;
+    c.administrative_efficiency = 0.55;
+    c.central_control           = 0.60;
+    c.corruption                = 0.25;
+    c.stability                 = 0.55;
+    c.legitimacy                = 0.55;
+    c.military_power            = 0.50;
+    c.threat_perception         = 0.30;
+    c.budget.administration     = 0.25;
+    c.budget.military           = 0.35;
+    c.budget.education          = 0.10;
+    c.budget.welfare            = 0.10;
+    c.budget.intelligence       = 0.05;
+    c.budget.infrastructure     = 0.10;
+    c.budget.industry           = 0.05;
+    return c;
+}
+
+FactionState m110_faction(int id, int country) {
+    FactionState f;
+    f.id              = FactionId{id};
+    f.country         = CountryId{country};
+    f.id_code         = "GER_bureaucracy";
+    f.country_id_code = "GER";
+    f.name            = "Bureaucracy";
+    f.type            = "bureaucracy";
+    f.support         = 0.30;
+    f.influence       = 0.50;
+    f.radicalism      = 0.20;
+    f.loyalty         = 0.40;
+    f.resources       = 0.0;
+    return f;
+}
+
+}  // namespace
+
+TEST_CASE("run_state: 31-day run with 1 country + 1 faction actually mutates them") {
+    TempDir td("leviathan_runner_m110_run_state_31d");
+    GameState state;
+    state.current_date = GameDate{1930, 1, 1};
+    state.rng.seed     = 0xC0FFEE;
+    state.countries.push_back(m110_germany());
+    state.factions.push_back(m110_faction(0, 0));
+
+    const double gdp_before        = state.countries[0].gdp;
+    const double stab_before       = state.countries[0].stability;
+    const double tax_before        = state.countries[0].tax_revenue;
+    const double balance_before    = state.countries[0].budget_balance;
+    const double support_before    = state.factions[0].support;
+    const double loyalty_before    = state.factions[0].loyalty;
+    const double radicalism_before = state.factions[0].radicalism;
+
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;  // unused by run_state but harmless
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 1);
+
+    // Country side: economy::tick + stability::tick both ran.
+    CHECK(state.countries[0].gdp != doctest::Approx(gdp_before));
+    CHECK(state.countries[0].stability != doctest::Approx(stab_before));
+    CHECK(state.countries[0].tax_revenue != doctest::Approx(tax_before));
+    CHECK(state.countries[0].budget_balance != doctest::Approx(balance_before));
+
+    // Faction side: faction::react ran (loyalty / support drift).
+    // Loyalty drifts toward stability (was 0.40, stability was 0.55).
+    CHECK(state.factions[0].loyalty != doctest::Approx(loyalty_before));
+    CHECK(state.factions[0].support != doctest::Approx(support_before));
+    // Radicalism is untouched by faction::react.
+    CHECK(state.factions[0].radicalism == doctest::Approx(radicalism_before));
+
+    // Date advanced.
+    CHECK(state.current_date.year()  == 1930);
+    CHECK(state.current_date.month() == 2);
+    CHECK(state.current_date.day()   == 1);
+}
+
+TEST_CASE("run_state: 12 monthly ticks across 1930 with countries are byte-identical given same seed") {
+    // Determinism property holds for non-empty state too.
+    TempDir td_a("leviathan_runner_m110_state_det_a");
+    TempDir td_b("leviathan_runner_m110_state_det_b");
+
+    auto build_state = []() {
+        GameState s;
+        s.current_date = GameDate{1930, 1, 1};
+        s.rng.seed     = 0xBABE;
+        s.countries.push_back(m110_germany());
+        s.factions.push_back(m110_faction(0, 0));
+        return s;
+    };
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path  = kCanonicalConfig;
+        o.days         = 365;
+        o.output_dir   = dir;
+        return o;
+    };
+
+    auto s_a = build_state();
+    auto s_b = build_state();
+    REQUIRE(rn::run_state(s_a, make_opts(td_a.path)).ok());
+    REQUIRE(rn::run_state(s_b, make_opts(td_b.path)).ok());
+
+    CHECK(read_file(td_a.path / "save.json")    == read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
+}
+
+TEST_CASE("run_state: monthly_ticks counter ignores days==0") {
+    TempDir td("leviathan_runner_m110_zerodays");
+    GameState state;
+    state.current_date = GameDate{1930, 1, 1};
+    state.rng.seed     = 1;
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().monthly_ticks == 0);
+}
+
+TEST_CASE("run_state: negative days is rejected before any mutation") {
+    TempDir td("leviathan_runner_m110_negdays");
+    GameState state;
+    state.current_date = GameDate{1930, 1, 1};
+    const auto date_before = state.current_date;
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = -1;
+    opts.output_dir  = td.path;
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.failed());
+    CHECK(state.current_date == date_before);
 }
 
 TEST_CASE("run: explicit --seed overrides the config seed") {
