@@ -146,6 +146,88 @@ void write_faction_csv_header(std::ostream& out);
 void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row);
 
 // ---------------------------------------------------------------------------
+// M2.10: programmatic state-comparison API.
+//
+// `compare_states` walks two GameStates field-by-field and returns a
+// list of mismatches. Empty list == states match (modulo the
+// deliberately-skipped fields below). Floating-point fields are
+// compared with a caller-supplied tolerance; everything else uses
+// strict equality.
+//
+// Used by replay verification (compare a fresh-loaded source save to
+// the runner's --replay output), save round-trip tests, and any
+// future automation that wants a "did this run produce the same
+// state?" answer without diffing JSON blobs.
+//
+// SCOPE — fields compared (gameplay-relevant):
+//   * current_date
+//   * player_country
+//   * countries[*]: identity strings (id_code, name, display_name),
+//     every numeric field (gdp / tax_revenue / budget_balance /
+//     legal_tax_burden / fiscal_capacity / administrative_efficiency /
+//     central_control / corruption / stability / legitimacy /
+//     military_power / threat_perception / last_gdp_growth_rate),
+//     the budget block (7 categories), and active_policies entries
+//     (policy_id_code + expires_on).
+//   * factions[*]: identity strings (id_code, country_id_code, type),
+//     every numeric field (support / influence / radicalism /
+//     loyalty / resources), and preferred_policies element count.
+//   * applied_commands[*]: applied_on date, command kind, and the
+//     payload field that matches the kind (policy_id_code for
+//     EnactPolicy, budget_category + budget_delta for AdjustBudget).
+//
+// SCOPE — fields DELIBERATELY skipped:
+//   * rng: not part of gameplay comparison; M2 replay does not yet
+//     reach into RNG, and a future divergent-RNG-path comparison
+//     would need its own helper.
+//   * logs: begin_tick / end_tick / month-rolled-over entries produce
+//     boilerplate noise that almost always differs between a
+//     pristine simulation and a replay. Replay equivalence cares
+//     about end-state, not the log breadcrumbs.
+//   * policies: immutable templates loaded from disk. If they differ
+//     between two states, the scenario manifests or fixtures differ
+//     — that's a config bug, not a divergence.
+//   * provinces, events: still reserved-empty in M2; nothing to
+//     compare.
+//   * simulation_config (not in GameState; lives separately).
+// ---------------------------------------------------------------------------
+
+// One difference reported by `compare_states`.
+struct StateMismatch {
+    // Dotted/bracketed path to the differing field, e.g.
+    //   "current_date"
+    //   "countries[0].budget.military"
+    //   "applied_commands[1].command.budget_delta"
+    // The path mirrors how the M2.4 / M0.8 save JSON addresses the
+    // field, so the same string is usable from CLI output.
+    std::string field_path;
+
+    // Human-readable description of the difference, including both
+    // values and (for doubles) the tolerance used. Always non-empty
+    // when this struct is emitted.
+    std::string detail;
+};
+
+struct CompareOptions {
+    // Floating-point fields compare equal iff
+    // |a - b| <= double_tolerance. Default `1e-9` matches the
+    // M0.8 save round-trip precision (doubles serialised with
+    // setprecision(17) round-trip to <= 1 ULP, which is well below
+    // 1e-9 for the value ranges this simulation uses).
+    double double_tolerance = 1e-9;
+};
+
+// Walk `a` and `b` field-by-field; push one StateMismatch per
+// difference into the returned vector, in canonical order (the order
+// the documented scope above lists). Returns an empty vector when
+// the two states match (modulo the deliberately-skipped fields).
+//
+// Pure observation: neither argument is mutated.
+std::vector<StateMismatch> compare_states(const core::GameState& a,
+                                          const core::GameState& b,
+                                          const CompareOptions& opts = {});
+
+// ---------------------------------------------------------------------------
 // Sanity checks.
 // ---------------------------------------------------------------------------
 
