@@ -49,6 +49,22 @@ std::string xml_attr_escape(std::string_view s) {
 
 }  // namespace
 
+std::string_view color_for_owner(core::CountryId owner) {
+    const auto v = owner.value();
+    if (v < 0) {
+        return kOwnerFallbackFill;
+    }
+    // The modulo wraps the index back into [0, kOwnerPaletteSize)
+    // so very large scenarios reuse colours rather than over-run
+    // the table. Two countries with `owner.value() % size`
+    // congruent will collide on colour; future sub-milestones
+    // can extend the table or swap strategies if the collision
+    // becomes a real-world UX problem.
+    const auto idx =
+        static_cast<std::size_t>(v) % kOwnerPaletteSize;
+    return kOwnerPalette[idx];
+}
+
 std::string render_provinces(const core::GameState& state) {
     std::ostringstream out;
 
@@ -59,15 +75,18 @@ std::string render_provinces(const core::GameState& state) {
            " viewBox=\"0 0 1000 1000\""
            " width=\"1000\" height=\"1000\">\n";
 
-    // One <circle> per node, in vector order.
+    // One <circle> per node, in vector order. Fill is selected
+    // by owner via `color_for_owner` (M4.3); every other circle
+    // attribute is exactly what M4.2 emitted.
     for (const auto& p : state.provinces) {
         const std::string cx = fmt_coord(p.x * kSvgCoordScale);
         const std::string cy = fmt_coord(p.y * kSvgCoordScale);
+        const std::string_view fill = color_for_owner(p.owner);
         out << "  <circle"
                " cx=\"" << cx << "\""
                " cy=\"" << cy << "\""
                " r=\"8\""
-               " fill=\"black\""
+               " fill=\"" << fill << "\""
                " data-id=\"" << xml_attr_escape(p.id_code) << "\""
                " data-owner=\"" << p.owner.value() << "\""
                "/>\n";

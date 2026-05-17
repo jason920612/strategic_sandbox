@@ -217,8 +217,34 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.2（SVG
-  exporter skeleton）** 是 M4 第一個 renderer：新 module
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.3（SVG
+  owner-color skeleton）** 把 M4.2 寫死的 `fill="black"` 換成
+  deterministic 的 per-owner palette lookup。新公開符號
+  在 `leviathan::systems::svg_export`：`kOwnerPalette`
+  （10 個 hex-RGB string 的 `constexpr std::array<string_view,
+  10>`）、`kOwnerPaletteSize`、`kOwnerFallbackFill`（`#888888`）
+  以及 `color_for_owner(CountryId) → string_view`。Palette
+  以 `owner.value() % kOwnerPaletteSize` 索引（modulo wrap；
+  未來只能 append 不能改既有條目，否則會破壞 owner→colour
+  對應）；負 owner 走 fallback，讓 renderer 對 hand-built
+  state 仍 total（save / scenario layer 本來就拒絕 invalid
+  owner）。Canonical GER / FRA / JPN 分別對應 entries
+  0 / 1 / 2（steel blue / indian red / goldenrod）。其它
+  SVG 屬性 ── viewBox、circle radius、`data-id`（仍 XML-escape）
+  、`data-owner`、insertion order、fixed-precision coord、
+  LF terminator、empty-state header-only ── 與 M4.2 byte
+  完全相同。**Artefact 數量不變（仍 9）；save 格式不變
+  （仍 v12）**；M1.17 / M2.22 / M3.7 byte-identical
+  determinism contract 因 same state → same colour → same
+  byte 自然繼續成立。7 個新 doctest cases（6 svg_export +
+  1 runner；共 784）。**M4 in progress.** **M4.3 不做**
+  HTML viewer / clickable UI / event handler / hover / label /
+  legend / per-province colour override / ownership
+  dynamics / 鄰接 edge / terrain / events / AI / command
+  integration / 新 `PlayerCommandKind` / runner CLI flag /
+  新 artefact / save schema bump / 新 state field / 新
+  gameplay / atomic `end_tick`。
+  **M4.2（SVG exporter skeleton）** 是 M4 第一個 renderer：新 module
   `leviathan::systems::svg_export` 把 `state.provinces` 轉成
   deterministic SVG document（`viewBox="0 0 1000 1000"`，
   每個 node 一個 `<circle>`，`cx = node.x * 1000`、

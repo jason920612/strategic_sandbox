@@ -174,3 +174,95 @@ TEST_CASE("render_provinces: escapes XML attribute values") {
     CHECK(svg_text.find("data-id=\"a&b\"")
           == std::string::npos);
 }
+
+// ---------------------------------------------------------------------
+// M4.3 - per-owner palette
+// ---------------------------------------------------------------------
+
+TEST_CASE("color_for_owner: invalid owner returns the fallback fill") {
+    CHECK(svg::color_for_owner(CountryId::invalid()) ==
+          svg::kOwnerFallbackFill);
+}
+
+TEST_CASE("color_for_owner: indexes the palette directly for small owners") {
+    // Each owner.value() less than kOwnerPaletteSize maps to
+    // the table entry with the same index.
+    for (std::size_t i = 0; i < svg::kOwnerPaletteSize; ++i) {
+        CHECK(svg::color_for_owner(CountryId{static_cast<int>(i)}) ==
+              svg::kOwnerPalette[i]);
+    }
+}
+
+TEST_CASE("color_for_owner: wraps via modulo when owner.value() >= palette size") {
+    // owner 0 and owner kOwnerPaletteSize share an entry; the
+    // wrap is documented as load-bearing in svg_export.hpp.
+    CHECK(svg::color_for_owner(CountryId{0}) ==
+          svg::color_for_owner(
+              CountryId{static_cast<int>(svg::kOwnerPaletteSize)}));
+    // 2*size + 3 maps to the same entry as 3.
+    CHECK(svg::color_for_owner(CountryId{3}) ==
+          svg::color_for_owner(
+              CountryId{static_cast<int>(
+                  2 * svg::kOwnerPaletteSize + 3)}));
+}
+
+TEST_CASE("render_provinces: per-owner fill colour appears on the circle") {
+    GameState state;
+    // Three owners exercising different palette entries.
+    state.provinces.push_back(node("ger_capital", 0, 0.5, 0.5));
+    state.provinces.push_back(node("fra_capital", 1, 0.6, 0.6));
+    state.provinces.push_back(node("jpn_capital", 2, 0.7, 0.7));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Each owner's palette colour appears at least once.
+    CHECK(svg_text.find(std::string("fill=\"") +
+                        std::string(svg::kOwnerPalette[0]) + "\"")
+          != std::string::npos);
+    CHECK(svg_text.find(std::string("fill=\"") +
+                        std::string(svg::kOwnerPalette[1]) + "\"")
+          != std::string::npos);
+    CHECK(svg_text.find(std::string("fill=\"") +
+                        std::string(svg::kOwnerPalette[2]) + "\"")
+          != std::string::npos);
+
+    // M4.2's hardcoded black is GONE — the new mapping replaced it.
+    CHECK(svg_text.find("fill=\"black\"") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: same owner across multiple nodes gets the same colour") {
+    GameState state;
+    state.provinces.push_back(node("ger_a", 0, 0.10, 0.10));
+    state.provinces.push_back(node("ger_b", 0, 0.20, 0.20));
+    state.provinces.push_back(node("ger_c", 0, 0.30, 0.30));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // The expected per-owner colour appears for each node.
+    const std::string fill_attr =
+        std::string("fill=\"") +
+        std::string(svg::kOwnerPalette[0]) + "\"";
+    std::size_t hits = 0;
+    std::size_t pos  = 0;
+    while ((pos = svg_text.find(fill_attr, pos)) != std::string::npos) {
+        ++hits;
+        pos += fill_attr.size();
+    }
+    CHECK(hits == 3u);
+}
+
+TEST_CASE("render_provinces: invalid owner falls back to the defensive fill") {
+    GameState state;
+    ProvinceNode p;
+    p.id_code = "ghost";
+    p.name    = "Ghost";
+    p.owner   = CountryId::invalid();  // -1
+    p.x       = 0.5;
+    p.y       = 0.5;
+    state.provinces.push_back(p);
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find(std::string("fill=\"") +
+                        std::string(svg::kOwnerFallbackFill) + "\"")
+          != std::string::npos);
+    // And the invalid owner index still appears in data-owner.
+    CHECK(svg_text.find("data-owner=\"-1\"") != std::string::npos);
+}
