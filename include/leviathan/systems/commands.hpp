@@ -28,6 +28,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/player_commands.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/runner.hpp"
 
 namespace leviathan::systems::commands {
 
@@ -117,6 +118,57 @@ struct ReplayOutcome {
 //     matches any reference state. Caller compares fields directly.
 core::Result<ReplayOutcome> replay(
     core::GameState& target_state,
+    const std::vector<core::AppliedPlayerCommand>& log);
+
+// ===========================================================================
+// M2.7: replay with time-system advancement.
+//
+// Like M2.6 `replay`, but advances the simulation day-by-day between
+// commands using M2.2 `step_one_day`. The M1.10 monthly pipeline
+// therefore runs naturally on every month boundary that lies between
+// two consecutive log entries. After this function returns,
+// `target_state.current_date == log.back().applied_on` (or
+// unchanged for an empty log).
+//
+// Caller pattern:
+//
+//   runner::TickController ctrl;
+//   runner::begin_tick(state, opts, ctrl);
+//   auto r = commands::replay_with_time(state, opts, ctrl, log);
+//   if (!r) { ... }
+//   // (optional: caller can call step_one_day further to advance past
+//   // the last log entry, then end_tick for save + CSV writes.)
+//   runner::end_tick(state, opts, ctrl);
+//
+// Preconditions (rejected loudly with state untouched on first three):
+//   - target_state.player_country valid + indexes into countries.
+//   - target_state.applied_commands empty (same as M2.6 `replay`).
+//   - ctrl.started && !ctrl.ended (caller must have begun the tick).
+//   - For each i > 0: log[i].applied_on >= log[i-1].applied_on
+//     (monotonic non-decreasing dates; addresses PR #34 nit). The
+//     check is per-entry against current state.current_date, so the
+//     first out-of-order entry fails with its index in the error.
+//
+// Failure cases:
+//   - Any precondition violated above.
+//   - Any step_one_day failure (M1.10 monthly pipeline can fail).
+//     Prior commands in the log are already applied + logged; the
+//     advance toward the next command is interrupted; the failed
+//     entry is NOT applied.
+//   - Any apply_pending failure (same shape as M2.6: entry's index
+//     in the error, prior entries stay applied + logged).
+//
+// LIMITATIONS (still a prototype):
+//   - After return, target_state.current_date == log.back().applied_on,
+//     NOT necessarily the source state's actual final current_date.
+//     If you need to advance further, call step_one_day in a loop
+//     before end_tick.
+//   - The function does not verify the replayed final state matches
+//     any reference. Caller compares fields directly.
+core::Result<ReplayOutcome> replay_with_time(
+    core::GameState& state,
+    const runner::RunnerOptions& opts,
+    runner::TickController& ctrl,
     const std::vector<core::AppliedPlayerCommand>& log);
 
 }  // namespace leviathan::systems::commands

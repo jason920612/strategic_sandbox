@@ -9,6 +9,7 @@
 #include "leviathan/core/ids.hpp"
 #include "leviathan/core/player_commands.hpp"
 #include "leviathan/systems/commands.hpp"
+#include "leviathan/systems/runner.hpp"
 
 using leviathan::core::CountryId;
 using leviathan::core::CountryState;
@@ -636,4 +637,242 @@ TEST_CASE("M2.6 replay: non-empty applied_commands rejects the precondition") {
     CHECK(r.error().find("applied_commands must be") != std::string::npos);
     // The pre-existing entry stays untouched.
     REQUIRE(s.applied_commands.size() == 1u);
+}
+
+// =====================================================================
+// M2.7: replay_with_time
+// =====================================================================
+
+namespace {
+
+namespace rn = leviathan::systems::runner;
+
+// Build a tick-control bundle on top of `ger_state_with_player_selected()`
+// so the M2.7 tests don't have to repeat the begin_tick boilerplate.
+struct M27Bundle {
+    GameState           state;
+    rn::RunnerOptions   opts;
+    rn::TickController  ctrl;
+};
+
+M27Bundle make_m27_bundle() {
+    M27Bundle b;
+    b.state = ger_state_with_player_selected();
+    // RunnerOptions defaults are fine — no CSV output, no scenario path.
+    REQUIRE(rn::begin_tick(b.state, b.opts, b.ctrl).ok());
+    return b;
+}
+
+leviathan::core::AppliedPlayerCommand log_entry_enact(
+        GameDate when, const std::string& policy_id_code) {
+    leviathan::core::AppliedPlayerCommand e;
+    e.applied_on            = when;
+    e.command.kind          = PlayerCommandKind::EnactPolicy;
+    e.command.policy_id_code = policy_id_code;
+    return e;
+}
+
+leviathan::core::AppliedPlayerCommand log_entry_budget(
+        GameDate when, const std::string& cat, double delta) {
+    leviathan::core::AppliedPlayerCommand e;
+    e.applied_on              = when;
+    e.command.kind            = PlayerCommandKind::AdjustBudget;
+    e.command.budget_category = cat;
+    e.command.budget_delta    = delta;
+    return e;
+}
+
+}  // namespace
+
+TEST_CASE("M2.7 replay_with_time: empty log is a no-op success") {
+    auto b = make_m27_bundle();
+    const std::vector<leviathan::core::AppliedPlayerCommand> log;
+
+    const auto r = cmd::replay_with_time(b.state, b.opts, b.ctrl, log);
+    REQUIRE(r.ok());
+    CHECK(r.value().commands_replayed == 0);
+    CHECK(b.ctrl.days_stepped == 0);
+    CHECK(b.state.current_date == GameDate(1930, 1, 1));
+}
+
+TEST_CASE("M2.7 replay_with_time: command at start_date applies with no advance") {
+    auto b = make_m27_bundle();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 1), "raise_taxes"));
+
+    REQUIRE(cmd::replay_with_time(b.state, b.opts, b.ctrl, log).ok());
+    CHECK(b.ctrl.days_stepped == 0);
+    CHECK(b.state.current_date == GameDate(1930, 1, 1));
+    CHECK(b.state.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    REQUIRE(b.state.applied_commands.size() == 1u);
+    CHECK(b.state.applied_commands[0].applied_on == GameDate(1930, 1, 1));
+}
+
+TEST_CASE("M2.7 replay_with_time: command 5 days later advances exactly 5 days") {
+    auto b = make_m27_bundle();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 6), "raise_taxes"));
+
+    REQUIRE(cmd::replay_with_time(b.state, b.opts, b.ctrl, log).ok());
+    CHECK(b.ctrl.days_stepped == 5);
+    CHECK(b.state.current_date == GameDate(1930, 1, 6));
+    CHECK(b.state.applied_commands[0].applied_on == GameDate(1930, 1, 6));
+}
+
+TEST_CASE("M2.7 replay_with_time: command past month boundary fires monthly pipeline") {
+    auto b = make_m27_bundle();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    // Jan 1 -> Feb 15 crosses one month boundary on Feb 1.
+    log.push_back(log_entry_budget(GameDate(1930, 2, 15), "military", 0.05));
+
+    REQUIRE(cmd::replay_with_time(b.state, b.opts, b.ctrl, log).ok());
+    CHECK(b.ctrl.days_stepped   == 45);
+    CHECK(b.ctrl.monthly_ticks  == 1);
+    CHECK(b.state.current_date  == GameDate(1930, 2, 15));
+    CHECK(b.state.countries[0].budget.military == doctest::Approx(0.40));
+}
+
+TEST_CASE("M2.7 replay_with_time: multiple commands at different dates each block advances") {
+    auto b = make_m27_bundle();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 6), "raise_taxes"));
+    log.push_back(log_entry_budget(GameDate(1930, 2, 15), "military", 0.05));
+
+    REQUIRE(cmd::replay_with_time(b.state, b.opts, b.ctrl, log).ok());
+    CHECK(b.ctrl.days_stepped  == 45);   // 5 + 40
+    CHECK(b.ctrl.monthly_ticks == 1);
+    CHECK(b.state.current_date == GameDate(1930, 2, 15));
+    REQUIRE(b.state.applied_commands.size() == 2u);
+    CHECK(b.state.applied_commands[0].applied_on == GameDate(1930, 1, 6));
+    CHECK(b.state.applied_commands[1].applied_on == GameDate(1930, 2, 15));
+}
+
+TEST_CASE("M2.7 replay_with_time: out-of-order log rejected with index in error") {
+    auto b = make_m27_bundle();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 3, 1), "raise_taxes"));
+    log.push_back(log_entry_enact(GameDate(1930, 2, 1), "increase_education"));
+
+    const auto r = cmd::replay_with_time(b.state, b.opts, b.ctrl, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("replay_with_time[1]") != std::string::npos);
+    CHECK(r.error().find("out-of-order")        != std::string::npos);
+    // First entry already applied + logged before the failure.
+    REQUIRE(b.state.applied_commands.size() == 1u);
+    CHECK(b.state.applied_commands[0].applied_on == GameDate(1930, 3, 1));
+}
+
+TEST_CASE("M2.7 replay_with_time: controller not started is rejected") {
+    GameState s = ger_state_with_player_selected();
+    rn::RunnerOptions opts;
+    rn::TickController ctrl;   // never begin_tick'd
+
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 1), "raise_taxes"));
+
+    const auto r = cmd::replay_with_time(s, opts, ctrl, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not been started") != std::string::npos);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.7 replay_with_time: no player_country is rejected before begin_tick check") {
+    GameState s;
+    s.current_date = GameDate(1930, 1, 1);
+    s.countries.push_back(germany_baseline());
+    s.policies.push_back(raise_taxes_policy());
+    // player_country deliberately left at invalid()
+    rn::RunnerOptions opts;
+    rn::TickController ctrl;
+
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 1), "raise_taxes"));
+
+    const auto r = cmd::replay_with_time(s, opts, ctrl, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("player_country") != std::string::npos);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.7 replay_with_time: non-empty applied_commands rejects the precondition") {
+    GameState s = ger_state_with_player_selected();
+    s.applied_commands.push_back(log_entry_enact(GameDate(1930, 1, 1), "raise_taxes"));
+    rn::RunnerOptions opts;
+    rn::TickController ctrl;
+
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(log_entry_enact(GameDate(1930, 1, 1), "raise_taxes"));
+
+    const auto r = cmd::replay_with_time(s, opts, ctrl, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("applied_commands must be") != std::string::npos);
+    REQUIRE(s.applied_commands.size() == 1u);  // unchanged
+}
+
+TEST_CASE("M2.7 replay_with_time: full equivalence with original simulation") {
+    // The killer test: drive a source state with step_one_day +
+    // apply_pending interleaved, capture its applied_commands log,
+    // then replay that log onto a fresh target via replay_with_time
+    // and check the resulting state matches.
+    // 1930-01-01 -> step 5 -> apply EnactPolicy raise_taxes
+    //            -> step 40 (crosses Feb 1 month boundary)
+    //            -> apply AdjustBudget military +0.05
+    rn::RunnerOptions opts;
+
+    // ---- source ------------------------------------------------------------
+    GameState source = ger_state_with_player_selected();
+    rn::TickController source_ctrl;
+    REQUIRE(rn::begin_tick(source, opts, source_ctrl).ok());
+    for (int i = 0; i < 5; ++i) {
+        REQUIRE(rn::step_one_day(source, opts, source_ctrl).ok());
+    }
+    {
+        cmd::CommandQueue q;
+        q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+        REQUIRE(cmd::apply_pending(source, q).ok());
+    }
+    for (int i = 0; i < 40; ++i) {
+        REQUIRE(rn::step_one_day(source, opts, source_ctrl).ok());
+    }
+    {
+        cmd::CommandQueue q;
+        q.pending.push_back(make_adjust_budget("military", 0.05));
+        REQUIRE(cmd::apply_pending(source, q).ok());
+    }
+    REQUIRE(source.applied_commands.size() == 2u);
+    REQUIRE(source.current_date == GameDate(1930, 2, 15));
+    REQUIRE(source_ctrl.monthly_ticks == 1);
+
+    // ---- target ------------------------------------------------------------
+    GameState target = ger_state_with_player_selected();
+    rn::TickController target_ctrl;
+    REQUIRE(rn::begin_tick(target, opts, target_ctrl).ok());
+    REQUIRE(cmd::replay_with_time(target, opts, target_ctrl,
+                                   source.applied_commands).ok());
+
+    // ---- compare -----------------------------------------------------------
+    // The replayed state should mirror the source up to the last
+    // command's date.
+    CHECK(target.current_date        == source.current_date);
+    CHECK(target_ctrl.days_stepped   == source_ctrl.days_stepped);
+    CHECK(target_ctrl.monthly_ticks  == source_ctrl.monthly_ticks);
+    REQUIRE(target.applied_commands.size() == source.applied_commands.size());
+    for (std::size_t i = 0; i < source.applied_commands.size(); ++i) {
+        CHECK(target.applied_commands[i].applied_on ==
+              source.applied_commands[i].applied_on);
+        CHECK(target.applied_commands[i].command.kind ==
+              source.applied_commands[i].command.kind);
+    }
+    // The command effects landed identically.
+    CHECK(target.countries[0].legal_tax_burden ==
+          doctest::Approx(source.countries[0].legal_tax_burden));
+    CHECK(target.countries[0].budget.military  ==
+          doctest::Approx(source.countries[0].budget.military));
+    // The monthly pipeline also mutated economy / stability identically.
+    CHECK(target.countries[0].gdp                  ==
+          doctest::Approx(source.countries[0].gdp));
+    CHECK(target.countries[0].stability            ==
+          doctest::Approx(source.countries[0].stability));
+    CHECK(target.countries[0].last_gdp_growth_rate ==
+          doctest::Approx(source.countries[0].last_gdp_growth_rate));
 }

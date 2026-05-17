@@ -337,6 +337,35 @@ M0 / M1 中落地，部分仍是未來工作：
   reload、命令 outcome capture（M2.4 deferred nit）、M1 system 行為
   變更。未來 M2.8 候選會把 M2.2 `step_one_day` 整合進來解掉
   prototype 的時間限制。
+  **M2.7（Replay with time-system advancement）** 新增
+  `systems::commands::replay_with_time(state, opts, ctrl, log)`
+  free function，補上 M2.6 prototype 的「不跑 time-system」限制。
+  演算法：每個 log entry 先檢查 `entry.applied_on >= current_date`
+  (PR #34 reviewer nit 提到的 monotonicity check)，然後 while
+  `current_date < entry.applied_on` 呼叫 M2.2 `step_one_day`──
+  M1.10 monthly pipeline 因此會在進入 month boundary 時自然觸發──
+  最後在日期相等時以 1-element CommandQueue + apply_pending 套用
+  指令。Preconditions 在 M2.6 那兩條之上多了 `ctrl.started &&
+  !ctrl.ended`（caller 必須先呼叫 `runner::begin_tick`）。Cross-
+  log atomicity 沿用 M2.3 mid-list-failure pattern；但因為日期推進
+  發生在 apply 之前，失敗時 `state.current_date` 可能停在中途
+  日期（M2.6 已被 reviewer 標為文件化但非 transactional rollback
+  的限制，M2.7 繼承這個 caveat）。**Killer equivalence test pin
+  住行為保持**：source 透過 step + apply 交替推進產生 log，target
+  以 replay_with_time 重放，target.current_date / days_stepped /
+  monthly_ticks / applied_commands 全部與 source 相等，並且 command
+  效果欄位（legal_tax_burden、budget.military）+ monthly pipeline
+  影響的欄位（gdp、stability、last_gdp_growth_rate）也都
+  byte-identical。M2.6 `replay` 並沒有被取代，兩者共存（M2.6 給
+  time-stripped 測試用、M2.7 給 timeline 測試用）。`commands.hpp`
+  新增 `runner.hpp` include，但依賴方向仍是 acyclic（runner 不
+  include commands）。對應 RFC-090 §M2 task 2.8「玩家操作回放
+  log」消費端 + RFC-000 §5 rule 10「deterministic replay」的奠基。
+  **M2.7 不做** save schema 變更（仍 v9）、新 CLI flag（M2.8
+  候選）、UI、AI、event 整合、divergence report API、transactional
+  rollback on mid-list failure、target.current_date 自動延伸到
+  source 的最終日期（caller 想要時可以再 step_one_day）、新
+  state.logs lifecycle 條目、M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
