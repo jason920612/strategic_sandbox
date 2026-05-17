@@ -456,6 +456,34 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.9（Replay CLI error-path hardening，補位版）** 是補回 M2
+  sprint 中跳過的編號：M2.8 引入 `--replay` 之後，當時把編號讓給
+  了 M2.10 → M2.13 一連串 verify-family，把 `--replay` 自身的
+  failure-path artefact semantics 留成隱含契約。M2.9 為這條契約
+  補上明確文件與 regression test，但**只覆蓋「pre-`end_tick`」**
+  那一塊：當 `--replay` 在進到 `end_tick` 之前失敗
+  （`save_system::load` 失敗、缺 `--scenario`、`begin_tick` reject、
+  `replay_with_time` 失敗──含 out-of-order log / unknown policy
+  id_code / malformed budget command / monthly pipeline 失敗），
+  runner 不會寫出任何 output artefact（save.json / events.jsonl /
+  summary.csv / countries.csv / factions.csv）。原因是 file write
+  全部集中在 `end_tick`，而那幾條失敗路徑都不會走到 `end_tick`。
+  **`end_tick` 自身的 I/O failure 明確不在這份 contract 範圍內**：
+  `end_tick` 依序寫 save → log → summary CSV → countries CSV →
+  factions CSV，是非 transactional 的；如果其中一個 write 在前面
+  已經成功之後失敗，disk 上會留下 partial artefact。把 `end_tick`
+  改成 atomic temp-file + rename 是未來 PR 的工作，M2.9 故意不
+  納入。`runner::run` doc comment 新增 "M2.9 contract" 段落明確列出
+  pre-`end_tick` failure 條件與「零 artefact」保證，並附 NOTE 說明
+  end_tick 自身 failure 不被涵蓋；新增 3 個 doctest test 對三條代表性
+  pre-end_tick failure path 做 regression：source 檔案不存在、log
+  順序倒轉、unknown policy id_code，每個 test 都把五個 artefact
+  path 都接上並驗證最終 disk 上一個都沒有。對應 RFC-090 §M2 task
+  2.7「玩家操作回放錯誤路徑收尾」與 RFC-001 §「測試先寫」精神。
+  **M2.9 不做** library 行為變更、save schema 變更（仍 v9）、新
+  flag、新 gameplay、failure 時的新 state.logs 條目、retry /
+  rollback machinery、replay-mode 的 partial-progress reporting、
+  atomic `end_tick` writes、M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
