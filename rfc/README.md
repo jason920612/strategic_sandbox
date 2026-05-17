@@ -293,6 +293,28 @@ M0 / M1 中落地，部分仍是未來工作：
   M2.5）、新 CLI flag、新 `state.logs` 條目、queue 自身的持久化
   （`CommandQueue` 仍 runtime-only）、`apply_pending` 自動進
   `step_one_day` 內、M1 system 行為變更。
+  **M2.5（AdjustBudget player command）** 延伸 `PlayerCommandKind`
+  增加 `AdjustBudget` variant，並在 `PlayerCommand` POD 加上兩個
+  新 payload 欄位（`budget_category` string + `budget_delta`
+  double）。`systems::commands::apply_pending` 增加一個 switch arm：
+  驗證 `budget_category` 是 7 個 `BudgetState` 欄位之一、
+  `budget_delta` 為 finite，再 apply `budget.<category> += delta`
+  並 clamp 到 `[0, 1]`（沿用 M1.5 的 ratio-field clamp 規則）。
+  M2.3 per-command atomicity 與 M2.4 log-on-success 完整繼承──失敗的
+  AdjustBudget 不會 log、不會 mutate state；成功的 log entry 帶完整
+  payload。`save_system` 的 kind ↔ string mapping 擴充支援
+  `"AdjustBudget"`，per-kind JSON shape 只 emit 對應 payload
+  欄位：`EnactPolicy` 帶 `policy_id_code`、`AdjustBudget` 帶
+  `budget_category` + `budget_delta`。對應 RFC-090 §M2 task 2.4
+  「預算調整命令」。**M2.5 不做** save schema 變更（仍 v9──array
+  shape 沒變，只是合法 kind-string 集合擴大；舊 binary 還是會在
+  unknown kind 處 reject，已經是嚴格 gate），新 CLI flag、新
+  command kind（`ChangeTaxBurden` 等留給 M2.7）、deterministic
+  replay（M2.6）、UI、AI、budget 自動 sum-to-1、新 log line、
+  M1 system 行為變更。Drive-by：PR #32 reviewer nit──
+  `player_command_kind_to_string` 的 fallback 從返回 `"EnactPolicy"`
+  改成 `"UnknownPlayerCommandKind"` sentinel，避免未來新增 kind
+  卻忘了更新 mapping 時靜默 corrupt save。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <limits>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -333,4 +334,120 @@ TEST_CASE("M2.4 apply_pending: precondition failure leaves applied_commands unto
     REQUIRE(cmd::apply_pending(s, q).failed());
     CHECK(s.applied_commands.empty());
     CHECK(q.pending.size() == 1u);
+}
+
+// =====================================================================
+// M2.5: AdjustBudget command kind
+// =====================================================================
+
+namespace {
+
+PlayerCommand make_adjust_budget(const std::string& category, double delta) {
+    PlayerCommand c;
+    c.kind            = PlayerCommandKind::AdjustBudget;
+    c.budget_category = category;
+    c.budget_delta    = delta;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("M2.5 apply_pending: AdjustBudget military += delta mutates the budget") {
+    GameState s = ger_state_with_player_selected();
+    REQUIRE(s.countries[0].budget.military == doctest::Approx(0.35));
+    cmd::CommandQueue q;
+    q.pending.push_back(make_adjust_budget("military", 0.05));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.40));
+    CHECK(q.pending.empty());
+}
+
+TEST_CASE("M2.5 apply_pending: AdjustBudget negative delta shrinks the budget") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back(make_adjust_budget("education", -0.05));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    // education started at 0.10; - 0.05 -> 0.05
+    CHECK(s.countries[0].budget.education == doctest::Approx(0.05));
+}
+
+TEST_CASE("M2.5 apply_pending: AdjustBudget clamps above 1.0") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    // military starts at 0.35; +1.0 overshoots, clamps to 1.0.
+    q.pending.push_back(make_adjust_budget("military", 1.0));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    CHECK(s.countries[0].budget.military == doctest::Approx(1.0));
+}
+
+TEST_CASE("M2.5 apply_pending: AdjustBudget clamps below 0.0") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    // welfare starts at 0.10; -1.0 undershoots, clamps to 0.0.
+    q.pending.push_back(make_adjust_budget("welfare", -1.0));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    CHECK(s.countries[0].budget.welfare == doctest::Approx(0.0));
+}
+
+TEST_CASE("M2.5 apply_pending: unknown budget_category is rejected with no mutation") {
+    GameState s = ger_state_with_player_selected();
+    const auto before_military = s.countries[0].budget.military;
+    cmd::CommandQueue q;
+    q.pending.push_back(make_adjust_budget("research", 0.05));
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("AdjustBudget") != std::string::npos);
+    CHECK(r.error().find("research")     != std::string::npos);
+    CHECK(s.countries[0].budget.military == doctest::Approx(before_military));
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.5 apply_pending: non-finite budget_delta is rejected") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back(make_adjust_budget(
+        "military", std::numeric_limits<double>::quiet_NaN()));
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("AdjustBudget")   != std::string::npos);
+    CHECK(r.error().find("not finite")     != std::string::npos);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.5 apply_pending: AdjustBudget appends correct log entry") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back(make_adjust_budget("infrastructure", 0.03));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].applied_on            == GameDate(1930, 1, 1));
+    CHECK(s.applied_commands[0].command.kind          ==
+          PlayerCommandKind::AdjustBudget);
+    CHECK(s.applied_commands[0].command.budget_category == "infrastructure");
+    CHECK(s.applied_commands[0].command.budget_delta    == doctest::Approx(0.03));
+}
+
+TEST_CASE("M2.5 apply_pending: mixed-kind queue applies both in insertion order") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+    q.pending.push_back(make_adjust_budget("welfare", 0.02));
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    CHECK(q.pending.empty());
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.12));
+    REQUIRE(s.applied_commands.size() == 2u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(s.applied_commands[1].command.kind ==
+          PlayerCommandKind::AdjustBudget);
 }

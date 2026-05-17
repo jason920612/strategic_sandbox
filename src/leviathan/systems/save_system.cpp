@@ -58,9 +58,15 @@ core::Result<core::LogSeverity> severity_from_string(std::string_view s) {
 
 std::string player_command_kind_to_string(core::PlayerCommandKind k) {
     switch (k) {
-        case core::PlayerCommandKind::EnactPolicy: return "EnactPolicy";
+        case core::PlayerCommandKind::EnactPolicy:  return "EnactPolicy";
+        case core::PlayerCommandKind::AdjustBudget: return "AdjustBudget";
     }
-    return "EnactPolicy";
+    // Unreachable for any valid enum value. The fallback returns a
+    // sentinel rather than re-using a real kind's string so a bug
+    // (e.g. a memory-corruption-produced bad value) shows up loudly
+    // in any save it touches. The compiler's -Wswitch warning is the
+    // primary defense; this is the runtime backstop. (PR #32 nit.)
+    return "UnknownPlayerCommandKind";
 }
 
 core::Result<core::PlayerCommandKind> player_command_kind_from_string(
@@ -69,9 +75,13 @@ core::Result<core::PlayerCommandKind> player_command_kind_from_string(
         return core::Result<core::PlayerCommandKind>::success(
             core::PlayerCommandKind::EnactPolicy);
     }
+    if (s == "AdjustBudget") {
+        return core::Result<core::PlayerCommandKind>::success(
+            core::PlayerCommandKind::AdjustBudget);
+    }
     std::string msg = "unknown player command kind '";
     msg.append(s.data(), s.size());
-    msg += "' (expected EnactPolicy)";
+    msg += "' (expected EnactPolicy|AdjustBudget)";
     return core::Result<core::PlayerCommandKind>::failure(std::move(msg));
 }
 
@@ -703,15 +713,25 @@ std::string serialize(const core::GameState& state) {
     root["logs"] = std::move(logs);
 
     // M2.4 applied_commands block. Each entry: { applied_on,
-    // command: { kind, policy_id_code } }. Insertion order matches
-    // commands::apply_pending append order.
+    // command: { kind, <kind-specific payload> } }. Insertion order
+    // matches commands::apply_pending append order. M2.5 added per-
+    // kind payload shapes: EnactPolicy emits policy_id_code;
+    // AdjustBudget emits budget_category + budget_delta.
     json applied = json::array();
     for (const auto& ac : state.applied_commands) {
         json entry = json::object();
         entry["applied_on"] = ac.applied_on.to_string();
         json cmd_obj = json::object();
-        cmd_obj["kind"]           = player_command_kind_to_string(ac.command.kind);
-        cmd_obj["policy_id_code"] = ac.command.policy_id_code;
+        cmd_obj["kind"] = player_command_kind_to_string(ac.command.kind);
+        switch (ac.command.kind) {
+            case core::PlayerCommandKind::EnactPolicy:
+                cmd_obj["policy_id_code"] = ac.command.policy_id_code;
+                break;
+            case core::PlayerCommandKind::AdjustBudget:
+                cmd_obj["budget_category"] = ac.command.budget_category;
+                cmd_obj["budget_delta"]    = ac.command.budget_delta;
+                break;
+        }
         entry["command"] = std::move(cmd_obj);
         applied.push_back(std::move(entry));
     }
@@ -965,17 +985,41 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             return core::Result<core::GameState>::failure(
                 entry_ctx + ": 'command.kind': " + kind.error());
         }
-        auto policy_id_code =
-            require_string(cmd_obj, "policy_id_code", entry_ctx);
-        if (!policy_id_code) {
-            return core::Result<core::GameState>::failure(
-                std::move(policy_id_code.error()));
-        }
 
         core::AppliedPlayerCommand ac;
-        ac.applied_on            = applied_on_r.value();
-        ac.command.kind          = kind.value();
-        ac.command.policy_id_code = policy_id_code.value();
+        ac.applied_on   = applied_on_r.value();
+        ac.command.kind = kind.value();
+
+        // Per-kind payload (M2.5).
+        switch (kind.value()) {
+            case core::PlayerCommandKind::EnactPolicy: {
+                auto policy_id_code =
+                    require_string(cmd_obj, "policy_id_code", entry_ctx);
+                if (!policy_id_code) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(policy_id_code.error()));
+                }
+                ac.command.policy_id_code = policy_id_code.value();
+                break;
+            }
+            case core::PlayerCommandKind::AdjustBudget: {
+                auto budget_category =
+                    require_string(cmd_obj, "budget_category", entry_ctx);
+                if (!budget_category) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(budget_category.error()));
+                }
+                auto budget_delta =
+                    require_number(cmd_obj, "budget_delta", entry_ctx);
+                if (!budget_delta) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(budget_delta.error()));
+                }
+                ac.command.budget_category = budget_category.value();
+                ac.command.budget_delta    = budget_delta.value();
+                break;
+            }
+        }
         state.applied_commands.push_back(std::move(ac));
     }
 
