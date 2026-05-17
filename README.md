@@ -8,27 +8,26 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.12 — Replay strict mode.**
-  New `--verify-strict` boolean runner flag (requires `--verify`)
-  makes `main()` exit `EXIT_FAILURE` when M2.11 detects any
-  mismatches. The full mismatch list still prints to stdout
-  before the non-zero exit so CI logs capture every divergence.
-  **Architectural decision**: `run()` semantics unchanged — it
-  still returns success when the simulation+replay completes;
-  strict mode is a `main()`-level policy. Tradeoff is one extra
-  line of policy in `main()`; benefit is library/CLI separation
-  stays clean and other consumers (tests, future embedders) can
-  apply their own policy. Flag-chain validation:
-  `--verify-strict` → `--verify` → `--replay`, each with its
-  own loud-rejection message naming the missing dependency.
-  **No save format bump** (still v9); no new state field; no
-  `run()` behaviour change; no new flags beyond strict.
-- Next sub-milestone candidates: **M2.13** (`--verify-tolerance`
-  CLI knob for `CompareOptions::double_tolerance`; the obvious
-  next ergonomics step once numerics get more complex) or
-  **M2.14** (further `PlayerCommandKind` variants —
-  `ChangeTaxBurden`, `ToggleMartialLaw`, …; save-neutral
-  additive enum).
+- Latest shipped sub-milestone: **M2.13 — Verify tolerance CLI.**
+  New `--verify-tolerance FLOAT` runner flag (requires `--verify`)
+  overrides M2.10's default `1e-9` tolerance when calling
+  `compare_states`. Parses via a new exception-free
+  `parse_nonneg_double` helper that rejects empty input, trailing
+  garbage, non-finite values, and negatives at parse time.
+  Plumbed into `run()`'s replay branch by building a
+  `diagnostics::CompareOptions` with the override applied when set.
+  `main()` prints the active tolerance value when set so CI logs
+  show which tolerance produced the reported mismatch count.
+  Completes the M2 replay family CLI (`--replay` / `--verify` /
+  `--verify-strict` / `--verify-tolerance`). **No save format
+  bump** (still v9); no library behaviour change; no new state
+  field beyond `RunnerOptions::verify_tolerance`.
+- Next sub-milestone candidates: **M2.14** (further
+  `PlayerCommandKind` variants — `ChangeTaxBurden`,
+  `ToggleMartialLaw`, …; save-neutral additive enum) or
+  **M2.15** (relative-tolerance support in `CompareOptions` —
+  upgrade M2.10's absolute-only comparison to handle large-
+  magnitude fields better; save-neutral).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -53,8 +52,8 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.10 + M2.11 + M2.12 merged. Twenty-eight sub-
-milestones shipped:
++ M2.7 + M2.8 + M2.10 + M2.11 + M2.12 + M2.13 merged. Twenty-nine
+sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -212,7 +211,16 @@ list still printed first so CI logs capture every divergence.
 `run()` semantics unchanged — strict is a `main()`-level exit
 policy (library / CLI separation stays clean). Flag-chain
 `--verify-strict → --verify → --replay` each with loud rejection
-on missing dependency. No save format change.**
+on missing dependency. No save format change; **M2.13 Verify
+tolerance CLI — new `--verify-tolerance FLOAT` runner flag
+(requires `--verify`) overrides M2.10's default 1e-9 tolerance
+when calling `compare_states`. Parses via a new
+`parse_nonneg_double` helper that rejects empty / garbage /
+non-finite / negative inputs. Plumbed into `run()`'s replay
+branch via `diagnostics::CompareOptions`. `main()` prints the
+active tolerance when set. Completes the M2 replay-CLI family
+(--replay / --verify / --verify-strict / --verify-tolerance).
+No save format change.**
 
 ## Repository layout
 
@@ -363,6 +371,16 @@ on Windows).
     --replay   path/to/golden.json \
     --verify --verify-strict \
     --output   replay_out/
+
+# M2.13 - loosen the verify tolerance for cumulative drift in
+# long simulations. Default is 1e-9; pass any finite non-negative
+# double via --verify-tolerance to override.
+./build/bin/Debug/leviathan \
+    --days     0 \
+    --scenario data/scenarios/1930_with_start_policies.json \
+    --replay   path/to/golden.json \
+    --verify --verify-strict --verify-tolerance 1e-6 \
+    --output   replay_out/
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -399,15 +417,22 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.12 there are **542 doctest cases**. M0 contributed 179;
+As of M2.13 there are **550 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
-10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 adds 5
-covering `--verify-strict`: parse plumbed (with `--verify`),
+10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
+M2.13 adds 8 covering `--verify-tolerance`: parse plumbed with
+value preserved; default nullopt; missing value rejected;
+non-numeric (`"abc"`) rejected with "floating-point" in error;
+negative rejected with `">= 0"` in error; without `--verify`
+rejected with both flag names; end-to-end: loose tolerance
+(`1e-2`) absorbs a `1e-3` `gdp` tweak with no mismatch on that
+path; tight tolerance (`1e-6`) catches the same tweak.
+Previously M2.12 added 5 covering `--verify-strict`: parse plumbed (with `--verify`),
 defaults false, `--verify-strict` without `--verify` rejected
 with both flag names; run with strict + matching source succeeds
 empty mismatches; run with strict + tweaked source still

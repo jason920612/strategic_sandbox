@@ -1,5 +1,6 @@
 #include "leviathan/systems/runner.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -65,6 +66,37 @@ core::Result<int> parse_positive_int(std::string_view text,
             "' exceeds INT_MAX");
     }
     return core::Result<int>::success(static_cast<int>(u.value()));
+}
+
+// M2.13: parse a non-negative finite double from `text`. Exception-
+// free; uses std::strtod with full-consumption + finiteness checks.
+core::Result<double> parse_nonneg_double(std::string_view text,
+                                         std::string_view flag) {
+    if (text.empty()) {
+        return core::Result<double>::failure(
+            std::string(flag) + ": value is empty");
+    }
+    // strtod wants a null-terminated string; string_view may not be.
+    const std::string buf(text);
+    char* end = nullptr;
+    const double v = std::strtod(buf.c_str(), &end);
+    // Must consume the entire input (no trailing garbage like "1.5x").
+    if (end == buf.c_str() || end == nullptr || *end != '\0') {
+        return core::Result<double>::failure(
+            std::string(flag) + ": '" + std::string(text) +
+            "' is not a valid floating-point number");
+    }
+    if (!std::isfinite(v)) {
+        return core::Result<double>::failure(
+            std::string(flag) + ": '" + std::string(text) +
+            "' is not finite (NaN or Inf not allowed)");
+    }
+    if (v < 0.0) {
+        return core::Result<double>::failure(
+            std::string(flag) + ": '" + std::string(text) +
+            "' must be >= 0");
+    }
+    return core::Result<double>::success(v);
 }
 
 // ---- file write helper ----------------------------------------------------
@@ -153,6 +185,14 @@ std::string usage_text() {
         "                      full mismatch list is still printed to\n"
         "                      stdout before the non-zero exit so CI\n"
         "                      logs capture everything.\n"
+        "  --verify-tolerance N\n"
+        "                      Override the floating-point tolerance\n"
+        "                      passed to diagnostics::compare_states\n"
+        "                      (M2.13). Default is 1e-9; useful when a\n"
+        "                      long-running simulation has legitimate\n"
+        "                      cumulative drift the tight default would\n"
+        "                      false-positive on. N must be a finite\n"
+        "                      non-negative double. Requires --verify.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -249,6 +289,13 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             opts.verify = true;
         } else if (a == "--verify-strict") {
             opts.verify_strict = true;
+        } else if (a == "--verify-tolerance") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            auto t = parse_nonneg_double(v.value(), a);
+            if (!t) return core::Result<RunnerOptions>::failure(std::move(t.error()));
+            opts.verify_tolerance = t.value();
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -271,6 +318,13 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             "--verify-strict requires --verify (strict mode is a"
             " policy on top of the verify step; without --verify"
             " there are no mismatches to gate on)");
+    }
+    // M2.13: --verify-tolerance only meaningful inside --verify.
+    if (opts.verify_tolerance.has_value() && !opts.verify) {
+        return core::Result<RunnerOptions>::failure(
+            "--verify-tolerance requires --verify (the tolerance"
+            " is consumed by compare_states inside the verify step;"
+            " without --verify there is nothing to tune)");
     }
     return core::Result<RunnerOptions>::success(std::move(opts));
 }
@@ -369,9 +423,16 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         // M2.11: optional verify — compare the replayed state to the
         // loaded source via diagnostics::compare_states. Informational
         // only; the run still succeeds regardless of mismatch count.
+        // M2.13: when --verify-tolerance is set, override the default
+        // double_tolerance on the CompareOptions struct.
         if (opts.verify) {
             namespace dg = leviathan::systems::diagnostics;
-            outcome.verify_mismatches = dg::compare_states(state, loaded);
+            dg::CompareOptions cmp_opts;
+            if (opts.verify_tolerance.has_value()) {
+                cmp_opts.double_tolerance = opts.verify_tolerance.value();
+            }
+            outcome.verify_mismatches =
+                dg::compare_states(state, loaded, cmp_opts);
         }
 
         return core::Result<RunOutcome>::success(std::move(outcome));

@@ -439,6 +439,23 @@ M0 / M1 中落地，部分仍是未來工作：
   v9）、`--verify-tolerance` CLI knob（M2.13 候選）、structured
   diff 輸出、mismatch 數量門檻（strict 是二元，任何 mismatch 都
   失敗）、`run()` 行為變更、新 state.logs 條目、M1 system 變更。
+  **M2.13（Verify tolerance CLI）** 在 runner 新增
+  `--verify-tolerance FLOAT` 旗標（須與 `--verify` 並用），讓使用者
+  覆寫 M2.10 預設的 `1e-9` `CompareOptions::double_tolerance`。
+  新的 `parse_nonneg_double` helper 採 exception-free 寫法
+  （`std::strtod` + full-consumption + finiteness check），拒絕
+  empty / 含 trailing garbage（如 `"1.5x"`）/ NaN / Inf / 負值，
+  每種錯誤都把 flag 名稱與不合法值寫進訊息。`run()` 在 replay
+  分支建立 `diagnostics::CompareOptions`，若 `opts.verify_tolerance`
+  有值就覆寫 `double_tolerance` 再傳給 `compare_states`。`main()`
+  在 verify block 多印一行 `Verify tolerance : <value>`，方便 CI
+  log 看出當次比對使用的容忍度。**這也讓 M2 replay-CLI family
+  進入功能完整狀態**：`--replay` (M2.8) / `--verify` (M2.11) /
+  `--verify-strict` (M2.12) / `--verify-tolerance` (M2.13)。
+  對應 RFC-090 §M2 replay family 的 CLI ergonomics 收尾。
+  **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
+  （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
+  tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
