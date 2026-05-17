@@ -81,5 +81,15 @@ int main(int argc, char** argv) {
         }
     }
 
+    // M2.12: --verify-strict makes main exit non-zero when --verify
+    // detects mismatches. We print the full mismatch list first so
+    // CI logs capture every divergence.
+    if (opts.verify_strict && !outcome.verify_mismatches.empty()) {
+        std::cout << "Strict mode: failing run on "
+                  << outcome.verify_mismatches.size()
+                  << " mismatch(es).\n";
+        return EXIT_FAILURE;
+    }
+
     return EXIT_SUCCESS;
 }
