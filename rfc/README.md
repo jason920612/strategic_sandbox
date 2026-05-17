@@ -217,9 +217,24 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中）** — 指令 / 治理整合。**M4.2
-  （CommandGateDiagnostic on RejectionRecord）** 把 M4.1
-  diagnostic shape 接進 apply-time rejection 路徑。
+- **Post-M3 governance follow-ups（進行中 / transitional）** —
+  These are small architecture follow-ups connecting M2
+  command gates with M3 authority state. They are **NOT
+  RFC-090 Milestone 4**. RFC-090 M4 remains SVG map and
+  UI, and RFC-040 diplomacy / world AI remains RFC-090
+  Milestone 8. These follow-ups must not introduce
+  diplomacy, AI, UI, events, new commands, new artefacts,
+  or save-schema changes unless a separate RFC alignment
+  PR explicitly re-plans the roadmap. Two PRs have
+  shipped in this thread so far (originally labelled
+  "M4.1" / "M4.2" — kept on their merge commits but
+  reframed in docs). For full milestone-numbering drift
+  documentation see `docs/rfc-alignment-note-post-m3.md`.
+
+  The most recent post-M3 follow-up (originally labelled
+  "M4.2", reframed): **`CommandGateDiagnostic` on
+  `RejectionRecord`** — wires the M4.1 diagnostic shape
+  into the apply-time rejection path.
   `commands::RejectionRecord` 新增 `CommandGateDiagnostic
   gate_diagnostic` 欄位（**additive**，舊欄位
   `compliance` / `threshold` / `resistance` 保留以維持
@@ -249,7 +264,10 @@ M0 / M1 中落地，部分仍是未來工作：
   aggregate 整合（仍 deferred）、沒有移除 RejectionRecord
   flat 欄位（M4.X 之後的 cleanup 候選）**。doctest count
   794 → 800。
-- **M4.1（command gate diagnostics surface）** 開啟 M4：在
+- **M4.1（command gate diagnostics surface）** — 原本標
+  "opens M4"，但依 `docs/rfc-alignment-note-post-m3.md`
+  改框為「post-M3 governance follow-up，**不是 RFC-090
+  M4** (RFC-090 M4 是 SVG 地圖與 UI)」。內容上是在
   `leviathan::systems::commands` 加上兩個純讀
   diagnostic helper（`diagnose_enact_policy_gate` /
   `diagnose_adjust_budget_gate`）把 M2.18 / M2.19

@@ -6,13 +6,22 @@
 
 ## Status
 
-- Phase: **Milestone 4 — command / governance integration
-  (in progress).** M0 / M1 / M2 / M3 all closed; M4 opens
-  with M4.1 introducing the read-only command-gate
-  diagnostics surface. See `docs/milestone-3-result.md`
-  for the M3 exit report.
-- Latest shipped sub-milestone: **M4.2 — `CommandGateDiagnostic`
-  on `RejectionRecord`.** Wires the M4.1 diagnostic shape
+- Phase: **Post-M3 governance follow-up (transitional).**
+  M0 / M1 / M2 / M3 closed. The two sub-milestones
+  currently labelled "M4.1" (merged) and the current PR
+  (originally labelled "M4.2") are **not** RFC-090
+  Milestone 4 work — RFC-090 M4 is SVG map + UI and is
+  still future work. They are post-M2 command /
+  governance integration follow-ups. Next RFC milestone
+  remains TBD; if following RFC-090 strictly the next is
+  M4 (SVG map + UI). See
+  `docs/rfc-alignment-note-post-m3.md` for the full
+  explanation of the milestone-numbering drift and
+  `docs/milestone-3-result.md` for the M3 exit report.
+- Latest shipped work: **post-M3 governance follow-up —
+  `CommandGateDiagnostic` on `RejectionRecord`** (this PR;
+  originally drafted as "M4.2"; reframed per
+  `docs/rfc-alignment-note-post-m3.md`). Wires the M4.1 diagnostic shape
   into the apply-time rejection path. `commands::RejectionRecord`
   gains a `CommandGateDiagnostic gate_diagnostic` field
   (additive — every existing M2.20 / M2.21 / M2.22 caller
@@ -47,8 +56,10 @@
   aggregates (still deferred), no removal of the flat
   `RejectionRecord` fields (a future M4.X cleanup
   candidate).** Doctest count 794 → 800.
-- Previously shipped: **M4.1 — command gate
-  diagnostics surface.** Opens M4. Small read-only
+- Previously shipped (also labelled M4.1 on its merge
+  commit, retroactively reframed as a post-M3
+  governance follow-up by `docs/rfc-alignment-note-post-m3.md`):
+  **command gate diagnostics surface.** Opens M4. Small read-only
   helpers that explain how the existing M2.18 / M2.19
   command-execution gates would decide on a country given
   its current M3-mutable authority state, without changing
@@ -475,26 +486,28 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.2): **M4.3** —
-  open. Natural candidates after the rejection record
-  carries the diagnostic: (a) surface a
-  `RejectionRecord` (or just its `gate_diagnostic`) on
-  `RunOutcome` so a CLI run prints why a command was
-  rejected, not just the count; (b) **structured
-  command-feedback log** as a 10th unconditional CSV
-  artefact recording every gate rejection with the M4.1
-  diagnostic shape as the row; (c) interest-group
-  aggregates as additional inputs to the M2.18 / M2.19
-  gate (the long-discussed M3 → M2 integration); (d)
-  the third sibling authority channel
-  (`intelligence_capability` or `media_control`); (e)
-  remove the redundant flat `RejectionRecord` fields
-  once enough callers migrate to `gate_diagnostic`
-  (behaviour-preserving cleanup, no formula change);
-  (f) atomic `end_tick` writes (temp-file + rename),
-  still long-deferred. None committed.
-- M0 closed. M1 closed. M2 closed. M3 closed. M4 in
-  progress (M4.1 + M4.2 shipped). See
+- Next work candidate: open. Two routes:
+  - Continue with another post-M3 governance follow-up
+    (surface `RejectionRecord` on `RunOutcome`, add
+    `command_rejections.csv` as a 10th unconditional
+    artefact, wire interest-group aggregates into the
+    M2.18 / M2.19 gate, add the
+    `intelligence_capability` / `media_control` sibling
+    authority channels, remove the now-redundant flat
+    fields on `RejectionRecord`, atomic `end_tick`
+    cleanup). None of these are RFC-090 milestones — all
+    would be additional post-M3 follow-ups.
+  - Or, start an RFC-090 numbered milestone: **M4 SVG
+    map + UI** is the next milestone if following
+    RFC-090 strictly. RFC-090 M5 = event engine, M7 =
+    faction deepening, M8 = diplomacy / world AI.
+  Either route requires an explicit reviewer-supplied
+  spec before any new branch opens. See
+  `docs/rfc-alignment-note-post-m3.md` §5 for the
+  routing rule.
+- M0 closed. M1 closed. M2 closed. M3 closed. Post-M3
+  governance follow-up in progress (two PRs shipped so
+  far). See
   `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and
@@ -523,14 +536,20 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
-merged; **Milestone 3** (internal politics / interest-group
-reaction layer, RFC-090 §M3) is **closed** with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9
-+ M3.10 + M3.11 shipped (see `docs/milestone-3-result.md`
-for the exit report); **Milestone 4** (command / governance
-integration) is in progress with M4.1 (command gate
-diagnostics surface) and M4.2 (`CommandGateDiagnostic` on
-`RejectionRecord`) shipped. Fifty-one sub-milestones shipped:
+merged; **Milestone 3** as shipped (internal politics /
+interest-group reaction layer with M3.1 + M3.2 + M3.3 +
+M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9 + M3.10
++ M3.11) is **closed** — see `docs/milestone-3-result.md`
+for the exit report. Note that the shipped M3 is closer to
+RFC-090 M7 (派系深化) than to RFC-090 M3 (多國模擬,
+20–30 country simulation with AI policy selection); the
+drift is documented in `docs/rfc-alignment-note-post-m3.md`.
+A **post-M3 governance follow-up** is currently in
+progress: two PRs have shipped (one merged as "M4.1", this
+PR originally labelled "M4.2"), both of which are command
+/ governance integration work and **not** RFC-090
+Milestone 4 (SVG map + UI). Fifty-one sub-milestones
+shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -677,7 +696,10 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
-**M4.2 `CommandGateDiagnostic` on `RejectionRecord` —
+**post-M3 governance follow-up: `CommandGateDiagnostic`
+on `RejectionRecord` (originally labelled "M4.2"; reframed
+per `docs/rfc-alignment-note-post-m3.md` — NOT RFC-090
+M4 work) —
 wires the M4.1 diagnostic shape into the apply-time
 rejection path. `commands::RejectionRecord` gains a
 `CommandGateDiagnostic gate_diagnostic` field
