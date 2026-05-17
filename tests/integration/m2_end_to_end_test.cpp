@@ -27,19 +27,20 @@
 //      (M2.3 mid-list-failure atomicity inherited through
 //      M2.18 / M2.19 / M2.20 / M2.21).
 //
-//   3. 8-artefact byte-identical determinism with M2 commands.
+//   3. 9-artefact byte-identical determinism with M2 commands.
 //      Composes M2.2 `begin_tick` + M2.21 `apply_command_script`
 //      + `step_one_day` * 31 + M2.2 `end_tick` twice into two
 //      independent temp dirs and asserts save.json /
 //      events.jsonl / summary.csv / countries.csv /
 //      factions.csv / interest_groups.csv /
 //      interest_group_country_feedback.csv /
-//      interest_group_authority_pressure.csv all match
+//      interest_group_authority_pressure.csv /
+//      interest_group_military_pressure.csv all match
 //      byte-for-byte. M1.17's determinism contract carried
-//      through M2; M3.5 added the sixth artefact and M3.6
-//      added the seventh + eighth (canonical scenarios author
-//      zero interest groups so the three M3 files are
-//      header-only).
+//      through M2; M3.5 added the sixth artefact, M3.6 added
+//      the seventh + eighth, M3.10 added the ninth (canonical
+//      scenarios author zero interest groups so the four M3
+//      files are all header-only).
 
 #include <doctest/doctest.h>
 
@@ -273,7 +274,7 @@ TEST_CASE("M2 end-to-end: gate atomicity across EnactPolicy and AdjustBudget") {
 // =====================================================================
 // 3. 5-artefact byte-identical determinism with M2 commands
 // =====================================================================
-TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 8 artefacts") {
+TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 9 artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         // Same builder both runs use; the deterministic seed lives
         // in the canonical simulation.json that DataLoader reads.
@@ -307,9 +308,9 @@ TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 8 art
     run_once(td_a.path);
     run_once(td_b.path);
 
-    // The 8 artefacts (M1.17's five + M3.5's interest_groups.csv +
-    // M3.6's two formula-trace CSVs) must continue to survive M2's
-    // command + gate path.
+    // The 9 artefacts (M1.17's five + M3.5's interest_groups.csv +
+    // M3.6's two formula-trace CSVs + M3.10's military_pressure
+    // trace CSV) must continue to survive M2's command + gate path.
     CHECK(read_file(td_a.path / "save.json") ==
           read_file(td_b.path / "save.json"));
     CHECK(read_file(td_a.path / "events.jsonl") ==
@@ -323,11 +324,14 @@ TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 8 art
     // M3.5: interest_groups.csv joins the byte-identical contract.
     CHECK(read_file(td_a.path / "interest_groups.csv") ==
           read_file(td_b.path / "interest_groups.csv"));
-    // M3.6: two formula-trace CSVs round out the 8-artefact set.
+    // M3.6 + M3.10: three formula-trace CSVs round out the
+    // 9-artefact set.
     CHECK(read_file(td_a.path / "interest_group_country_feedback.csv") ==
           read_file(td_b.path / "interest_group_country_feedback.csv"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    CHECK(read_file(td_a.path / "interest_group_military_pressure.csv") ==
+          read_file(td_b.path / "interest_group_military_pressure.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

@@ -695,6 +695,10 @@ core::Result<bool> step_one_day(core::GameState& state,
         for (auto& row : outcome.interest_group_authority_pressure_trace_rows) {
             ctrl.interest_group_authority_pressure_rows.push_back(std::move(row));
         }
+        // M3.10: drain the M3.9 trace vector the same way.
+        for (auto& row : outcome.interest_group_military_pressure_trace_rows) {
+            ctrl.interest_group_military_pressure_rows.push_back(std::move(row));
+        }
         ++ctrl.monthly_ticks;
     }
     if (opts.summary_csv_path.has_value() && tr.month_changed) {
@@ -785,6 +789,10 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto interest_group_authority_pressure_csv_path =
         opts.interest_group_authority_pressure_csv_path.value_or(
             opts.output_dir / "interest_group_authority_pressure.csv");
+    // M3.10: third formula-trace CSV, also always written.
+    const auto interest_group_military_pressure_csv_path =
+        opts.interest_group_military_pressure_csv_path.value_or(
+            opts.output_dir / "interest_group_military_pressure.csv");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -874,6 +882,19 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
+    // M3.10: unconditionally write the military-pressure trace CSV.
+    {
+        std::ostringstream csv;
+        dg::write_military_pressure_csv_header(csv);
+        for (const auto& row : ctrl.interest_group_military_pressure_rows) {
+            dg::write_military_pressure_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(
+            interest_group_military_pressure_csv_path, csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -900,6 +921,10 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
         interest_group_authority_pressure_csv_path;
     outcome.interest_group_authority_pressure_csv_rows =
         ctrl.interest_group_authority_pressure_rows.size();
+    outcome.interest_group_military_pressure_csv_path =
+        interest_group_military_pressure_csv_path;
+    outcome.interest_group_military_pressure_csv_rows =
+        ctrl.interest_group_military_pressure_rows.size();
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));

@@ -217,7 +217,43 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.9（InterestGroup-
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.10（InterestGroup
+  military_pressure outcome CSV surface）** 把 M3.6 trace-CSV
+  retrofit pattern 套到 M3.9 上：新增第 9 個 unconditional
+  runner artefact `interest_group_military_pressure.csv`，
+  10 個固定欄位（`date,country_id,country_id_code,
+  matched_groups,weight_sum,weighted_military_loyalty,
+  target_military_loyalty,military_loyalty_before,
+  military_loyalty_after,military_loyalty_delta`），形狀
+  完全鏡像 M3.6 authority_pressure CSV。Cadence 與 M3.6
+  pair 一致：每月 pipeline 對每個實際 mutate 的 country
+  輸出一列，skip 的不輸出 row，preflight failure 不輸出
+  partial rows，canonical scenario 因沒 author interest
+  groups 所以仍 header-only。新增
+  `diagnostics::write_military_pressure_csv_header / _row`
+  pair（沿用 `csv_escape` + `std::scientific` +
+  `setprecision(17)`）；`RunnerOptions` 新增 optional
+  `interest_group_military_pressure_csv_path` 覆寫（**沒有
+  CLI flag**，預設 `<output_dir>/interest_group_military_pressure.csv`）；
+  `RunOutcome` 新增 path + row counter；`TickController`
+  新增 buffer 並由 `step_one_day` 從
+  `MonthlyOutcome::interest_group_military_pressure_trace_rows`
+  drain 過來；`end_tick` 在 M3.6 authority_pressure 寫檔
+  之後寫第 9 個 artefact；`main()` 多印兩行。M1.17 /
+  M2.22 / M3.7 byte-identical determinism contract 從 8
+  artefact 擴張到 9；M2.9 pre-`end_tick` no-artefact
+  contract 自然涵蓋第 9 個檔。Drive-by：把
+  `docs/m3-9-interest-group-military-pressure.md` 文末
+  那行 `[[feedback_pr_workflow]]` wiki-link 拿掉
+  （PR #58 reviewer 提的 non-blocker —— `[[...]]` 是
+  Claude memory-file 內部慣例，不該洩漏到 repo Markdown）。
+  **沒有新玩法、沒有 save schema 變更（仍 v11）、沒有
+  M3.X 公式變更、沒有新 CLI flag、沒有新 InterestGroupKind、
+  沒有新 PlayerCommandKind、沒有 events / AI / UI / REPL、
+  沒有 command-gate integration、沒有 intelligence_capability
+  / media_control channel、沒有 atomic end_tick 寫檔**。
+  10 個新 doctest cases。doctest 總數 766 → 776。
+  **M3.9（InterestGroup-
   derived military_loyalty pressure，M3.4 的 sibling）** 加上
   authority 層的第二個 pressure channel：Military-kind interest
   group 的 influence-weighted loyalty 推動每個 country 的

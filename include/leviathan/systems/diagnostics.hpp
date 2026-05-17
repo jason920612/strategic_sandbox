@@ -253,6 +253,16 @@ void write_authority_pressure_csv_row(
     std::ostream& out,
     const interest_group::AuthorityPressureTraceRow& row);
 
+// M3.10: per-system formula trace writer for `military_pressure`
+// (M3.9). Mirrors the M3.6 trace writer pair line-for-line —
+// same csv_escape + std::scientific + setprecision(17) policy.
+// The header is fixed and pinned by tests; bumping a column
+// here is breaking.
+void write_military_pressure_csv_header(std::ostream& out);
+void write_military_pressure_csv_row(
+    std::ostream& out,
+    const interest_group::MilitaryPressureTraceRow& row);
+
 // ---------------------------------------------------------------------------
 // M2.10: programmatic state-comparison API.
 //

@@ -78,6 +78,10 @@ int main(int argc, char** argv) {
               << "Country feedback rows: " << outcome.interest_group_country_feedback_csv_rows             << "\n"
               << "Authority press CSV : " << outcome.interest_group_authority_pressure_csv_path.string()   << "\n"
               << "Authority press rows: " << outcome.interest_group_authority_pressure_csv_rows            << "\n";
+    // M3.10: third formula-trace CSV (military_pressure), also unconditional.
+    std::cout
+              << "Military press CSV  : " << outcome.interest_group_military_pressure_csv_path.string()    << "\n"
+              << "Military press rows : " << outcome.interest_group_military_pressure_csv_rows             << "\n";
     if (opts.replay_path.has_value()) {
         std::cout
               << "Replay source       : " << opts.replay_path.value().string() << "\n"

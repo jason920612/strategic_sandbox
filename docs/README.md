@@ -58,6 +58,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-11-replay-verify.md`](m2-11-replay-verify.md) | M2.11 | **Replay verify CLI.** New `--verify` boolean runner flag (requires `--replay`) wires M2.10 `compare_states` into the M2.8 replay flow. After `end_tick` succeeds, the runner calls `compare_states(replayed_state, loaded_source)` and populates `RunOutcome::verify_mismatches`. `main()` prints `Verify mismatches: N` plus one bullet per mismatch (`  - <field_path> : <detail>`). **Informational only** — exit code stays 0 regardless of mismatch count; artefacts (save / JSONL / CSV) are still written so the user can forensically inspect. Reuses the already-loaded source save (no extra disk I/O). `parse_args` rejects `--verify` without `--replay` with both flag names in the error. **No save-format bump (still v9), no strict fail-on-mismatch mode (`--verify-strict` is a future candidate), no CLI tolerance knob, no `--verify` outside `--replay`, no mismatch-list truncation, no M1 system change.** |
 | [`m2-12-verify-strict.md`](m2-12-verify-strict.md) | M2.12 | **Replay strict mode.** New `--verify-strict` boolean runner flag (requires `--verify`) makes `main()` exit `EXIT_FAILURE` when M2.11 detects any mismatches. The full mismatch list still prints to stdout before the non-zero exit so CI logs capture every divergence. **Architectural decision**: `run()` semantics unchanged — it still returns success when the simulation+replay completes; strict mode is a `main()`-level exit-code policy. Tradeoff is one extra line of policy in `main()`; benefit is library/CLI separation stays clean and other consumers (tests, future embedders) can apply their own policy. `parse_args` rejects `--verify-strict` without `--verify` with both flag names in the error. Flag-chain: `--verify-strict` → `--verify` → `--replay`. **No save-format bump (still v9), no `--verify-tolerance` CLI knob (M2.13 candidate), no structured-diff output format, no mismatch-count threshold (strict is binary: any mismatch fails), no `run()` behaviour change, no M1 system change.** |
 | [`m2-13-verify-tolerance.md`](m2-13-verify-tolerance.md) | M2.13 | **Verify tolerance CLI.** New `--verify-tolerance FLOAT` runner flag (requires `--verify`) overrides M2.10's default `1e-9` `CompareOptions::double_tolerance` when calling `compare_states`. Parses via a new exception-free `parse_nonneg_double` helper that rejects empty input, trailing garbage (`"1.5x"`), non-finite values (`NaN`/`Inf`), and negatives at parse time with the flag name + bad value in the error. Plumbed into `run()`'s replay branch by building a `diagnostics::CompareOptions` with the override applied only when set. `main()` prints `Verify tolerance: <value>` when active so CI logs show which tolerance produced the mismatch count. **Completes the M2 replay-CLI family** (`--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`). **No save-format bump (still v9), no library behaviour change beyond passing the override through, no relative tolerance, no per-field tolerance, no new gameplay.** |
+| [`m3-10-military-pressure-csv-surface.md`](m3-10-military-pressure-csv-surface.md) | M3.10 | **InterestGroup `military_pressure` outcome CSV surface.** Retrofits the M3.6 trace-CSV pattern onto M3.9. New 9th unconditional runner artefact `interest_group_military_pressure.csv` with the same 10-column shape as M3.6's authority_pressure trace CSV (`date,country_id,country_id_code,matched_groups,weight_sum,weighted_military_loyalty,target_military_loyalty,military_loyalty_before,military_loyalty_after,military_loyalty_delta`). One row per actually-mutated country per monthly pipeline tick; skipped countries produce no row; canonical scenarios produce header-only file. New `diagnostics::write_military_pressure_csv_header` / `_row` writer pair (reuses `csv_escape` + `std::scientific` + `setprecision(17)`). `RunnerOptions` gains optional `interest_group_military_pressure_csv_path` override (no CLI flag, defaults to `<output_dir>/interest_group_military_pressure.csv`). `RunOutcome` gains path + row counter. `TickController` gains buffer that `step_one_day` drains from `MonthlyOutcome::interest_group_military_pressure_trace_rows`. `end_tick` writes the new file as the 9th artefact after `interest_group_authority_pressure.csv`. `main()` prints two new summary lines. Determinism contract grows 8 → 9 artefacts (M1.17 / M2.22 / M3.7 byte-identical tests all extended); M2.9 pre-`end_tick` no-artefact contract automatically extends to the 9th file because `end_tick` is still the only function that writes. Drive-by: stripped the stray `[[feedback_pr_workflow]]` wiki-link from `m3-9-interest-group-military-pressure.md` (PR #58 reviewer non-blocker). **No new gameplay, no save schema bump (still v11), no formula change to any M3.X system, no new CLI flag, no new `InterestGroupKind` variants, no new `PlayerCommandKind`, no events / AI / UI / REPL, no command-gate integration, no atomic `end_tick` writes.** 10 new doctest cases. |
 | [`m3-9-interest-group-military-pressure.md`](m3-9-interest-group-military-pressure.md) | M3.9 | **InterestGroup-derived military_loyalty pressure (sibling of M3.4).** Second authority-layer pressure channel. New module entries: constant `kInterestGroupMilitaryPressureRate = 0.01` (sibling of M3.4's rate, same value because both sit at the "authority" layer of the rate ladder), `MilitaryPressureOutcome { int countries_updated }`, `MilitaryPressureTraceRow` (10 fields mirroring `AuthorityPressureTraceRow`), and `military_pressure(state, trace_out = nullptr)` free function. Formula mirrors M3.4 line for line but filters on `kind == Military` and writes `country.government_authority.military_loyalty`. Skips countries with no Military groups or zero total Military influence. Strict preflight on inputs actually read (group.country / influence / loyalty / country.military_loyalty, all finite + `[0, 1]`); `radicalism` and `stability` not preflighted. M3.4 and M3.9 are siblings, not nested — both run at 0.01, M3.9 wired into `tick_all_countries` as the FOURTH global step AFTER `authority_pressure`. `MonthlyOutcome` gains `interest_group_military_countries_updated` counter + `interest_group_military_pressure_trace_rows` vector. The other three `government_authority` sub-fields (`bureaucratic_compliance` is M3.4's; `intelligence_capability` and `media_control` stay inert) are byte-identical. **No save schema bump (still v11), no new artefact (still 8 files; per-system CSV deferred to M3.10 candidate following the same shape M3.4 originally shipped before M3.6 retrofitted CSVs), no formula change to M3.2 / M3.3 / M3.4, no events / AI / UI / CLI / REPL, no new `PlayerCommandKind`, no command-gate integration, no `intelligence_capability` / `media_control` channel.** 18 new doctest cases (full battery for `military_pressure` mirroring M3.4 + M3.6 + M3.8). M3 integration test `m37_state_one_bureaucracy_group` helper gained one Military-kind group so test A now asserts all FOUR M3 reaction systems mutate as expected and surface all THREE trace vectors. |
 | [`m3-8-null-trace-baseline-comparison.md`](m3-8-null-trace-baseline-comparison.md) | M3.8 | **Null-trace baseline strengthened to byte-for-byte equivalence.** Tests-only follow-up to M3.6 closing the PR #55 reviewer non-blocker nit. The pre-M3.8 null-pointer baseline tests only proved "a mutation happened"; M3.8 proves the resulting state is byte-identical between `trace_out = nullptr` and `trace_out = &vec`. Six new doctest cases (three per system: single-group / multi-country / skipped-country) in `tests/systems/interest_group_system_test.cpp` M3.8 section. Strategy: build a non-trivial initial state, copy it, run the system on one copy with `nullptr` and the other with `&vec`, then assert `diagnostics::compare_states(s_null, s_trace, CompareOptions{0.0}).empty()` (tolerance `0.0`, not the default `1e-9`, so a single-ULP regression fails loudly). Plus a direct `==` spot-check on the one mutated double field per system. New `m38_multi_country_state` helper (GER + FRA each with one Bureaucracy + one Workers group). **No library change, no formula change, no `MonthlyOutcome` change, no runner change, no artefact change, no save schema bump (still v11), no new gameplay.** |
 | [`milestone-3-checkpoint.md`](milestone-3-checkpoint.md) | M3.7 | **M3 reaction-loop integration checkpoint.** Mid-milestone checkpoint, NOT an exit report — M3 stays in progress. Three new end-to-end tests in `tests/integration/m3_end_to_end_test.cpp` (one-month reaction loop on a hand-built state runs M3.2 / M3.3 / M3.4 with all expected mutations + counters + trace vectors; runner emits all 8 artefacts with data rows in the three M3 CSVs; byte-identical 8-artefact determinism on same seed) pin the seam between every M3.X system shipped so far. New `docs/milestone-3-checkpoint.md` consolidates the M3 dataflow, the 8-artefact runner contract, current M3 invariants (save format v11, no events / AI / UI / CLI / RNG, no new `PlayerCommandKind`, M2 command gates unchanged but bureaucratic_compliance now drifts via M3.4, `end_tick` still non-transactional), deferred items (event generation, strikes / protests / coups, sibling authority channels, weighted multi-input formulas, influence drift, etc.), and suggested M3.8 candidates. **No new code path, no new artefact, no save schema bump (still v11), no formula change.** READMEs marked "M3.7 checkpoint shipped, M3 still in progress" — explicitly NOT "M3 closed". Three new doctest cases. |
@@ -91,16 +92,17 @@ If you're new to the codebase:
    M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11 → M2.12 → M2.13 →
    M2.14 → M2.16 → M2.17 → M2.18 → M2.19 → M2.20 → M2.21 →
    `milestone-2-result.md` → M3.1 → M3.2 → M3.3 → M3.4 →
-   M3.5 → M3.6 → `milestone-3-checkpoint.md` → M3.8 → M3.9).
-   They build on each other and each one tries to call out
-   the rules a future contributor must not silently break.
+   M3.5 → M3.6 → `milestone-3-checkpoint.md` → M3.8 → M3.9
+   → M3.10). They build on each other and each one tries to
+   call out the rules a future contributor must not silently
+   break.
 
 ## What's next
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.
 
-**M3 in progress.** M3.1 + M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9 shipped:
+**M3 in progress.** M3.1 + M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9 + M3.10 shipped:
 
 - **M3.1** introduced the data shape (InterestGroupKind enum
   + InterestGroupState POD + root-level vector + save format
@@ -195,24 +197,37 @@ for the full M2 exit ledger.
   `intelligence_capability` / `media_control`) are
   byte-identical. **No save schema bump (still v11), no
   new artefact (still 8; per-system CSV deferred to
-  M3.10 candidate), no formula change to M3.2 / M3.3 /
-  M3.4, no events / AI / UI / CLI / REPL, no command-gate
+  M3.10), no formula change to M3.2 / M3.3 / M3.4, no
+  events / AI / UI / CLI / REPL, no command-gate
   integration.** 18 new doctest cases.
+- **M3.10** retrofits the M3.6 trace-CSV pattern onto
+  M3.9. New 9th unconditional runner artefact
+  `interest_group_military_pressure.csv` (10 columns
+  mirroring the M3.6 authority_pressure CSV shape). One
+  row per actually-mutated country per monthly tick;
+  skipped countries produce no row; canonical scenarios
+  produce header-only file. New diagnostics writer pair
+  + `RunnerOptions` path override + `RunOutcome` path
+  + row counter + `TickController` buffer. `end_tick`
+  writes the new file as the 9th artefact after
+  `interest_group_authority_pressure.csv`.
+  Determinism contract grows 8 → 9 artefacts. M2.9
+  pre-`end_tick` no-artefact contract automatically
+  extends to the 9th file. Drive-by: removed a stray
+  `[[wiki-link]]` from `m3-9-...md`. **No new gameplay,
+  no save schema bump (still v11), no formula change,
+  no CLI flag.** 10 new doctest cases.
 
 Suggested next M3 sub-milestone:
 
-- **M3.10** — open. Natural candidates (from the M3.9
-  design note + M3 checkpoint deferred list): (a) a
-  per-system CSV file for `military_pressure` —
-  `interest_group_military_pressure.csv`, smallest
-  possible follow-up mirroring the M3.6 retrofit; (b)
-  the third sibling authority channel
-  (intelligence_capability or media_control); (c)
-  interest-group integration into the M2.18 / M2.19
-  command-execution gate; (d) influence drift driven by
-  event / policy outcomes; (e) M3.2 `react`
-  per-mutation trace if reviewer wants it as a third
-  trace CSV. None committed.
+- **M3.11** — open. Natural candidates: (a) the third
+  sibling authority channel (`intelligence_capability`
+  or `media_control`); (b) interest-group integration
+  into the M2.18 / M2.19 command-execution gate as an
+  additional input; (c) influence drift driven by event
+  / policy outcomes; (d) M3.2 `react` per-mutation
+  trace as a tenth trace CSV; (e) atomic `end_tick`
+  writes (temp-file + rename). None committed.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
@@ -225,9 +240,9 @@ compliance) + M3.5 (interest_groups.csv observability surface) +
 M3.6 (outcome-trace CSVs for M3.3 / M3.4) + M3.7 (integration
 checkpoint, not an exit report) + M3.8 (null-trace baseline
 strengthened to byte-for-byte equivalence) + M3.9 (sibling
-authority channel for `military_loyalty`). M3 stays open. Per
-the M-pacing rule, M3.10 waits for an explicit reviewer
-green-light.
+authority channel for `military_loyalty`) + M3.10 (per-system
+outcome CSV for M3.9). M3 stays open. Per the M-pacing rule,
+M3.11 waits for an explicit reviewer green-light.
 
 ## When to add a new file
 

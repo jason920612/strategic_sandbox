@@ -30,14 +30,15 @@
 //      expected fields. Loose inequality checks, not exact
 //      arithmetic — the unit tests already pin numbers.
 //
-//   B. Runner emits all eight artefacts with data rows in the
+//   B. Runner emits all nine artefacts with data rows in the
 //      M3 CSVs. Drive a hand-built state through
 //      `begin_tick / step_one_day * 31 / end_tick`, cross one
 //      month boundary, and assert every artefact lands on disk
-//      and the three M3 CSVs are NOT header-only.
+//      and the four M3 CSVs are NOT header-only (M3.10's
+//      military_pressure CSV joined the set).
 //
 //   C. Same seed + same options + same hand-built state runs
-//      twice produce byte-identical 8-artefact output. Mirrors
+//      twice produce byte-identical 9-artefact output. Mirrors
 //      the M1.17 / M2.22 byte-identical contracts but on a
 //      state that exercises the M3 reaction loop.
 
@@ -272,7 +273,7 @@ TEST_CASE("M3 integration: one monthly tick runs M3.2 / M3.3 / M3.4 / M3.9 on th
 // =====================================================================
 // B. Runner emits all eight artefacts with data rows in the M3 CSVs
 // =====================================================================
-TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs are not header-only") {
+TEST_CASE("M3 integration: runner emits all 9 artefacts and the four M3 CSVs are not header-only") {
     TempDir td("leviathan_m3_endtoend_artifacts");
     rn::RunnerOptions opts;
     opts.config_path        = kCanonicalConfig;
@@ -287,7 +288,7 @@ TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs ar
     REQUIRE(r.ok());
     CHECK(r.value().monthly_ticks >= 1);
 
-    // All eight artefacts present.
+    // All nine artefacts present.
     const fs::path save_path           = td.path / "save.json";
     const fs::path log_path            = td.path / "events.jsonl";
     const fs::path summary_path        = td.path / "summary.csv";
@@ -296,6 +297,7 @@ TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs ar
     const fs::path interest_groups     = td.path / "interest_groups.csv";
     const fs::path country_feedback    = td.path / "interest_group_country_feedback.csv";
     const fs::path authority_pressure  = td.path / "interest_group_authority_pressure.csv";
+    const fs::path military_pressure   = td.path / "interest_group_military_pressure.csv";
 
     REQUIRE(fs::exists(save_path));
     REQUIRE(fs::exists(log_path));
@@ -305,11 +307,13 @@ TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs ar
     REQUIRE(fs::exists(interest_groups));
     REQUIRE(fs::exists(country_feedback));
     REQUIRE(fs::exists(authority_pressure));
+    REQUIRE(fs::exists(military_pressure));
 
-    // The three M3 CSVs all have data beyond the header.
+    // The four M3 CSVs all have data beyond the header.
     const std::string ig_text = read_file(interest_groups);
     const std::string cf_text = read_file(country_feedback);
     const std::string ap_text = read_file(authority_pressure);
+    const std::string mp_text = read_file(military_pressure);
 
     // interest_groups.csv: M3.5 snapshots at start, each month
     // boundary, and end -> 3 snapshot points × 2 groups (the
@@ -319,23 +323,28 @@ TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs ar
     CHECK(ig_text.find("ger_military_ig")    != std::string::npos);
     CHECK(r.value().interest_groups_csv_rows == 6u);
 
-    // M3.6 trace CSVs: one mutation per month boundary, and 31
-    // days crosses one boundary -> exactly one data row each.
+    // M3.6 / M3.10 trace CSVs: one mutation per month boundary,
+    // and 31 days crosses one boundary -> exactly one data row
+    // each. The helper state has one Bureaucracy + one Military
+    // group, so both authority-layer systems fire.
     CHECK(cf_text.find("GER") != std::string::npos);
     CHECK(ap_text.find("GER") != std::string::npos);
+    CHECK(mp_text.find("GER") != std::string::npos);
     CHECK(r.value().interest_group_country_feedback_csv_rows   == 1u);
     CHECK(r.value().interest_group_authority_pressure_csv_rows == 1u);
+    CHECK(r.value().interest_group_military_pressure_csv_rows  == 1u);
 
     // RunOutcome paths point at the actual files written.
     CHECK(r.value().interest_groups_csv_path == interest_groups);
     CHECK(r.value().interest_group_country_feedback_csv_path == country_feedback);
     CHECK(r.value().interest_group_authority_pressure_csv_path == authority_pressure);
+    CHECK(r.value().interest_group_military_pressure_csv_path == military_pressure);
 }
 
 // =====================================================================
 // C. Same seed + same hand-built state produces byte-identical 8-artefact output
 // =====================================================================
-TEST_CASE("M3 integration: same seed + same options produces byte-identical 8 artefacts") {
+TEST_CASE("M3 integration: same seed + same options produces byte-identical 9 artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         rn::RunnerOptions opts;
         opts.config_path        = kCanonicalConfig;
@@ -354,9 +363,9 @@ TEST_CASE("M3 integration: same seed + same options produces byte-identical 8 ar
     run_once(td_a.path);
     run_once(td_b.path);
 
-    // All 8 artefacts byte-identical (M1.17 / M2.22 contract +
-    // M3.5 + M3.6 extensions, validated end-to-end on a state
-    // that actually exercises the M3 reaction loop).
+    // All 9 artefacts byte-identical (M1.17 / M2.22 contract +
+    // M3.5 + M3.6 + M3.10 extensions, validated end-to-end on
+    // a state that actually exercises the M3 reaction loop).
     CHECK(read_file(td_a.path / "save.json") ==
           read_file(td_b.path / "save.json"));
     CHECK(read_file(td_a.path / "events.jsonl") ==
@@ -373,6 +382,8 @@ TEST_CASE("M3 integration: same seed + same options produces byte-identical 8 ar
           read_file(td_b.path / "interest_group_country_feedback.csv"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    CHECK(read_file(td_a.path / "interest_group_military_pressure.csv") ==
+          read_file(td_b.path / "interest_group_military_pressure.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

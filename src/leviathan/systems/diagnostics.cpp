@@ -335,6 +335,34 @@ void write_authority_pressure_csv_row(
         << '\n';
 }
 
+void write_military_pressure_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column is breaking. Column
+    // names mirror MilitaryPressureTraceRow field names so the
+    // CSV reader's mental model matches the source struct.
+    out << "date,country_id,country_id_code,matched_groups,"
+           "weight_sum,weighted_military_loyalty,"
+           "target_military_loyalty,"
+           "military_loyalty_before,"
+           "military_loyalty_after,"
+           "military_loyalty_delta\n";
+}
+
+void write_military_pressure_csv_row(
+        std::ostream& out,
+        const interest_group::MilitaryPressureTraceRow& row) {
+    out << row.date.to_string()             << ','
+        << row.country_id                   << ','
+        << csv_escape(row.country_id_code)  << ','
+        << row.matched_groups               << ','
+        << fmt_double(row.weight_sum)                   << ','
+        << fmt_double(row.weighted_military_loyalty)    << ','
+        << fmt_double(row.target_military_loyalty)      << ','
+        << fmt_double(row.military_loyalty_before)      << ','
+        << fmt_double(row.military_loyalty_after)       << ','
+        << fmt_double(row.military_loyalty_delta)
+        << '\n';
+}
+
 std::vector<Issue> sanity_check(const core::GameState& state) {
     std::vector<Issue> issues;
 
