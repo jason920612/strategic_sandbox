@@ -11,7 +11,31 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.7 — M3 reaction-loop
+- Latest shipped sub-milestone: **M3.8 — null-trace baseline
+  strengthened to byte-for-byte equivalence.** Tests-only
+  follow-up to M3.6. Closes the PR #55 reviewer non-blocker
+  nit: the pre-M3.8 baseline tests only proved "a mutation
+  happened" with a null `trace_out` pointer; M3.8 proves the
+  resulting state is byte-identical between `trace_out =
+  nullptr` and `trace_out = &vec`. Strategy: build a
+  non-trivial initial state, copy it, run the system under
+  test on one copy with `nullptr` and on the other with
+  `&vec`, then assert
+  `diagnostics::compare_states(s_null, s_trace,
+  CompareOptions{0.0}).empty()`. Tolerance `0.0` (not the
+  default `1e-9`) is intentional — a single-ULP regression
+  must fail loudly, not get masked by slack. Plus a direct
+  `==` spot-check on the one mutated double field per
+  system. Six new doctest cases (three per system:
+  single-group from the M3.6 `m36_state_ger_two_groups`
+  helper / multi-country from a new local
+  `m38_multi_country_state` helper / skipped-country
+  no-mutation path). **No library change, no formula
+  change, no `MonthlyOutcome` change, no runner change, no
+  artefact change (still 8), no save schema bump (still
+  v11), no new gameplay.** Doctest count grows from 742 to
+  748 (+6).
+- Previously shipped: **M3.7 — M3 reaction-loop
   integration checkpoint.** Mid-M3 checkpoint, **NOT an exit
   report** — M3 stays in progress. Three new end-to-end
   tests in `tests/integration/m3_end_to_end_test.cpp` pin
@@ -246,22 +270,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.7): **M3.8** — open.
+- Next sub-milestone candidate (post-M3.8): **M3.9** — open.
   With four reaction-loop legs (M3.2 / M3.3 / M3.4), the
-  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, and
-  the M3.7 integration checkpoint all in place, natural
-  next steps include (a) strengthening the M3.6 null-trace
-  baseline tests with byte-for-byte null-vs-non-null
-  comparison (PR #55 reviewer non-blocker), (b) a sibling
-  authority channel (e.g. Military loyalty →
-  `military_loyalty`), (c) interest-group integration into
-  the M2.18 / M2.19 command-execution gate, (d) influence
-  drift driven by event / policy outcomes, (e) a second
-  feedback input weighting loyalty alongside radicalism for
-  the stability channel, (f) M3.2 `react` per-mutation
-  trace as a third trace CSV. None committed.
+  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, the
+  M3.7 integration checkpoint, and the M3.8 null-trace
+  byte-for-byte baseline all in place, natural next steps
+  include (a) a sibling authority channel (e.g. Military
+  loyalty → `military_loyalty`), (b) interest-group
+  integration into the M2.18 / M2.19 command-execution
+  gate, (c) influence drift driven by event / policy
+  outcomes, (d) a second feedback input weighting loyalty
+  alongside radicalism for the stability channel, (e) M3.2
+  `react` per-mutation trace as a third trace CSV. None
+  committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint
+  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8
   shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports;
@@ -291,9 +314,9 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint shipped (M3 NOT
-closed — see `docs/milestone-3-checkpoint.md`). Forty-five
-sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 shipped
+(M3 NOT closed — see `docs/milestone-3-checkpoint.md`).
+Forty-six sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -440,6 +463,17 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.8 null-trace baseline strengthened to byte-for-byte
+equivalence — tests-only follow-up to M3.6 closing PR #55
+reviewer non-blocker. Six new doctest cases prove that
+`country_feedback` / `authority_pressure` produce
+byte-identical state with `trace_out = nullptr` vs
+`trace_out = &vec` via `diagnostics::compare_states` with
+tolerance `0.0`. Three scenarios per system: single-group,
+multi-country, skipped-country no-mutation. **No library
+change, no formula change, no artefact change (still 8),
+no save schema bump (still v11), no gameplay.** Doctest
+count 742 → 748;
 **M3.7 M3 reaction-loop integration checkpoint — mid-M3
 checkpoint, NOT an exit report. Three new end-to-end tests
 in `tests/integration/m3_end_to_end_test.cpp` pin the seam
