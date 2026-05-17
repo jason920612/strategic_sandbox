@@ -1484,3 +1484,303 @@ TEST_CASE("M2.21 apply_command_script: input vector is not mutated") {
     CHECK(script[1].budget_category == script_before[1].budget_category);
     CHECK(script[1].budget_delta    == script_before[1].budget_delta);
 }
+
+// =====================================================================
+// M4.1 - command gate diagnostics surface
+//
+// Pure-read helpers that explain how the existing M2.18 / M2.19
+// command-execution gates would evaluate on a country in its
+// current `government_authority` state. The diagnostics must not
+// drift from the gate `apply_pending` actually uses; the last group
+// of tests in this section pins that "mirror" invariant by
+// comparing the diagnostic's `allowed` flag against what
+// `apply_pending` does on the same state.
+// =====================================================================
+
+namespace {
+
+// Build a country with all four `government_authority` sub-fields
+// dialled to chosen values so a single test can vary one input
+// without touching the others.
+CountryState country_with_authority(const std::string& id_code,
+                                    double bureaucratic_compliance,
+                                    double military_loyalty,
+                                    double intelligence_capability = 0.5,
+                                    double media_control = 0.5) {
+    CountryState c;
+    c.id      = CountryId{0};
+    c.id_code = id_code;
+    c.name    = id_code;
+    c.government_authority.bureaucratic_compliance =
+        bureaucratic_compliance;
+    c.government_authority.military_loyalty         = military_loyalty;
+    c.government_authority.intelligence_capability  =
+        intelligence_capability;
+    c.government_authority.media_control            = media_control;
+    return c;
+}
+
+GameState single_country_state(double bureaucratic_compliance,
+                               double military_loyalty) {
+    GameState s;
+    s.current_date = GameDate(1930, 1, 1);
+    s.countries.push_back(country_with_authority(
+        "GER", bureaucratic_compliance, military_loyalty));
+    s.player_country = CountryId{0};
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("diagnose_enact_policy_gate: allowed when bureaucratic_compliance == threshold (0.3)") {
+    // Boundary: the M2.18 rule is `>= threshold` so an exact 0.3
+    // must be Accepted (matches order_execution::evaluate).
+    GameState s = single_country_state(0.30, 0.50);
+    auto r = cmd::diagnose_enact_policy_gate(
+        s, CountryId{0}, "raise_taxes");
+    REQUIRE(r.ok());
+    const auto& d = r.value();
+    CHECK(d.gate            == cmd::CommandGateKind::EnactPolicy);
+    CHECK(d.country.value() == 0);
+    CHECK(d.country_id_code == "GER");
+    CHECK(d.target          == "policy:raise_taxes");
+    CHECK(d.authority_field == "bureaucratic_compliance");
+    CHECK(d.authority_value == doctest::Approx(0.30));
+    CHECK(d.threshold       == doctest::Approx(0.30));
+    CHECK(d.allowed);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: rejected below threshold") {
+    GameState s = single_country_state(0.29, 0.99);
+    auto r = cmd::diagnose_enact_policy_gate(
+        s, CountryId{0}, "raise_taxes");
+    REQUIRE(r.ok());
+    const auto& d = r.value();
+    CHECK(d.authority_field == "bureaucratic_compliance");
+    CHECK(d.authority_value == doctest::Approx(0.29));
+    CHECK_FALSE(d.allowed);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: ignores military_loyalty") {
+    // Even with military_loyalty pinned to 1.0, an EnactPolicy gate
+    // reading only bureaucratic_compliance still rejects when the
+    // bureaucratic field is below the threshold.
+    GameState s = single_country_state(0.10, 1.00);
+    auto r = cmd::diagnose_enact_policy_gate(
+        s, CountryId{0}, "some_policy");
+    REQUIRE(r.ok());
+    CHECK(r.value().authority_field == "bureaucratic_compliance");
+    CHECK(r.value().authority_value == doctest::Approx(0.10));
+    CHECK_FALSE(r.value().allowed);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: does NOT validate that the policy exists") {
+    // The gate is a pure authority check; the diagnostic must not
+    // depend on state.policies.
+    GameState s = single_country_state(0.80, 0.50);
+    s.policies.clear();  // no policies loaded at all
+    auto r = cmd::diagnose_enact_policy_gate(
+        s, CountryId{0}, "no_such_policy");
+    REQUIRE(r.ok());
+    CHECK(r.value().target  == "policy:no_such_policy");
+    CHECK(r.value().allowed);
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: military category reads military_loyalty") {
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.80);
+    auto r = cmd::diagnose_adjust_budget_gate(
+        s, CountryId{0}, "military");
+    REQUIRE(r.ok());
+    const auto& d = r.value();
+    CHECK(d.gate            == cmd::CommandGateKind::AdjustBudget);
+    CHECK(d.target          == "budget:military");
+    CHECK(d.authority_field == "military_loyalty");
+    CHECK(d.authority_value == doctest::Approx(0.80));
+    CHECK(d.threshold       == doctest::Approx(0.30));
+    CHECK(d.allowed);
+    // The bureaucratic field is NOT consulted: 0.10 would have
+    // rejected if it were, but military_loyalty is what matters.
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: non-military category reads bureaucratic_compliance") {
+    // Same state as the military test, but ask about a different
+    // category — must flip to the bureaucratic field and reject.
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.80);
+    auto r = cmd::diagnose_adjust_budget_gate(
+        s, CountryId{0}, "welfare");
+    REQUIRE(r.ok());
+    const auto& d = r.value();
+    CHECK(d.target          == "budget:welfare");
+    CHECK(d.authority_field == "bureaucratic_compliance");
+    CHECK(d.authority_value == doctest::Approx(0.10));
+    CHECK_FALSE(d.allowed);
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: unknown category still routes to bureaucratic_compliance") {
+    // Mirrors order_execution::evaluate: ONLY the exact string
+    // "military" routes to military_loyalty; every other string
+    // (including unknown ones the apply path would reject later)
+    // routes to bureaucratic_compliance. This is the gate's
+    // behaviour, not the apply path's — the gate doesn't enforce
+    // the seven-field whitelist.
+    GameState s = single_country_state(0.40, 0.99);
+    auto r = cmd::diagnose_adjust_budget_gate(
+        s, CountryId{0}, "ponies");
+    REQUIRE(r.ok());
+    CHECK(r.value().authority_field == "bureaucratic_compliance");
+    CHECK(r.value().authority_value == doctest::Approx(0.40));
+    CHECK(r.value().allowed);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: invalid country id returns failure") {
+    GameState s = single_country_state(0.50, 0.50);
+    auto r = cmd::diagnose_enact_policy_gate(
+        s, CountryId{99}, "raise_taxes");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("99") != std::string::npos);
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: invalid country id returns failure") {
+    GameState s = single_country_state(0.50, 0.50);
+    auto r = cmd::diagnose_adjust_budget_gate(
+        s, CountryId{99}, "military");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("99") != std::string::npos);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: default-constructed (-1) CountryId fails") {
+    GameState s = single_country_state(0.50, 0.50);
+    auto r = cmd::diagnose_enact_policy_gate(s, CountryId{}, "p");
+    REQUIRE(r.failed());
+}
+
+// ---------------------------------------------------------------------
+// Mirror: the diagnostic's `allowed` flag agrees with what
+// apply_pending actually does on the same state. This is the
+// no-formula-drift gate; it would fail loudly if the diagnostic
+// helper diverged from order_execution's real gate (different
+// threshold, wrong field-selection rule, off-by-one comparison).
+// ---------------------------------------------------------------------
+
+TEST_CASE("diagnose_enact_policy_gate: agrees with apply_pending on an accepted command") {
+    GameState s = single_country_state(/*bureaucratic=*/0.50,
+                                       /*military=*/0.50);
+    s.policies.push_back(raise_taxes_policy());
+
+    // Diagnostic says allowed.
+    auto diag = cmd::diagnose_enact_policy_gate(
+        s, s.player_country, "raise_taxes");
+    REQUIRE(diag.ok());
+    REQUIRE(diag.value().allowed);
+
+    // apply_pending actually accepts and applies.
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+    const auto apply_r = cmd::apply_pending(s, q);
+    REQUIRE(apply_r.ok());
+    CHECK(apply_r.value().commands_applied == 1);
+}
+
+TEST_CASE("diagnose_enact_policy_gate: agrees with apply_pending on a rejected command") {
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.50);
+    s.policies.push_back(raise_taxes_policy());
+
+    auto diag = cmd::diagnose_enact_policy_gate(
+        s, s.player_country, "raise_taxes");
+    REQUIRE(diag.ok());
+    REQUIRE_FALSE(diag.value().allowed);
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+    const auto apply_r = cmd::apply_pending(s, q);
+    REQUIRE(apply_r.failed());
+    CHECK(apply_r.error().find("rejected") != std::string::npos);
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: agrees with apply_pending on an accepted military command") {
+    // Low bureaucratic, high military: the military adjust must
+    // accept (selects military_loyalty) and the diagnostic must
+    // agree.
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.80);
+    // Pre-existing budget value so the AdjustBudget delta lands
+    // cleanly inside [0, 1].
+    s.countries[0].budget.military = 0.30;
+
+    auto diag = cmd::diagnose_adjust_budget_gate(
+        s, s.player_country, "military");
+    REQUIRE(diag.ok());
+    REQUIRE(diag.value().allowed);
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::AdjustBudget;
+    cmd_p.budget_category = "military";
+    cmd_p.budget_delta    = 0.05;
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+    const auto apply_r = cmd::apply_pending(s, q);
+    REQUIRE(apply_r.ok());
+    CHECK(apply_r.value().commands_applied == 1);
+}
+
+TEST_CASE("diagnose_adjust_budget_gate: agrees with apply_pending on a rejected military command") {
+    // High bureaucratic, low military: the military adjust must
+    // reject and the diagnostic must agree.
+    GameState s = single_country_state(/*bureaucratic=*/0.90,
+                                       /*military=*/0.10);
+    s.countries[0].budget.military = 0.30;
+
+    auto diag = cmd::diagnose_adjust_budget_gate(
+        s, s.player_country, "military");
+    REQUIRE(diag.ok());
+    REQUIRE_FALSE(diag.value().allowed);
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::AdjustBudget;
+    cmd_p.budget_category = "military";
+    cmd_p.budget_delta    = 0.05;
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+    const auto apply_r = cmd::apply_pending(s, q);
+    REQUIRE(apply_r.failed());
+    CHECK(apply_r.error().find("rejected") != std::string::npos);
+    CHECK(apply_r.error().find("military") != std::string::npos);
+}
+
+TEST_CASE("diagnose_*: diagnostic does NOT mutate state") {
+    // Both helpers must be byte-identical reads. Spot-check the
+    // common fields after both calls.
+    GameState s = single_country_state(0.50, 0.50);
+    s.policies.push_back(raise_taxes_policy());
+    const auto current_date_before = s.current_date;
+    const std::size_t logs_before  = s.logs.size();
+    const std::size_t applied_before = s.applied_commands.size();
+    const double bc_before =
+        s.countries[0].government_authority.bureaucratic_compliance;
+    const double ml_before =
+        s.countries[0].government_authority.military_loyalty;
+
+    REQUIRE(cmd::diagnose_enact_policy_gate(
+        s, CountryId{0}, "raise_taxes").ok());
+    REQUIRE(cmd::diagnose_adjust_budget_gate(
+        s, CountryId{0}, "military").ok());
+    REQUIRE(cmd::diagnose_adjust_budget_gate(
+        s, CountryId{0}, "welfare").ok());
+
+    CHECK(s.current_date     == current_date_before);
+    CHECK(s.logs.size()      == logs_before);
+    CHECK(s.applied_commands.size() == applied_before);
+    CHECK(s.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(bc_before));
+    CHECK(s.countries[0].government_authority.military_loyalty
+          == doctest::Approx(ml_before));
+}

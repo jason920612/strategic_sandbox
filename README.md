@@ -6,13 +6,50 @@
 
 ## Status
 
-- Phase: **Milestone 3 closed — internal politics /
-  interest-group reaction layer done.** M0 / M1 / M2 / M3
-  all closed. See `docs/milestone-3-result.md` for the M3
-  exit report. The next milestone (M4 direction TBD)
-  waits for an explicit reviewer green-light with a new
-  milestone number.
-- Latest shipped sub-milestone: **M3.11 — M3 close-out.**
+- Phase: **Milestone 4 — command / governance integration
+  (in progress).** M0 / M1 / M2 / M3 all closed; M4 opens
+  with M4.1 introducing the read-only command-gate
+  diagnostics surface. See `docs/milestone-3-result.md`
+  for the M3 exit report.
+- Latest shipped sub-milestone: **M4.1 — command gate
+  diagnostics surface.** Opens M4. Small read-only
+  helpers that explain how the existing M2.18 / M2.19
+  command-execution gates would decide on a country given
+  its current M3-mutable authority state, without changing
+  gate formulas or adding new artefacts. New
+  `commands::CommandGateKind` enum (`EnactPolicy` /
+  `AdjustBudget`), `commands::CommandGateDiagnostic` POD
+  carrying `{gate, country, country_id_code, target,
+  authority_field, authority_value, threshold, allowed}`,
+  and two pure-read free functions:
+  `diagnose_enact_policy_gate(state, country,
+  policy_id_code)` + `diagnose_adjust_budget_gate(state,
+  country, budget_category)`. Both reuse
+  `order_execution::kEnactPolicyComplianceThreshold` /
+  `kAdjustBudgetComplianceThreshold` (`0.3`) and mirror the
+  M2.19 field-selection rule exactly: `EnactPolicy` reads
+  `bureaucratic_compliance`; `AdjustBudget` reads
+  `military_loyalty` iff `budget_category == "military"`,
+  else `bureaucratic_compliance`. The helpers take the
+  actor `CountryId` directly (not `state.player_country`)
+  so callers can ask "would the gate accept on country X
+  right now?" without flipping the player selection.
+  Neither helper validates that the policy exists or that
+  the budget category is one of the seven canonical
+  `BudgetState` fields — those are `apply_pending`'s
+  downstream checks, not the gate's. 15 new doctest cases
+  including a "mirror" group that pins `allowed` against
+  what `apply_pending` actually does on the same state for
+  both accepted / rejected paths of both gate kinds — a
+  no-formula-drift guard. **No save schema bump (still
+  v11), no new artefact (still 9), no new
+  `PlayerCommandKind`, no command formula / threshold
+  change, no mutation behaviour change, no replay /
+  runner change, no event system / persistent log /
+  trigger system, no AI / UI / CLI / REPL, no diplomacy,
+  no new interest-group channel, no M3 work, no M4
+  close-out.** Doctest count 779 → 794.
+- Previously shipped: **M3.11 — M3 close-out.**
   M3 exit report (`docs/milestone-3-result.md`) +
   3 long-running close-out integration tests
   (`tests/integration/m3_end_to_end_test.cpp`'s M3.11
@@ -402,25 +439,24 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next milestone candidate (post-M3): **M4** — open.
-  Reviewer has not named M4 yet. Plausible directions
-  the project's structure makes natural at this point
-  (none committed; see `docs/milestone-3-result.md` §6
-  for full discussion): (a) **international / diplomacy
-  layer** per RFC-040 — the M3.1 root-level
-  `interest_groups` vector design anticipated this; (b)
-  **event system** per RFC-050 — would unlock the
-  strike / protest / coup mechanics on top of M3
-  reaction state; (c) **authority-layer completion**
-  (intelligence_capability / media_control sibling
-  channels — M3.9 / M3.10 set the pattern); (d)
-  **command-gate integration** — let M2.18 / M2.19 read
-  interest-group aggregates so commands feel different
-  at low loyalty; (e) **atomic `end_tick`** — long-
-  deferred infra fix.
-- M0 closed. M1 closed. M2 closed. M3 closed (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint +
-  M3.8 + M3.9 + M3.10 + M3.11 shipped). See
+- Next sub-milestone candidate (post-M4.1): **M4.2** —
+  open. Natural candidates after the diagnostic surface
+  landed: (a) surface a `CommandGateDiagnostic` on
+  `RunOutcome` so a CLI run can print would-have-
+  rejected decisions; (b) plumb the diagnostic shape
+  into the M2.20 `RejectionRecord` so apply-time
+  rejections and diagnostic-time queries reuse one
+  struct; (c) **structured command-feedback log** as
+  a 10th unconditional CSV artefact (per-command
+  decision rows); (d) interest-group aggregates as
+  additional inputs to the M2.18 / M2.19 gate (the
+  long-discussed M3 → M2 integration); (e) the third
+  sibling authority channel (`intelligence_capability`
+  or `media_control`); (f) atomic `end_tick` writes
+  (temp-file + rename), still long-deferred. None
+  committed.
+- M0 closed. M1 closed. M2 closed. M3 closed. M4 in
+  progress (M4.1 shipped). See
   `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and
@@ -453,7 +489,9 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is **closed** with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9
 + M3.10 + M3.11 shipped (see `docs/milestone-3-result.md`
-for the exit report). Forty-nine sub-milestones shipped:
+for the exit report); **Milestone 4** (command / governance
+integration) is in progress with M4.1 (command gate
+diagnostics surface) shipped. Fifty sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -600,6 +638,33 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.1 command gate diagnostics surface — opens M4
+(command / governance integration). Small read-only
+helpers `diagnose_enact_policy_gate` /
+`diagnose_adjust_budget_gate` in
+`leviathan::systems::commands` that explain how the
+existing M2.18 / M2.19 gates would decide on a country
+given its current M3-mutable authority state. New
+`CommandGateKind` enum + `CommandGateDiagnostic` POD
+carrying `{gate, country, country_id_code, target,
+authority_field, authority_value, threshold, allowed}`.
+Both helpers reuse the `order_execution` threshold
+constants (`0.3`) and the M2.19 field-selection rule
+exactly (`military` → `military_loyalty`, else →
+`bureaucratic_compliance`). They take the actor
+`CountryId` directly so a caller can ask the gate
+question for any country without flipping
+`state.player_country`. Pure read — no mutation, no
+queue dispatch, no formula change. 15 new doctest cases
+including a no-formula-drift mirror group pinning the
+diagnostic's `allowed` flag against what `apply_pending`
+actually does on the same state. **No save schema bump
+(still v11), no new artefact (still 9), no new
+`PlayerCommandKind`, no command formula / threshold
+change, no event system / log / trigger, no AI / UI /
+CLI / REPL, no command-gate integration with M3
+aggregates (deferred to a future M4.X), no M3 work,
+no M4 close-out.** Doctest count 779 → 794;
 **M3.11 M3 close-out — M3 exit report
 (`docs/milestone-3-result.md`) pinning the M3.1–M3.11
 ledger, the four-stage reaction loop with rate ladder

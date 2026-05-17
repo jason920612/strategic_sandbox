@@ -451,4 +451,101 @@ core::Result<ApplyWithReportOutcome> apply_command_script(
     return try_apply_pending(state, q);
 }
 
+// ===========================================================================
+// M4.1 - command gate diagnostics surface
+//
+// `diagnose_enact_policy_gate` and `diagnose_adjust_budget_gate` are
+// pure reads: they validate the country index, read one authority
+// sub-field, compare it to the same threshold `order_execution::evaluate`
+// uses, and return the structured decision. They do NOT call
+// `evaluate` itself because `evaluate` reads `state.player_country`
+// — the diagnostic takes the actor CountryId explicitly so callers
+// can ask "would the gate accept on country X" without temporarily
+// flipping the player selection.
+//
+// The two threshold constants and the field-selection rule live in
+// `order_execution.hpp`. Drift is pinned by the
+// `gate-mirrors-apply_pending` tests in commands_test.cpp.
+// ===========================================================================
+
+namespace {
+
+// Validate a CountryId against state.countries. Mirrors the M2.3
+// `apply_pending` precondition shape (>= 0 + in-range index) but
+// takes the CountryId directly rather than reading
+// state.player_country.
+core::Result<std::size_t> resolve_country_index(
+        const core::GameState& state, core::CountryId country) {
+    if (!country.valid() || country.value() < 0 ||
+        static_cast<std::size_t>(country.value()) >= state.countries.size()) {
+        return core::Result<std::size_t>::failure(
+            "command gate diagnostic: CountryId " +
+            std::to_string(country.value()) +
+            " is not a valid index into state.countries (size " +
+            std::to_string(state.countries.size()) + ")");
+    }
+    return core::Result<std::size_t>::success(
+        static_cast<std::size_t>(country.value()));
+}
+
+}  // namespace
+
+core::Result<CommandGateDiagnostic> diagnose_enact_policy_gate(
+        const core::GameState& state,
+        core::CountryId country,
+        const std::string& policy_id_code) {
+    auto idx_r = resolve_country_index(state, country);
+    if (!idx_r) {
+        return core::Result<CommandGateDiagnostic>::failure(
+            std::move(idx_r.error()));
+    }
+    const auto& c = state.countries[idx_r.value()];
+
+    CommandGateDiagnostic d;
+    d.gate            = CommandGateKind::EnactPolicy;
+    d.country         = country;
+    d.country_id_code = c.id_code;
+    d.target          = "policy:" + policy_id_code;
+    d.authority_field = "bureaucratic_compliance";
+    d.authority_value = c.government_authority.bureaucratic_compliance;
+    d.threshold       = order_execution::kEnactPolicyComplianceThreshold;
+    d.allowed         = (d.authority_value >= d.threshold);
+    return core::Result<CommandGateDiagnostic>::success(std::move(d));
+}
+
+core::Result<CommandGateDiagnostic> diagnose_adjust_budget_gate(
+        const core::GameState& state,
+        core::CountryId country,
+        const std::string& budget_category) {
+    auto idx_r = resolve_country_index(state, country);
+    if (!idx_r) {
+        return core::Result<CommandGateDiagnostic>::failure(
+            std::move(idx_r.error()));
+    }
+    const auto& c = state.countries[idx_r.value()];
+
+    CommandGateDiagnostic d;
+    d.gate            = CommandGateKind::AdjustBudget;
+    d.country         = country;
+    d.country_id_code = c.id_code;
+    d.target          = "budget:" + budget_category;
+    // Field selection mirrors order_execution::evaluate's M2.19 arm:
+    // only the exact string "military" routes to military_loyalty;
+    // every other string (including unknown / future categories)
+    // routes to bureaucratic_compliance. The diagnostic does NOT
+    // validate the budget_category against the seven-field
+    // BudgetState whitelist — that's apply_pending's downstream
+    // job; the gate itself doesn't enforce it.
+    if (budget_category == "military") {
+        d.authority_field = "military_loyalty";
+        d.authority_value = c.government_authority.military_loyalty;
+    } else {
+        d.authority_field = "bureaucratic_compliance";
+        d.authority_value = c.government_authority.bureaucratic_compliance;
+    }
+    d.threshold = order_execution::kAdjustBudgetComplianceThreshold;
+    d.allowed   = (d.authority_value >= d.threshold);
+    return core::Result<CommandGateDiagnostic>::success(std::move(d));
+}
+
 }  // namespace leviathan::systems::commands

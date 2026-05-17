@@ -217,6 +217,37 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
+- **M4（進行中）** — 指令 / 治理整合。**M4.1（command
+  gate diagnostics surface）** 開啟 M4：在
+  `leviathan::systems::commands` 加上兩個純讀
+  diagnostic helper（`diagnose_enact_policy_gate` /
+  `diagnose_adjust_budget_gate`）把 M2.18 / M2.19
+  command-execution gate 與 M3-mutable authority state
+  之間的接縫明文化。新增 `CommandGateKind` enum、
+  `CommandGateDiagnostic` POD（`{gate, country,
+  country_id_code, target, authority_field,
+  authority_value, threshold, allowed}`）。Threshold
+  常數直接引用 `order_execution::kEnactPolicyComplianceThreshold`
+  / `kAdjustBudgetComplianceThreshold`（`0.3`）；
+  field-selection 完全鏡像 M2.19 的 routing
+  （`"military"` → `military_loyalty`，其餘 →
+  `bureaucratic_compliance`）。Helper 接收 actor
+  `CountryId` 而非讀 `state.player_country`，所以可以
+  詢問任意 country 而不必暫時 flip player selection。
+  Diagnostic 不檢查 policy 是否存在、不檢查
+  budget_category 是否在七白名單內——那是
+  `apply_pending` 下游的事。15 個新 doctest cases，其中
+  最後一組「mirror」測試把 diagnostic 的 `allowed` 與
+  `apply_pending` 實際決策對齊（accepted / rejected
+  EnactPolicy + accepted / rejected military
+  AdjustBudget），保證公式不會 silently drift。**沒有
+  save schema 變更（仍 v11）、沒有新 artefact（仍 9
+  個）、沒有新 `PlayerCommandKind`、沒有公式 / threshold
+  變更、沒有 mutation behaviour 變更、沒有 replay /
+  runner 變更、沒有 event system / persistent log /
+  trigger、沒有 AI / UI / CLI / REPL、沒有 diplomacy、
+  沒有新 interest-group channel、沒有 M3 work、沒有
+  M4 close-out**。doctest count 779 → 794。
 - **M3（已完成）** — 內政 / 利益團體反應層。**M3.11（M3
   close-out）** 把 M3 收尾：新增 M3 exit report
   `docs/milestone-3-result.md`（M3.1–M3.11 全 sub-milestone
