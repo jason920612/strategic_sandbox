@@ -13,6 +13,8 @@
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/core/player_commands.hpp"
+#include "leviathan/systems/commands.hpp"
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/runner.hpp"
 #include "leviathan/systems/save_system.hpp"
@@ -1594,6 +1596,159 @@ TEST_CASE("M2.2 step primitives: pause-then-resume produces byte-identical outpu
           read_file(td_b.path / "events.jsonl"));
     CHECK(read_file(td_a.path / "summary.csv")  ==
           read_file(td_b.path / "summary.csv"));
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.8 - --replay PATH CLI harness
+// =====================================================================
+
+TEST_CASE("parse_args: --replay flag is plumbed through") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().replay_path.has_value());
+    CHECK(r.value().replay_path.value() == fs::path("out/source.json"));
+}
+
+TEST_CASE("parse_args: --replay without a value is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--replay"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--replay") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --replay defaults to unset when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().replay_path.has_value());
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+namespace {
+
+// Build a "source" save at the given path: load the canonical
+// scenario, set GER as the player, submit `commands` through
+// commands::apply_pending, then write the resulting state to disk.
+// Returns the in-memory state for later comparison.
+leviathan::core::GameState build_source_save(
+        const fs::path& save_path,
+        const std::vector<leviathan::core::PlayerCommand>& commands) {
+    namespace dl = leviathan::systems::data_loader;
+    namespace sl = leviathan::systems::scenario_loader;
+    namespace cmd = leviathan::systems::commands;
+    namespace ss = leviathan::systems::save_system;
+
+    auto cfg_r = dl::load_simulation_config(kCanonicalConfig);
+    REQUIRE(cfg_r.ok());
+    auto state = leviathan::core::make_game_state(cfg_r.value());
+    REQUIRE(sl::load_into_state(state, kCanonicalScenario).ok());
+    state.player_country = leviathan::core::CountryId{0};   // GER
+    if (!commands.empty()) {
+        cmd::CommandQueue q;
+        for (const auto& c : commands) {
+            q.pending.push_back(c);
+        }
+        REQUIRE(cmd::apply_pending(state, q).ok());
+    }
+    REQUIRE(ss::save(state, save_path).ok());
+    return state;
+}
+
+}  // namespace
+
+TEST_CASE("run: --replay without --scenario is rejected loudly") {
+    TempDir td("leviathan_runner_m208_no_scenario");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    opts.replay_path = td.path / "source.json";   // path doesn't matter; rejected earlier
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--replay")  != std::string::npos);
+    CHECK(r.error().find("--scenario") != std::string::npos);
+}
+
+TEST_CASE("run: --replay with single EnactPolicy reproduces the source state") {
+    TempDir td("leviathan_runner_m208_replay_enact");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    const auto source = build_source_save(source_path, {cmd});
+
+    // Drive replay via run().
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().replay_commands_replayed == 1);
+
+    // Load the runner's output save and confirm it mirrors the source's
+    // command effects and replay log.
+    auto loaded_r = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded_r.ok());
+    const auto& replayed = loaded_r.value();
+    REQUIRE(replayed.applied_commands.size() == 1u);
+    CHECK(replayed.applied_commands[0].command.policy_id_code == "raise_taxes");
+    CHECK(replayed.countries[0].legal_tax_burden ==
+          doctest::Approx(source.countries[0].legal_tax_burden));
+}
+
+TEST_CASE("run: --replay inherits player_country from the loaded save when --player is absent") {
+    TempDir td("leviathan_runner_m208_inherit_player");
+    const fs::path source_path = td.path / "source.json";
+
+    // Source picks GER (index 0) as the player.
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    const auto source = build_source_save(source_path, {cmd});
+    REQUIRE(source.player_country.value() == 0);
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    // opts.player_id_code intentionally unset — should auto-inherit.
+    REQUIRE(rn::run(opts).ok());
+
+    auto loaded_r = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded_r.ok());
+    CHECK(loaded_r.value().player_country.value() == 0);
+}
+
+TEST_CASE("run: --replay of an empty-log save replays zero commands") {
+    TempDir td("leviathan_runner_m208_empty_log");
+    const fs::path source_path = td.path / "source.json";
+
+    // Source state with no commands submitted.
+    const auto source = build_source_save(source_path, {});
+    REQUIRE(source.applied_commands.empty());
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().replay_commands_replayed == 0);
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

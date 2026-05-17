@@ -366,6 +366,23 @@ M0 / M1 中落地，部分仍是未來工作：
   rollback on mid-list failure、target.current_date 自動延伸到
   source 的最終日期（caller 想要時可以再 step_one_day）、新
   state.logs lifecycle 條目、M1 system 變更。
+  **M2.8（Replay CLI harness）** 把 M2.7 `replay_with_time` 接進
+  runner CLI：新增 `--replay PATH` 旗標、`RunnerOptions::replay_path`
+  欄位、`RunOutcome::replay_commands_replayed` 計數。`run()` 在
+  scenario load 之後分支：若 `--replay` 設定，必須同時設定
+  `--scenario`（fresh state baseline），載入 save 後若 `--player`
+  未設定就從 loaded save 繼承 `player_country`，再執行
+  `begin_tick → replay_with_time(loaded.applied_commands) →
+  end_tick`，最後把 commands_replayed 計數寫進 outcome。`main()`
+  在 stdout summary 加上 `Replay source` + `Commands replayed` 兩行。
+  **CLI 不自動比對** replayed state 與 source；使用者自己對 save
+  檔做 `diff`──這保持 harness 範圍極小且不過度規範「match」語意。
+  對應 RFC-090 §M2 task 2.8「玩家操作回放 log」的使用者介面層。
+  **M2.8 不做** save schema 變更（仍 v9）、per-field state-
+  comparison API（M2.10 候選）、`--target-date` 旗標、replay 跨
+  scenario、multi-save replay chain、新 state.logs lifecycle 條目、
+  runner 外的 replay entry point（library primitive `replay_with_time`
+  仍可獨立使用）、M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
