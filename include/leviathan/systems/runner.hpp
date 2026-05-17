@@ -52,6 +52,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
     bool                                 verify_strict = false; // M2.12: --verify-strict; requires --verify; informational in run(), main() exits non-zero on mismatches
+    std::optional<double>                verify_tolerance;     // M2.13: --verify-tolerance N; requires --verify; overrides CompareOptions::double_tolerance (default 1e-9)
     bool                                 show_help   = false;
 };
 

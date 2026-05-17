@@ -1939,3 +1939,141 @@ TEST_CASE("run: --verify-strict on tweaked source still succeeds at run() but re
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.13 - --verify-tolerance CLI flag
+// =====================================================================
+
+TEST_CASE("parse_args: --verify-tolerance plumbed when combined with --verify --replay") {
+    Argv arg(std::array<const char*, 8>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify",
+        "--verify-tolerance", "1e-3"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().verify_tolerance.has_value());
+    CHECK(r.value().verify_tolerance.value() == doctest::Approx(1e-3));
+}
+
+TEST_CASE("parse_args: --verify-tolerance defaults to nullopt") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().verify_tolerance.has_value());
+}
+
+TEST_CASE("parse_args: --verify-tolerance without a value is rejected") {
+    Argv arg(std::array<const char*, 6>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify-tolerance"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify-tolerance") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --verify-tolerance non-numeric is rejected") {
+    Argv arg(std::array<const char*, 8>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify",
+        "--verify-tolerance", "abc"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify-tolerance") != std::string::npos);
+    CHECK(r.error().find("abc")                != std::string::npos);
+    CHECK(r.error().find("floating-point")     != std::string::npos);
+}
+
+TEST_CASE("parse_args: --verify-tolerance negative is rejected") {
+    Argv arg(std::array<const char*, 8>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify",
+        "--verify-tolerance", "-1e-3"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify-tolerance") != std::string::npos);
+    CHECK(r.error().find(">= 0")               != std::string::npos);
+}
+
+TEST_CASE("parse_args: --verify-tolerance without --verify is rejected") {
+    Argv arg(std::array<const char*, 7>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify-tolerance", "1e-3"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify-tolerance") != std::string::npos);
+    CHECK(r.error().find("--verify")           != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: --verify-tolerance loose enough absorbs a small mismatch") {
+    // Tweak the source's gdp by 1e-3 (below loose tolerance 1e-2 but
+    // far above the default 1e-9). With --verify-tolerance 1e-2 the
+    // diff is silent; without it, the default would catch it.
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m213_loose");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    auto source = build_source_save(source_path, {cmd});
+    source.countries[0].gdp = source.countries[0].gdp + 1e-3;
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path      = kCanonicalConfig;
+    opts.days             = 0;
+    opts.output_dir       = td.path;
+    opts.scenario_path    = kCanonicalScenario;
+    opts.replay_path      = source_path;
+    opts.verify           = true;
+    opts.verify_tolerance = 1e-2;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    // gdp diff (1e-3) is within tolerance (1e-2), so it must not appear.
+    for (const auto& m : r.value().verify_mismatches) {
+        CHECK(m.field_path != "countries[0].gdp");
+    }
+}
+
+TEST_CASE("run: --verify-tolerance tight enough catches a small mismatch") {
+    // Same tweak, but a tight tolerance below the diff. Mismatch
+    // shows up.
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m213_tight");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    auto source = build_source_save(source_path, {cmd});
+    source.countries[0].gdp = source.countries[0].gdp + 1e-3;
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path      = kCanonicalConfig;
+    opts.days             = 0;
+    opts.output_dir       = td.path;
+    opts.scenario_path    = kCanonicalScenario;
+    opts.replay_path      = source_path;
+    opts.verify           = true;
+    opts.verify_tolerance = 1e-6;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    bool found = false;
+    for (const auto& m : r.value().verify_mismatches) {
+        if (m.field_path == "countries[0].gdp") {
+            found = true;
+            break;
+        }
+    }
+    CHECK(found);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR

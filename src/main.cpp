@@ -79,6 +79,10 @@ int main(int argc, char** argv) {
         for (const auto& m : outcome.verify_mismatches) {
             std::cout << "  - " << m.field_path << " : " << m.detail << "\n";
         }
+        if (opts.verify_tolerance.has_value()) {
+            std::cout
+              << "Verify tolerance    : " << opts.verify_tolerance.value() << "\n";
+        }
     }
 
     // M2.12: --verify-strict makes main exit non-zero when --verify
