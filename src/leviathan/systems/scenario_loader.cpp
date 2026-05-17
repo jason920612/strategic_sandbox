@@ -12,6 +12,7 @@
 #include "internal/json_helpers.hpp"
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/core/interest_group_kind.hpp"
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/policy_system.hpp"
 
@@ -400,31 +401,9 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     // a typo in the manifest doesn't silently produce a half-
     // populated political map.
     {
-        // Local kind-string mapping. Duplicates save_system.cpp's
-        // anonymous helper deliberately — the InterestGroupKind
-        // surface is small and stable; introducing a shared helper
-        // would invert layering (scenario_loader does not depend on
-        // save_system today). Update both call sites when adding a
-        // new variant.
-        auto kind_from_string =
-            [](std::string_view s)
-                -> core::Result<core::InterestGroupKind> {
-            if (s == "Bureaucracy")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Bureaucracy);
-            if (s == "Military")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Military);
-            if (s == "Workers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Workers);
-            if (s == "Farmers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Farmers);
-            if (s == "Religious")    return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Religious);
-            if (s == "Media")        return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Media);
-            if (s == "Students")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Students);
-            if (s == "LocalElites")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::LocalElites);
-            if (s == "Business")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Business);
-            if (s == "Technocrats")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Technocrats);
-            std::string msg = "unknown interest_group kind '";
-            msg.append(s.data(), s.size());
-            msg += "' (expected Bureaucracy|Military|Workers|Farmers|"
-                   "Religious|Media|Students|LocalElites|Business|Technocrats)";
-            return core::Result<core::InterestGroupKind>::failure(std::move(msg));
-        };
+        // Kind-string mapping is the shared
+        // `core::interest_group_kind_from_string` (M3.5). Adding a
+        // new `InterestGroupKind` variant only edits one file.
 
         state.interest_groups.reserve(manifest.interest_groups.size());
         for (std::size_t i = 0; i < manifest.interest_groups.size(); ++i) {
@@ -439,7 +418,7 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                     entry.country_id_code + "'");
             }
 
-            auto kind_r = kind_from_string(entry.kind);
+            auto kind_r = core::interest_group_kind_from_string(entry.kind);
             if (!kind_r) {
                 return core::Result<ScenarioLoadOutcome>::failure(
                     manifest_path.string() +

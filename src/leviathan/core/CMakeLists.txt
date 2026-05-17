@@ -6,6 +6,7 @@
 add_library(leviathan_core STATIC
     game_date.cpp
     game_state.cpp
+    interest_group_kind.cpp
     string_utils.cpp
 )
 add_library(leviathan::core ALIAS leviathan_core)

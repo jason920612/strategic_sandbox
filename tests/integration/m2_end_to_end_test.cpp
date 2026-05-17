@@ -27,13 +27,15 @@
 //      (M2.3 mid-list-failure atomicity inherited through
 //      M2.18 / M2.19 / M2.20 / M2.21).
 //
-//   3. 5-artefact byte-identical determinism with M2 commands.
+//   3. 6-artefact byte-identical determinism with M2 commands.
 //      Composes M2.2 `begin_tick` + M2.21 `apply_command_script`
 //      + `step_one_day` * 31 + M2.2 `end_tick` twice into two
 //      independent temp dirs and asserts save.json /
 //      events.jsonl / summary.csv / countries.csv /
-//      factions.csv all match byte-for-byte. M1.17's
-//      determinism contract carried through M2.
+//      factions.csv / interest_groups.csv all match byte-for-
+//      byte. M1.17's determinism contract carried through M2,
+//      and M3.5 added the sixth artefact (canonical scenarios
+//      author zero interest groups so this one is header-only).
 
 #include <doctest/doctest.h>
 
@@ -267,7 +269,7 @@ TEST_CASE("M2 end-to-end: gate atomicity across EnactPolicy and AdjustBudget") {
 // =====================================================================
 // 3. 5-artefact byte-identical determinism with M2 commands
 // =====================================================================
-TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 5 artefacts") {
+TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 6 artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         // Same builder both runs use; the deterministic seed lives
         // in the canonical simulation.json that DataLoader reads.
@@ -301,8 +303,8 @@ TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 5 art
     run_once(td_a.path);
     run_once(td_b.path);
 
-    // The 5 artefacts that survived from M1.17 must continue to
-    // survive M2's command + gate path.
+    // The 6 artefacts (M1.17's five + M3.5's interest_groups.csv)
+    // must continue to survive M2's command + gate path.
     CHECK(read_file(td_a.path / "save.json") ==
           read_file(td_b.path / "save.json"));
     CHECK(read_file(td_a.path / "events.jsonl") ==
@@ -313,6 +315,9 @@ TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 5 art
           read_file(td_b.path / "countries.csv"));
     CHECK(read_file(td_a.path / "factions.csv") ==
           read_file(td_b.path / "factions.csv"));
+    // M3.5: interest_groups.csv joins the byte-identical contract.
+    CHECK(read_file(td_a.path / "interest_groups.csv") ==
+          read_file(td_b.path / "interest_groups.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

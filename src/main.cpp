@@ -68,6 +68,10 @@ int main(int argc, char** argv) {
               << "Factions CSV file   : " << outcome.factions_csv_path.value().string() << "\n"
               << "Factions CSV rows   : " << outcome.factions_csv_rows                  << "\n";
     }
+    // M3.5: interest_groups.csv is unconditional, so always print.
+    std::cout
+              << "Interest groups CSV : " << outcome.interest_groups_csv_path.string()  << "\n"
+              << "Interest groups rows: " << outcome.interest_groups_csv_rows           << "\n";
     if (opts.replay_path.has_value()) {
         std::cout
               << "Replay source       : " << opts.replay_path.value().string() << "\n"

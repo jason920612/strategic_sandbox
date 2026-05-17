@@ -146,6 +146,80 @@ void write_faction_csv_header(std::ostream& out);
 void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row);
 
 // ---------------------------------------------------------------------------
+// Per-interest-group snapshot (M3.5).
+//
+// First M3 diagnostic surface. Mirrors the M1.14 / M1.16 per-country
+// and per-faction shapes: free function snapshot, free function
+// writer, observation-only, deterministic. M3.5 outputs only the
+// M3.1 state fields (no formula intermediates — those wait for a
+// future "diagnostics outcome" pass).
+//
+// Unlike summary / countries / factions CSV, interest_groups.csv is
+// an UNCONDITIONAL artefact: the runner always writes it next to
+// save.json so canonical scenarios with zero interest groups still
+// produce a header-only file. The path defaults to
+// `<output_dir>/interest_groups.csv` and can be overridden via
+// `RunnerOptions::interest_groups_csv_path` programmatically. There
+// is no `--interest-groups-csv` CLI flag — keeping it on by default
+// is more useful than gating it on opt-in.
+// ---------------------------------------------------------------------------
+
+// One row of the per-interest-group CSV. Mirrors the M3.1
+// `InterestGroupState` runtime fields, plus the owning country's
+// `id_code` (denormalised so external tooling can group rows by
+// country without re-joining against another file).
+struct InterestGroupSummaryRow {
+    core::GameDate date;
+    std::string    id_code;          // e.g. "ger_bureaucracy"
+    std::string    name;             // e.g. "German Bureaucracy"
+    std::string    kind;             // canonical enum spelling, e.g. "Bureaucracy"
+    int            country_id      = -1;   // raw CountryId::value(); -1 if invalid
+    std::string    country_id_code;        // owning CountryState::id_code
+    double         influence       = 0.0;
+    double         loyalty         = 0.0;
+    double         radicalism      = 0.0;
+};
+
+// Build an InterestGroupSummaryRow from `state` for `group`. Pure
+// observation; never mutates state.
+//
+// Returns failure if:
+//   * `group` is not a valid index into `state.interest_groups`, OR
+//   * the group's `country` field does not resolve into
+//     `state.countries`.
+//
+// The country-resolution check matches save_system / scenario_loader
+// strictness: a row pointing at a bogus country is a data bug, not
+// something to silently paper over with an empty `country_id_code`.
+core::Result<InterestGroupSummaryRow> interest_group_snapshot(
+    const core::GameState& state, std::size_t group_index);
+
+// Write the canonical per-interest-group CSV header. Always:
+//   "date,id_code,name,kind,country_id,country_id_code,"
+//   "influence,loyalty,radicalism\n"
+// Pinned by tests; bumping a column here is breaking.
+void write_interest_group_csv_header(std::ostream& out);
+
+// Write one InterestGroupSummaryRow as a CSV line.
+//
+// Strings that may legitimately contain commas, quotes, or newlines
+// (notably `name`) are CSV-escaped per RFC 4180: enclosed in double
+// quotes when needed, with embedded quotes doubled. id_code and kind
+// are validated upstream to use safe characters but go through the
+// same escape helper so a future loosening of those rules can't
+// silently produce a malformed CSV. Doubles use `std::scientific` +
+// `setprecision(17)` to keep the byte-identical determinism contract.
+void write_interest_group_csv_row(std::ostream& out,
+                                  const InterestGroupSummaryRow& row);
+
+// CSV-escape a single field per RFC 4180. Returns `field` unchanged
+// when it contains no comma, double-quote, carriage-return, or
+// newline. Otherwise returns `"<field>"` with every embedded `"`
+// doubled to `""`. Exposed so a caller writing CSV by hand (test
+// helpers, etc.) can reuse the same rule the M3.5 writer applies.
+std::string csv_escape(std::string_view field);
+
+// ---------------------------------------------------------------------------
 // M2.10: programmatic state-comparison API.
 //
 // `compare_states` walks two GameStates field-by-field and returns a

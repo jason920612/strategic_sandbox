@@ -12,6 +12,7 @@
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/core/interest_group_kind.hpp"
 
 namespace leviathan::systems::diagnostics {
 
@@ -189,6 +190,95 @@ void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row) {
         << fmt_double(row.radicalism) << ','
         << fmt_double(row.loyalty)    << ','
         << fmt_double(row.resources)
+        << '\n';
+}
+
+// ---------------------------------------------------------------------------
+// M3.5: per-interest-group snapshot.
+// ---------------------------------------------------------------------------
+
+std::string csv_escape(std::string_view field) {
+    bool needs_quoting = false;
+    for (const char c : field) {
+        if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+            needs_quoting = true;
+            break;
+        }
+    }
+    if (!needs_quoting) {
+        return std::string(field);
+    }
+    std::string out;
+    out.reserve(field.size() + 2);
+    out.push_back('"');
+    for (const char c : field) {
+        out.push_back(c);
+        if (c == '"') {
+            out.push_back('"');  // RFC 4180: embedded `"` doubled.
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+core::Result<InterestGroupSummaryRow> interest_group_snapshot(
+        const core::GameState& state, std::size_t group_index) {
+    if (group_index >= state.interest_groups.size()) {
+        return core::Result<InterestGroupSummaryRow>::failure(
+            "diagnostics::interest_group_snapshot: index " +
+            std::to_string(group_index) +
+            " is not a valid index into state.interest_groups (size " +
+            std::to_string(state.interest_groups.size()) + ")");
+    }
+    const auto& g = state.interest_groups[group_index];
+
+    // The country handle must resolve into state.countries. Bad data
+    // here is almost always a scenario / save bug — fail loudly rather
+    // than silently emit an empty `country_id_code` that future tooling
+    // would have to guess at.
+    if (!g.country.valid() ||
+        g.country.value() < 0 ||
+        static_cast<std::size_t>(g.country.value()) >= state.countries.size()) {
+        return core::Result<InterestGroupSummaryRow>::failure(
+            "diagnostics::interest_group_snapshot: interest_groups[" +
+            std::to_string(group_index) + "] '" + g.id_code +
+            "' references invalid country CountryId " +
+            std::to_string(g.country.value()) +
+            " (state.countries size is " +
+            std::to_string(state.countries.size()) + ")");
+    }
+
+    InterestGroupSummaryRow row;
+    row.date            = state.current_date;
+    row.id_code         = g.id_code;
+    row.name            = g.name;
+    row.kind            = core::interest_group_kind_to_string(g.kind);
+    row.country_id      = g.country.value();
+    row.country_id_code =
+        state.countries[static_cast<std::size_t>(g.country.value())].id_code;
+    row.influence       = g.influence;
+    row.loyalty         = g.loyalty;
+    row.radicalism      = g.radicalism;
+    return core::Result<InterestGroupSummaryRow>::success(std::move(row));
+}
+
+void write_interest_group_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column here is breaking.
+    out << "date,id_code,name,kind,country_id,country_id_code,"
+           "influence,loyalty,radicalism\n";
+}
+
+void write_interest_group_csv_row(std::ostream& out,
+                                  const InterestGroupSummaryRow& row) {
+    out << row.date.to_string()         << ','
+        << csv_escape(row.id_code)      << ','
+        << csv_escape(row.name)         << ','
+        << csv_escape(row.kind)         << ','
+        << row.country_id               << ','
+        << csv_escape(row.country_id_code) << ','
+        << fmt_double(row.influence)    << ','
+        << fmt_double(row.loyalty)      << ','
+        << fmt_double(row.radicalism)
         << '\n';
 }
 

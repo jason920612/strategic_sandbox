@@ -556,6 +556,23 @@ core::Result<bool> snapshot_all_factions(const core::GameState& s,
     return core::Result<bool>::success(true);
 }
 
+// M3.5: same shape for interest groups. Unlike the per-country /
+// per-faction variants this runs unconditionally on every snapshot
+// point — interest_groups.csv is always written, header-only when
+// `state.interest_groups` is empty.
+core::Result<bool> snapshot_all_interest_groups(const core::GameState& s,
+                                                TickController& ctrl) {
+    namespace dg = leviathan::systems::diagnostics;
+    for (std::size_t i = 0; i < s.interest_groups.size(); ++i) {
+        auto r = dg::interest_group_snapshot(s, i);
+        if (!r) {
+            return core::Result<bool>::failure(std::move(r.error()));
+        }
+        ctrl.interest_group_rows.push_back(std::move(r).value());
+    }
+    return core::Result<bool>::success(true);
+}
+
 }  // namespace
 
 core::Result<bool> begin_tick(core::GameState& state,
@@ -620,6 +637,12 @@ core::Result<bool> begin_tick(core::GameState& state,
         auto r = snapshot_all_factions(state, ctrl);
         if (!r) return r;
     }
+    // M3.5: interest_groups.csv is always written, so we snapshot at
+    // every cadence point regardless of any opt-in flag.
+    {
+        auto r = snapshot_all_interest_groups(state, ctrl);
+        if (!r) return r;
+    }
 
     ctrl.started = true;
     return core::Result<bool>::success(true);
@@ -674,6 +697,10 @@ core::Result<bool> step_one_day(core::GameState& state,
         auto r = snapshot_all_factions(state, ctrl);
         if (!r) return r;
     }
+    if (tr.month_changed) {
+        auto r = snapshot_all_interest_groups(state, ctrl);
+        if (!r) return r;
+    }
 
     ++ctrl.days_stepped;
     return core::Result<bool>::success(true);
@@ -724,10 +751,21 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(r.error()));
         }
     }
+    {
+        auto r = snapshot_all_interest_groups(state, ctrl);
+        if (!r) {
+            return core::Result<RunOutcome>::failure(std::move(r.error()));
+        }
+    }
 
     // ---- Resolve output paths --------------------------------------------
     const auto save_path = opts.save_path.value_or(opts.output_dir / "save.json");
     const auto log_path  = opts.log_path.value_or(opts.output_dir / "events.jsonl");
+    // M3.5: interest_groups.csv is always written. The path defaults
+    // to <output_dir>/interest_groups.csv, mirroring save / log.
+    const auto interest_groups_csv_path =
+        opts.interest_groups_csv_path.value_or(
+            opts.output_dir / "interest_groups.csv");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -774,6 +812,21 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
+    // M3.5: unconditionally write the interest-groups CSV. The buffer
+    // is empty for canonical scenarios with zero interest groups, so
+    // the file ends up header-only — but it always exists, keeping
+    // the artefact set predictable for downstream tooling.
+    {
+        std::ostringstream csv;
+        dg::write_interest_group_csv_header(csv);
+        for (const auto& row : ctrl.interest_group_rows) {
+            dg::write_interest_group_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(interest_groups_csv_path, csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -790,6 +843,8 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     outcome.countries_csv_rows   = ctrl.country_rows.size();
     outcome.factions_csv_path    = opts.factions_csv_path;
     outcome.factions_csv_rows    = ctrl.faction_rows.size();
+    outcome.interest_groups_csv_path = interest_groups_csv_path;
+    outcome.interest_groups_csv_rows = ctrl.interest_group_rows.size();
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));

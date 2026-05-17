@@ -11,41 +11,61 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.4 — InterestGroup-derived
+- Latest shipped sub-milestone: **M3.5 — InterestGroup
+  reaction diagnostics / CSV surface.** First M3 observability
+  artefact. The runner now writes `interest_groups.csv`
+  unconditionally on every run, on the same snapshot cadence
+  as the existing CSVs (start + each `month_changed` + final
+  post-sanity). Nine fixed columns:
+  `date,id_code,name,kind,country_id,country_id_code,influence,
+  loyalty,radicalism`. Row order is `state.interest_groups`
+  vector order — no sorting. Strings legitimately dirty
+  (`name` may contain commas / quotes / newlines) are
+  CSV-escaped per RFC 4180 via a new tiny `csv_escape` helper.
+  Doubles use `std::scientific` + `setprecision(17)` to keep
+  byte-exact round-trip. New `diagnostics::InterestGroupSummaryRow`
+  + `interest_group_snapshot` + `write_interest_group_csv_header`
+  / `write_interest_group_csv_row`. Invalid `group.country`
+  rejected loudly at snapshot time (no silent bogus
+  `country_id_code`). Empty `state.interest_groups` still
+  produces a header-only file so the artefact set stays
+  constant. **No `--interest-groups-csv` CLI flag** —
+  `RunnerOptions::interest_groups_csv_path` is a
+  programmatic override defaulting to
+  `<output_dir>/interest_groups.csv`. `RunOutcome` gains
+  `interest_groups_csv_path` + `interest_groups_csv_rows`;
+  `TickController` gains an `interest_group_rows` buffer.
+  Drive-by: extracted the `InterestGroupKind` ↔ string
+  mapping (previously duplicated in `save_system.cpp` +
+  `scenario_loader.cpp`) into new shared
+  `core/interest_group_kind.{hpp,cpp}` so save / scenario /
+  diagnostics route through one source of truth. Adding a new
+  variant now requires exactly one switch edit. **Save format
+  unchanged (still v11)**; only runtime artefact output grew.
+  The M1.17 / M2.22 byte-identical determinism contracts
+  extend from 5 → 6 artefacts (canonical scenarios author
+  zero interest groups so the new file is header-only).
+  **M2.9 pre-`end_tick` no-artefact contract** automatically
+  extends to the sixth file because `end_tick` is still the
+  only function that writes. 24 new doctest cases. No new
+  gameplay, no new `PlayerCommandKind`, no new
+  `InterestGroupKind` variants, no formula change to
+  M3.2 / M3.3 / M3.4, no per-tick delta or formula-trace
+  CSV, no events / AI / UI / REPL, no new CLI flag, no
+  command-gate integration, no atomic `end_tick` writes,
+  no `--target-date` interaction beyond the existing replay
+  flow.
+- Previously shipped: **M3.4 — InterestGroup-derived
   authority pressure skeleton.** Opens the second reverse-
   direction channel: interest groups press not only on
   `country.stability` (M3.3) but also on
   `country.government_authority.bureaucratic_compliance` —
-  the M2.18 `EnactPolicy` gate input. Extends the
-  `interest_group_system` module with constant
-  `kInterestGroupAuthorityPressureRate = 0.01`,
-  `AuthorityPressureOutcome { int countries_updated }`, and
-  `authority_pressure(state)` free function. Per country
-  computes influence-weighted loyalty over **Bureaucracy-
-  kind** groups only (`sum(g.influence * g.loyalty) /
-  sum(g.influence)` with `kind == Bureaucracy` AND
-  `influence > 0`) and drifts `bureaucratic_compliance`
-  toward that target at rate 0.01, clamping to `[0, 1]`.
-  Countries with no Bureaucracy-kind groups or zero total
-  Bureaucracy influence skipped. The single mutation surface
-  is `bureaucratic_compliance`: `military_loyalty`,
-  `intelligence_capability`, and `media_control` are byte-
-  identical, and so are stability / legitimacy / corruption.
-  The single input aggregate is Bureaucracy-kind loyalty;
-  radicalism does NOT feed this step. Strict preflight on
-  inputs actually read (group.country, group.influence,
-  group.loyalty, country.bureaucratic_compliance — all finite
-  + `[0, 1]`). Wired into `tick_all_countries` as the THIRD
-  global step, AFTER M3.3, so the rate ladder mood (0.05) →
-  stability (0.02) → authority (0.01) keeps the outermost
-  leg well-damped. `MonthlyOutcome` gains
-  `int interest_group_authority_countries_updated`. The
-  closed loop now includes the M2.18 EnactPolicy gate as a
-  downstream consumer — but M3.4 does NOT change the gate
-  formula. **No save schema bump** (still v11); canonical
-  scenarios author zero interest groups so existing M1 / M2 /
-  M3.1 / M3.2 / M3.3 callers see byte-identical pipeline
-  behaviour. 19 new doctest cases.
+  the M2.18 `EnactPolicy` gate input. Bureaucracy-kind
+  influence-weighted loyalty drives the formula at rate
+  0.01, completing the rate ladder mood (0.05) → stability
+  (0.02) → authority (0.01). **No save schema bump** (still
+  v11). 19 doctest cases. See `docs/m3-4-interest-group-
+  authority-pressure.md` for the full design note.
 - Previously shipped: **M3.3 — InterestGroup country feedback
   skeleton.** Closes the M3 reaction loop: interest
   groups now push back on country state. Extends the M3.2
@@ -182,20 +202,20 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.4): **M3.5** — open.
-  With four reaction-loop legs in place (M3.2 country → group
-  mood; M3.3 group radicalism → country stability; M3.4
-  Bureaucracy loyalty → bureaucratic_compliance), natural
-  next steps include (a) a sibling authority channel
-  (e.g. Military loyalty → `military_loyalty`), (b) a
-  radicalism-driven legitimacy or corruption drift, (c)
-  influence drift driven by event / policy outcomes, (d)
-  reading interest-group aggregates inside the M2.18 / M2.19
-  gate. None committed.
+- Next sub-milestone candidate (post-M3.5): **M3.6** — open.
+  With four reaction-loop legs (M3.2 / M3.3 / M3.4) and the
+  M3.5 observability surface in place, natural next steps
+  include (a) a formula-trace CSV (weighted_loyalty /
+  weighted_radicalism / per-step deltas), (b) a sibling
+  authority channel (e.g. Military loyalty →
+  `military_loyalty`), (c) a radicalism-driven legitimacy
+  or corruption drift, (d) influence drift driven by event
+  / policy outcomes, (e) reading interest-group aggregates
+  inside the M2.18 / M2.19 gate. None committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 shipped). See `docs/milestone-0-result.md`,
-  `docs/milestone-1-result.md`, and
-  `docs/milestone-2-result.md` for the exit reports, and
+  M3.2 + M3.3 + M3.4 + M3.5 shipped). See
+  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
+  and `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
@@ -220,7 +240,7 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 shipped. Forty-two sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 shipped. Forty-three sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -367,6 +387,36 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.5 InterestGroup reaction diagnostics / CSV surface —
+first M3 observability artefact. `interest_groups.csv`
+written unconditionally by `end_tick` alongside `save.json`
+/ `events.jsonl` / the three opt-in CSVs, on the same
+snapshot cadence (start + each `month_changed` + final
+post-sanity). Nine fixed columns:
+`date,id_code,name,kind,country_id,country_id_code,
+influence,loyalty,radicalism`. Vector-order preserved (no
+sorting). New `diagnostics::InterestGroupSummaryRow` +
+`interest_group_snapshot` + `write_interest_group_csv_*`
+helpers + tiny `csv_escape` (RFC 4180). Invalid
+`group.country` rejected loudly at snapshot time. Empty
+`state.interest_groups` still produces a header-only file.
+**No `--interest-groups-csv` CLI flag** — the
+`RunnerOptions::interest_groups_csv_path` programmatic
+override defaults to `<output_dir>/interest_groups.csv`.
+`RunOutcome` gains `interest_groups_csv_path` +
+`interest_groups_csv_rows`. Drive-by extracted the
+`InterestGroupKind` ↔ string mapping (previously duplicated
+in `save_system.cpp` + `scenario_loader.cpp`) into shared
+`core/interest_group_kind.{hpp,cpp}` — one source of truth
+for save / scenario / diagnostics. **No save schema bump
+(still v11)**; M1.17 / M2.22 byte-identical determinism
+contracts extend 5 → 6 artefacts; M2.9 pre-`end_tick`
+no-artefact contract automatically extends to the sixth
+file. 24 new doctest cases. No new gameplay / events / AI /
+UI / REPL / CLI flag / new `PlayerCommandKind` / new
+`InterestGroupKind` variants / formula change / per-tick
+delta CSV / formula-trace CSV / command-gate integration /
+atomic `end_tick` writes;
 **M3.4 InterestGroup-derived authority pressure skeleton —
 opens the second reverse-direction channel: interest groups
 press on `country.government_authority.bureaucratic_compliance`.

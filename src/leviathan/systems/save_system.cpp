@@ -14,6 +14,7 @@
 #include "internal/json_helpers.hpp"
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_date.hpp"
+#include "leviathan/core/interest_group_kind.hpp"
 #include "leviathan/core/log_entry.hpp"
 
 namespace leviathan::systems::save_system {
@@ -86,44 +87,15 @@ core::Result<core::PlayerCommandKind> player_command_kind_from_string(
     return core::Result<core::PlayerCommandKind>::failure(std::move(msg));
 }
 
-// ----- InterestGroupKind <-> string (M3.1) --------------------------------
+// ----- InterestGroupKind <-> string (M3.1; shared helper in M3.5) ---------
+//
+// The mapping itself lives in `leviathan/core/interest_group_kind.hpp` so
+// save_system, scenario_loader, and diagnostics all spell the same names.
+// We re-export the unqualified function names into this anonymous
+// namespace to keep the existing call sites below readable.
 
-std::string interest_group_kind_to_string(core::InterestGroupKind k) {
-    switch (k) {
-        case core::InterestGroupKind::Bureaucracy:  return "Bureaucracy";
-        case core::InterestGroupKind::Military:     return "Military";
-        case core::InterestGroupKind::Workers:      return "Workers";
-        case core::InterestGroupKind::Farmers:      return "Farmers";
-        case core::InterestGroupKind::Religious:    return "Religious";
-        case core::InterestGroupKind::Media:        return "Media";
-        case core::InterestGroupKind::Students:     return "Students";
-        case core::InterestGroupKind::LocalElites:  return "LocalElites";
-        case core::InterestGroupKind::Business:     return "Business";
-        case core::InterestGroupKind::Technocrats:  return "Technocrats";
-    }
-    // Sentinel fallback for the same reason as
-    // `player_command_kind_to_string`.
-    return "UnknownInterestGroupKind";
-}
-
-core::Result<core::InterestGroupKind> interest_group_kind_from_string(
-        std::string_view s) {
-    if (s == "Bureaucracy")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Bureaucracy);
-    if (s == "Military")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Military);
-    if (s == "Workers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Workers);
-    if (s == "Farmers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Farmers);
-    if (s == "Religious")    return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Religious);
-    if (s == "Media")        return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Media);
-    if (s == "Students")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Students);
-    if (s == "LocalElites")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::LocalElites);
-    if (s == "Business")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Business);
-    if (s == "Technocrats")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Technocrats);
-    std::string msg = "unknown interest_group kind '";
-    msg.append(s.data(), s.size());
-    msg += "' (expected Bureaucracy|Military|Workers|Farmers|"
-           "Religious|Media|Students|LocalElites|Business|Technocrats)";
-    return core::Result<core::InterestGroupKind>::failure(std::move(msg));
-}
+using core::interest_group_kind_to_string;
+using core::interest_group_kind_from_string;
 
 // ----- serialise -----------------------------------------------------------
 
