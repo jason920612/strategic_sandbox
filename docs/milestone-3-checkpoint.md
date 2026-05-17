@@ -1,13 +1,15 @@
 # Milestone 3 Checkpoint
 
-**Status: in progress.** This is NOT an M3 exit report. M3
-continues; this document is a fixed point that snapshots what
-the M3 reaction loop and its observability surface look like
-after M3.1 through M3.7 have shipped, so future M3.8+ work has a
-single page to read before diving in.
+**HISTORICAL — M3.7 mid-milestone snapshot.** This was the
+checkpoint as of M3.7 (M3 still in progress at the time).
+M3 has since CLOSED with M3.11; the canonical M3 exit
+reference is `milestone-3-result.md`. The content below is
+preserved for archaeology only and may lag the current main
+branch where M3.8 / M3.9 / M3.10 / M3.11 layered on top of
+the M3.7 picture described here.
 
-For M1 and M2 exit reports (which DO close their milestones),
-see `milestone-1-result.md` and `milestone-2-result.md`.
+For M1 and M2 exit reports, see `milestone-1-result.md`
+and `milestone-2-result.md`.
 
 ## What M3 has shipped so far
 
