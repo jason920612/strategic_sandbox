@@ -2090,15 +2090,19 @@ TEST_CASE("run: --verify-tolerance tight enough catches a small mismatch") {
 namespace {
 
 // Set every artefact output path on `opts` to a distinct file
-// underneath `dir`, and report all five paths the test should later
+// underneath `dir`, and report all six paths the test should later
 // assert absent. Used by every M2.9 regression test below so the
 // "no artefact survived" check is uniformly applied.
+// M3.5 added `interest_groups_csv` to the artefact set: it is
+// unconditionally written by `end_tick`, so the M2.9 pre-`end_tick`
+// no-artefact contract automatically extends to it.
 struct ArtifactPaths {
     fs::path save;
     fs::path log;
     fs::path summary_csv;
     fs::path countries_csv;
     fs::path factions_csv;
+    fs::path interest_groups_csv;
 };
 
 ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
@@ -2108,12 +2112,14 @@ ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
         dir / "out_summary.csv",
         dir / "out_countries.csv",
         dir / "out_factions.csv",
+        dir / "out_interest_groups.csv",
     };
-    opts.save_path           = a.save;
-    opts.log_path            = a.log;
-    opts.summary_csv_path    = a.summary_csv;
-    opts.countries_csv_path  = a.countries_csv;
-    opts.factions_csv_path   = a.factions_csv;
+    opts.save_path                  = a.save;
+    opts.log_path                   = a.log;
+    opts.summary_csv_path           = a.summary_csv;
+    opts.countries_csv_path         = a.countries_csv;
+    opts.factions_csv_path          = a.factions_csv;
+    opts.interest_groups_csv_path   = a.interest_groups_csv;
     return a;
 }
 
@@ -2123,6 +2129,7 @@ void check_no_artifacts(const ArtifactPaths& a) {
     CHECK_FALSE(fs::exists(a.summary_csv));
     CHECK_FALSE(fs::exists(a.countries_csv));
     CHECK_FALSE(fs::exists(a.factions_csv));
+    CHECK_FALSE(fs::exists(a.interest_groups_csv));
 }
 
 }  // namespace
@@ -2400,6 +2407,240 @@ TEST_CASE("run: --target-date before the scenario start is rejected") {
     CHECK(r.error().find("scenario start")       != std::string::npos);
     // Pre-end_tick failure: M2.9 contract — no artefacts on disk.
     check_no_artifacts(paths);
+}
+
+// =====================================================================
+// M3.5 - interest_groups.csv is an unconditional artefact
+// =====================================================================
+
+TEST_CASE("run: interest_groups.csv is written even without --scenario (header-only)") {
+    // No scenario, so state.interest_groups is empty. The artefact is
+    // still produced — the contract is "the file always exists".
+    TempDir td("leviathan_runner_m35_empty_interest_groups");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_groups_csv_rows == 0u);
+    REQUIRE(fs::exists(td.path / "interest_groups.csv"));
+    const std::string text = read_file(td.path / "interest_groups.csv");
+    CHECK(text ==
+          "date,id_code,name,kind,country_id,country_id_code,"
+          "influence,loyalty,radicalism\n");
+}
+
+TEST_CASE("run: interest_groups.csv defaults to <output_dir>/interest_groups.csv") {
+    TempDir td("leviathan_runner_m35_default_path");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    // interest_groups_csv_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_groups_csv_path ==
+          td.path / "interest_groups.csv");
+    CHECK(fs::exists(r.value().interest_groups_csv_path));
+}
+
+TEST_CASE("run: interest_groups_csv_path override is honoured") {
+    TempDir td("leviathan_runner_m35_path_override");
+    rn::RunnerOptions opts;
+    opts.config_path             = kCanonicalConfig;
+    opts.days                    = 1;
+    opts.output_dir              = td.path;
+    opts.interest_groups_csv_path = td.path / "custom" / "ig.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_groups_csv_path ==
+          td.path / "custom" / "ig.csv");
+    CHECK(fs::exists(td.path / "custom" / "ig.csv"));
+    // Default path is NOT written when the override is set.
+    CHECK_FALSE(fs::exists(td.path / "interest_groups.csv"));
+}
+
+TEST_CASE("run: scenario with hand-built interest groups produces one row per group per snapshot point") {
+    // Canonical scenarios don't author interest groups; build a state
+    // manually and use the `run_state` injection point.
+    TempDir td("leviathan_runner_m35_with_groups");
+
+    leviathan::core::SimulationConfig cfg;
+    cfg.start_date = leviathan::core::GameDate(1930, 1, 1);
+    cfg.seed       = 1u;
+    auto state = leviathan::core::make_game_state(cfg);
+
+    leviathan::core::CountryState c;
+    c.id      = leviathan::core::CountryId{0};
+    c.id_code = "GER";
+    c.name    = "Germany";
+    state.countries.push_back(c);
+
+    leviathan::core::InterestGroupState g1;
+    g1.id_code    = "ger_bureaucracy";
+    g1.name       = "German Bureaucracy";
+    g1.kind       = leviathan::core::InterestGroupKind::Bureaucracy;
+    g1.country    = leviathan::core::CountryId{0};
+    g1.influence  = 0.4;
+    g1.loyalty    = 0.6;
+    g1.radicalism = 0.2;
+    state.interest_groups.push_back(g1);
+
+    leviathan::core::InterestGroupState g2 = g1;
+    g2.id_code    = "ger_workers";
+    g2.name       = "German Workers";
+    g2.kind       = leviathan::core::InterestGroupKind::Workers;
+    g2.influence  = 0.3;
+    g2.loyalty    = 0.4;
+    g2.radicalism = 0.5;
+    state.interest_groups.push_back(g2);
+
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.ok());
+    // Snapshot cadence: start + each month_changed + final post-sanity.
+    // 31 days from 1930-01-01 crosses one month boundary → 3 snapshot
+    // points. 2 groups → 6 data rows.
+    CHECK(r.value().interest_groups_csv_rows == 6u);
+
+    const std::string text = read_file(td.path / "interest_groups.csv");
+    CHECK(text.find("ger_bureaucracy") != std::string::npos);
+    CHECK(text.find("ger_workers")     != std::string::npos);
+    CHECK(text.find("Bureaucracy")     != std::string::npos);
+    CHECK(text.find("Workers")         != std::string::npos);
+    // Doubles use scientific notation.
+    CHECK(text.find("e-") != std::string::npos);
+}
+
+TEST_CASE("run: interest_groups.csv preserves vector ordering, not lexical") {
+    TempDir td("leviathan_runner_m35_ordering");
+
+    leviathan::core::SimulationConfig cfg;
+    cfg.start_date = leviathan::core::GameDate(1930, 1, 1);
+    cfg.seed       = 1u;
+    auto state = leviathan::core::make_game_state(cfg);
+
+    leviathan::core::CountryState c;
+    c.id      = leviathan::core::CountryId{0};
+    c.id_code = "GER";
+    c.name    = "Germany";
+    state.countries.push_back(c);
+
+    auto make_g = [](const std::string& id_code,
+                     leviathan::core::InterestGroupKind k) {
+        leviathan::core::InterestGroupState g;
+        g.id_code   = id_code;
+        g.name      = id_code;
+        g.kind      = k;
+        g.country   = leviathan::core::CountryId{0};
+        g.influence = 0.5;
+        return g;
+    };
+    // Insert in non-lexical order.
+    state.interest_groups.push_back(make_g("zeta", leviathan::core::InterestGroupKind::Workers));
+    state.interest_groups.push_back(make_g("alpha", leviathan::core::InterestGroupKind::Bureaucracy));
+    state.interest_groups.push_back(make_g("mu", leviathan::core::InterestGroupKind::Military));
+
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    REQUIRE(rn::run_state(state, opts).ok());
+
+    const std::string text = read_file(td.path / "interest_groups.csv");
+    // zeta appears before alpha (vector order), not alphabetic.
+    const auto zeta_pos  = text.find("zeta");
+    const auto alpha_pos = text.find("alpha");
+    const auto mu_pos    = text.find(",mu,");  // surround with commas to avoid matching other "mu" substrings
+    REQUIRE(zeta_pos  != std::string::npos);
+    REQUIRE(alpha_pos != std::string::npos);
+    REQUIRE(mu_pos    != std::string::npos);
+    CHECK(zeta_pos < alpha_pos);
+    CHECK(alpha_pos < mu_pos);
+}
+
+TEST_CASE("run: interest_groups.csv preserves byte-identical determinism on same seed") {
+    TempDir td_a("leviathan_runner_m35_det_a");
+    TempDir td_b("leviathan_runner_m35_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 90;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xDADAFEED};
+        o.scenario_path = kCanonicalScenario;
+        return o;
+    };
+
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "interest_groups.csv") ==
+          read_file(td_b.path / "interest_groups.csv"));
+}
+
+TEST_CASE("run: interest_groups.csv with invalid country reference fails loudly with no artifacts") {
+    TempDir td("leviathan_runner_m35_invalid_country");
+
+    leviathan::core::SimulationConfig cfg;
+    cfg.start_date = leviathan::core::GameDate(1930, 1, 1);
+    cfg.seed       = 1u;
+    auto state = leviathan::core::make_game_state(cfg);
+
+    leviathan::core::CountryState c;
+    c.id      = leviathan::core::CountryId{0};
+    c.id_code = "GER";
+    state.countries.push_back(c);
+
+    leviathan::core::InterestGroupState g;
+    g.id_code = "phantom";
+    g.name    = "Phantom";
+    g.kind    = leviathan::core::InterestGroupKind::Religious;
+    g.country = leviathan::core::CountryId{99};  // out of range
+    state.interest_groups.push_back(std::move(g));
+
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("phantom") != std::string::npos);
+    CHECK(r.error().find("invalid country") != std::string::npos);
+    // The interest-group snapshot in `begin_tick` fails BEFORE the
+    // start log, so no artefact (including interest_groups.csv) is
+    // written. M2.9 pre-end_tick contract extended to the 6th file.
+    CHECK_FALSE(fs::exists(td.path / "save.json"));
+    CHECK_FALSE(fs::exists(td.path / "events.jsonl"));
+    CHECK_FALSE(fs::exists(td.path / "interest_groups.csv"));
+}
+
+TEST_CASE("run: --summary-csv byte-stream is unchanged by interest_groups.csv writing (M0.10 contract)") {
+    // Baseline run with only --summary-csv; M3.5 run also opts into
+    // --countries-csv / --factions-csv but interest_groups.csv is
+    // always written either way. The summary CSV byte stream must
+    // not budge.
+    TempDir td_a("leviathan_runner_m35_summary_iso_a");
+    TempDir td_b("leviathan_runner_m35_summary_iso_b");
+
+    rn::RunnerOptions opts_a;
+    opts_a.config_path      = kCanonicalConfig;
+    opts_a.days             = 60;
+    opts_a.output_dir       = td_a.path;
+    opts_a.seed_override    = std::uint64_t{0xCAFEBABE};
+    opts_a.summary_csv_path = td_a.path / "summary.csv";
+
+    rn::RunnerOptions opts_b = opts_a;
+    opts_b.output_dir        = td_b.path;
+    opts_b.summary_csv_path  = td_b.path / "summary.csv";
+
+    REQUIRE(rn::run(opts_a).ok());
+    REQUIRE(rn::run(opts_b).ok());
+    CHECK(read_file(td_a.path / "summary.csv") == read_file(td_b.path / "summary.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

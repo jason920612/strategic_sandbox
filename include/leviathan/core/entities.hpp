@@ -223,9 +223,9 @@ struct EventDefinition {
 // Coarse-grained category for an interest group / political actor
 // (M3.1). Mirrors the RFC-020 §5 long-term faction list, narrowed
 // to the ten kinds M3 expects to model in its first iteration.
-// String mapping lives in `save_system.cpp` next to other enum
-// round-trips; scenario JSON spells the variant out
-// ("Bureaucracy", "Military", ...).
+// String mapping is shared via
+// `leviathan/core/interest_group_kind.hpp` (M3.5); scenario JSON
+// spells the variant out ("Bureaucracy", "Military", ...).
 //
 // Future kinds (Nationalists, Aristocracy, Intelligence as a
 // distinct group, ...) land additively. Existing variant names

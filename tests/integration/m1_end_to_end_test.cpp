@@ -16,9 +16,11 @@
 //     (one per month boundary, M1.9 + M1.10);
 //   * the save round-trips with `active_policies` and
 //     `last_gdp_growth_rate` intact (M1.15, M1.12);
-//   * the determinism contract extends to FIVE byte-identical
+//   * the determinism contract extends to SIX byte-identical
 //     artefacts: save.json, events.jsonl, summary.csv,
-//     countries.csv, factions.csv.
+//     countries.csv, factions.csv, interest_groups.csv (M3.5
+//     added the sixth file; canonical scenarios author zero
+//     interest groups so this one is header-only here).
 //
 // Unlike `m0_end_to_end_test.cpp`, this test goes through the
 // runner. By M1.11 the runner accepts `--scenario` and loads the
@@ -248,6 +250,11 @@ TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all thr
           read_file(td_b.path / "countries.csv"));
     CHECK(read_file(td_a.path / "factions.csv") ==
           read_file(td_b.path / "factions.csv"));
+    // M3.5: interest_groups.csv joins the byte-identical contract.
+    // Canonical scenarios author zero interest groups so the file is
+    // header-only, but the path always exists and must round-trip.
+    CHECK(read_file(td_a.path / "interest_groups.csv") ==
+          read_file(td_b.path / "interest_groups.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

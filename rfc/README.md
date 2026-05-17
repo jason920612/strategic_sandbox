@@ -217,7 +217,43 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.4（InterestGroup-
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.5（InterestGroup
+  reaction diagnostics / CSV surface）** 是 M3 第一個 observability
+  artefact，**不新增玩法、不改 save schema、不新增 CLI flag**。
+  Runner 每次執行都會無條件輸出新檔 `interest_groups.csv`，
+  cadence 與既有 CSV 相同（start + 每個 `month_changed` + final
+  post-sanity）；canonical scenario 沒 author interest groups 就
+  只輸出 header line。固定 9 欄：
+  `date,id_code,name,kind,country_id,country_id_code,influence,
+  loyalty,radicalism`。`state.interest_groups` vector 順序原樣
+  保留（不排序）。新 `diagnostics::InterestGroupSummaryRow` +
+  `interest_group_snapshot` + `write_interest_group_csv_header`
+  / `write_interest_group_csv_row` + 小型 `csv_escape` (RFC 4180)
+  helper（`name` 含 `,` / `"` / `\n` / `\r` 時自動 quote/double-
+  quote）；doubles 沿用 M1.14 的 `std::scientific` +
+  `setprecision(17)`。Invalid `group.country` 在 snapshot 時就
+  loud-fail（不會偷偷輸出空 `country_id_code`）。`RunnerOptions`
+  新增 `interest_groups_csv_path`（optional path override，預設
+  `<output_dir>/interest_groups.csv`），`RunOutcome` 新增
+  `interest_groups_csv_path` + `interest_groups_csv_rows`，
+  `TickController` 新增 `interest_group_rows` buffer。Drive-by：
+  把 `InterestGroupKind` ↔ string mapping（原本在
+  `save_system.cpp` + `scenario_loader.cpp` 各複製一份）抽到
+  共用 `core/interest_group_kind.{hpp,cpp}`，save / scenario /
+  diagnostics 三個 consumer 都走同一個 source of truth；以後加
+  新 variant 只改一個 switch。**No save schema bump（仍 v11）**；
+  M1.17 / M2.22 byte-identical determinism contract 從 5
+  artefacts 擴張到 6 artefacts；M2.9 pre-`end_tick`
+  no-artefact contract 自然涵蓋第 6 個檔（`end_tick` 仍是唯一
+  寫磁碟的地方）。對應 RFC-020 §5 / RFC-050 「想看到的內政
+  狀態」第一片可觀察落地。**M3.5 不做** save schema 變更、新
+  state 欄位、新 InterestGroupKind、formula 變更、formula-trace
+  CSV、per-tick delta CSV、event triggers、AI / UI / REPL、
+  新 CLI flag、新 `PlayerCommandKind`、command-gate integration、
+  weighted aggregate diagnostics、atomic `end_tick` 寫檔、
+  `--target-date` 行為變更、M1 / M2 system 變更。24 個新 doctest
+  cases。
+  **M3.4（InterestGroup-
   derived authority pressure skeleton）** 開啟 M3 反應 loop 的
   第二個反向通道：interest groups 不只推 `country.stability`
   （M3.3），也推 `country.government_authority.bureaucratic_compliance`。

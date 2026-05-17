@@ -745,3 +745,260 @@ TEST_CASE("compare_states: M3.1 interest_groups per-field differences are report
     CHECK(m[0].field_path == "interest_groups[0].influence");
     CHECK(m[1].field_path == "interest_groups[0].radicalism");
 }
+
+// ---------------------------------------------------------------------
+// M3.5 - per-interest-group snapshot + CSV + csv_escape
+// ---------------------------------------------------------------------
+
+namespace {
+
+using leviathan::core::InterestGroupKind;
+using leviathan::core::InterestGroupState;
+
+CountryState m35_country(int idx, const std::string& id_code) {
+    CountryState c;
+    c.id      = CountryId{idx};
+    c.id_code = id_code;
+    c.name    = id_code;
+    return c;
+}
+
+InterestGroupState m35_group(const std::string& id_code,
+                             const std::string& name,
+                             InterestGroupKind kind,
+                             int country_value,
+                             double influence  = 0.4,
+                             double loyalty    = 0.6,
+                             double radicalism = 0.2) {
+    InterestGroupState g;
+    g.id_code    = id_code;
+    g.name       = name;
+    g.kind       = kind;
+    g.country    = CountryId{country_value};
+    g.influence  = influence;
+    g.loyalty    = loyalty;
+    g.radicalism = radicalism;
+    return g;
+}
+
+}  // namespace
+
+TEST_CASE("csv_escape: plain field passes through unchanged") {
+    CHECK(dg::csv_escape("Bureaucracy")  == "Bureaucracy");
+    CHECK(dg::csv_escape("GER")          == "GER");
+    CHECK(dg::csv_escape("ger_workers")  == "ger_workers");
+    CHECK(dg::csv_escape("")             == "");
+}
+
+TEST_CASE("csv_escape: comma triggers quoting") {
+    CHECK(dg::csv_escape("Hello, World") == "\"Hello, World\"");
+}
+
+TEST_CASE("csv_escape: embedded double quote is doubled and the field is wrapped") {
+    CHECK(dg::csv_escape("she said \"hi\"") ==
+          "\"she said \"\"hi\"\"\"");
+}
+
+TEST_CASE("csv_escape: newline / carriage return trigger quoting") {
+    CHECK(dg::csv_escape("a\nb")   == "\"a\nb\"");
+    CHECK(dg::csv_escape("a\r\nb") == "\"a\r\nb\"");
+}
+
+TEST_CASE("interest_group_snapshot: reads every documented field verbatim") {
+    GameState s;
+    s.current_date = GameDate(1930, 6, 1);
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "ger_bureaucracy", "German Bureaucracy",
+        InterestGroupKind::Bureaucracy, 0,
+        /*influence*/ 0.30, /*loyalty*/ 0.55, /*radicalism*/ 0.15));
+
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.ok());
+    const auto& row = r.value();
+    CHECK(row.date            == GameDate(1930, 6, 1));
+    CHECK(row.id_code         == "ger_bureaucracy");
+    CHECK(row.name            == "German Bureaucracy");
+    CHECK(row.kind            == "Bureaucracy");
+    CHECK(row.country_id      == 0);
+    CHECK(row.country_id_code == "GER");
+    CHECK(row.influence       == doctest::Approx(0.30));
+    CHECK(row.loyalty         == doctest::Approx(0.55));
+    CHECK(row.radicalism      == doctest::Approx(0.15));
+}
+
+TEST_CASE("interest_group_snapshot: index past the end is rejected with the bad index in the message") {
+    GameState s;
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "ger_workers", "German Workers", InterestGroupKind::Workers, 0));
+
+    const auto r = dg::interest_group_snapshot(s, 99u);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("99") != std::string::npos);
+    CHECK(r.error().find("interest_groups") != std::string::npos);
+}
+
+TEST_CASE("interest_group_snapshot: empty interest_groups -> any index rejected") {
+    GameState s;
+    s.countries.push_back(m35_country(0, "GER"));
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.failed());
+}
+
+TEST_CASE("interest_group_snapshot: invalid country reference is rejected loudly") {
+    GameState s;
+    s.countries.push_back(m35_country(0, "GER"));
+    // group.country points at index 5 — no such country.
+    s.interest_groups.push_back(m35_group(
+        "phantom", "Phantom Group", InterestGroupKind::LocalElites, 5));
+
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("phantom") != std::string::npos);
+    CHECK(r.error().find("invalid country") != std::string::npos);
+}
+
+TEST_CASE("interest_group_snapshot: default-CountryId{} (-1) is rejected") {
+    GameState s;
+    s.countries.push_back(m35_country(0, "GER"));
+    InterestGroupState g;
+    g.id_code = "orphan";
+    g.name    = "Orphan";
+    g.kind    = InterestGroupKind::Religious;
+    // g.country left as CountryId::invalid() (-1).
+    s.interest_groups.push_back(std::move(g));
+
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("invalid country") != std::string::npos);
+}
+
+TEST_CASE("interest_group_snapshot: does NOT mutate state") {
+    GameState s;
+    s.current_date = GameDate(1930, 4, 1);
+    s.rng.seed     = 42;
+    s.rng.counter  = 7;
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "ger_media", "GER Media", InterestGroupKind::Media, 0));
+    const auto logs_before = s.logs.size();
+
+    REQUIRE(dg::interest_group_snapshot(s, 0u).ok());
+
+    CHECK(s.current_date == GameDate(1930, 4, 1));
+    CHECK(s.rng.seed     == 42u);
+    CHECK(s.rng.counter  == 7u);
+    CHECK(s.logs.size()  == logs_before);
+    CHECK(s.interest_groups[0].influence == doctest::Approx(0.4));
+}
+
+TEST_CASE("write_interest_group_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_interest_group_csv_header(out);
+    CHECK(out.str() ==
+          "date,id_code,name,kind,country_id,country_id_code,"
+          "influence,loyalty,radicalism\n");
+}
+
+TEST_CASE("write_interest_group_csv_row: emits a well-formed line with all nine fields") {
+    GameState s;
+    s.current_date = GameDate(1930, 2, 1);
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "ger_bureaucracy", "German Bureaucracy",
+        InterestGroupKind::Bureaucracy, 0,
+        /*influence*/ 0.40, /*loyalty*/ 0.60, /*radicalism*/ 0.10));
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_interest_group_csv_row(out, r.value());
+    const std::string line = out.str();
+    // First six columns appear in canonical order.
+    const std::string expected_prefix =
+        "1930-02-01,ger_bureaucracy,German Bureaucracy,Bureaucracy,0,GER,";
+    CHECK(line.substr(0, expected_prefix.size()) == expected_prefix);
+    // Eight commas separate nine columns.
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 8);
+    CHECK(line.back() == '\n');
+    // Numeric columns use scientific notation.
+    CHECK(line.find("e-") != std::string::npos);
+}
+
+TEST_CASE("write_interest_group_csv_row: name containing comma is quoted") {
+    GameState s;
+    s.current_date = GameDate(1930, 5, 1);
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "ger_workers", "Workers, Engineers, and Allies",
+        InterestGroupKind::Workers, 0));
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_interest_group_csv_row(out, r.value());
+    const std::string line = out.str();
+    // The quoted name should appear unbroken in the line.
+    CHECK(line.find("\"Workers, Engineers, and Allies\"") != std::string::npos);
+}
+
+TEST_CASE("write_interest_group_csv_row: name containing double quote is escaped per RFC 4180") {
+    GameState s;
+    s.current_date = GameDate(1930, 5, 1);
+    s.countries.push_back(m35_country(0, "GER"));
+    s.interest_groups.push_back(m35_group(
+        "rebels", "The \"Iron\" Workers",
+        InterestGroupKind::Workers, 0));
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.ok());
+
+    std::ostringstream out;
+    dg::write_interest_group_csv_row(out, r.value());
+    CHECK(out.str().find("\"The \"\"Iron\"\" Workers\"") != std::string::npos);
+}
+
+TEST_CASE("write_interest_group_csv_row: byte-identical for the same row twice") {
+    GameState s;
+    s.current_date = GameDate(1930, 3, 1);
+    s.countries.push_back(m35_country(0, "JPN"));
+    s.interest_groups.push_back(m35_group(
+        "jpn_technocrats", "JPN Technocrats", InterestGroupKind::Technocrats, 0,
+        0.25, 0.70, 0.05));
+    const auto r = dg::interest_group_snapshot(s, 0u);
+    REQUIRE(r.ok());
+
+    std::ostringstream a, b;
+    dg::write_interest_group_csv_row(a, r.value());
+    dg::write_interest_group_csv_row(b, r.value());
+    CHECK(a.str() == b.str());
+}
+
+TEST_CASE("write_interest_group_csv_row: every InterestGroupKind variant round-trips through kind column") {
+    // Spot-check that the shared kind ↔ string helper covers every
+    // variant the diagnostics writer might emit. A new variant
+    // without a string mapping would surface here as
+    // "UnknownInterestGroupKind" or similar.
+    const std::vector<std::pair<InterestGroupKind, std::string>> cases = {
+        {InterestGroupKind::Bureaucracy, "Bureaucracy"},
+        {InterestGroupKind::Military,    "Military"},
+        {InterestGroupKind::Workers,     "Workers"},
+        {InterestGroupKind::Farmers,     "Farmers"},
+        {InterestGroupKind::Religious,   "Religious"},
+        {InterestGroupKind::Media,       "Media"},
+        {InterestGroupKind::Students,    "Students"},
+        {InterestGroupKind::LocalElites, "LocalElites"},
+        {InterestGroupKind::Business,    "Business"},
+        {InterestGroupKind::Technocrats, "Technocrats"},
+    };
+    for (const auto& [k, label] : cases) {
+        GameState s;
+        s.countries.push_back(m35_country(0, "ZZZ"));
+        s.interest_groups.push_back(m35_group("g", "G", k, 0));
+        const auto r = dg::interest_group_snapshot(s, 0u);
+        REQUIRE(r.ok());
+        CHECK(r.value().kind == label);
+    }
+}
