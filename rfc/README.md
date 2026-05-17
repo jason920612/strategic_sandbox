@@ -217,10 +217,38 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.6（InterestGroup
-  feedback outcome diagnostics / CSV trace surface）** 是 M3.5
-  state surface 的 outcome trace 對應，**不新增玩法、不改公式、
-  不改 save schema、不新增 CLI flag**。Runner 每次執行都會無條件
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.7（M3
+  reaction-loop integration checkpoint）** 把 M3.1–M3.6 的
+  closed loop 用 integration tests 釘住，**不新增任何新系統、
+  公式、artefact、save schema、CLI flag、玩法**。新檔
+  `tests/integration/m3_end_to_end_test.cpp` 三個 case：
+  (1) hand-built one-country / one-Bureaucracy-group state
+  跑一次 `monthly::tick_all_countries`，assert M3.2 react /
+  M3.3 country_feedback / M3.4 authority_pressure 三條 reverse-
+  direction counter 全動、四個 mutable field 全變動、兩個
+  trace vector 各拿到一行且 post-mutation 值與 live state
+  一致；(2) 同一個 hand-built state 走 `runner::run_state` 31
+  天（跨一次 month boundary），assert 八個 artefact 全部產出
+  且三個 M3 檔有 data row（補上 canonical scenario integration
+  測試僅覆蓋 header-only path 的缺口）；(3) 兩個 byte-identical
+  hand-built state 兩次跑出 byte-identical 八 artefact，把
+  M1.17 / M2.22 determinism contract 延伸到 M3-mutation path。
+  新檔 `docs/milestone-3-checkpoint.md` 記錄目前 dataflow、
+  八 artefact、未來 sub-milestone 必須保留的 invariants、
+  以及刻意延後的 deferred items（events、AI、UI / REPL / CLI
+  surface、atomic `end_tick` writes、M3 close-out 等）。
+  **M3 仍在 in progress** ── 沒有 `docs/milestone-3-result.md`、
+  沒有「M3 closed」字樣、沒有 M4。**M3.7 不做** 新系統 / 新
+  公式 / 新 artefact / save schema bump（仍 v11）/ 新 state
+  field / 新 `InterestGroupKind` / 新 `PlayerCommandKind` /
+  events / interest group 直接寫 log / AI / UI / REPL / CLI
+  surface / command gate formula change / command-gate
+  diagnostic surface / runner CLI flag / atomic `end_tick`
+  writes。3 個新 integration doctest cases（共 744）。
+  **M3.6（InterestGroup feedback outcome diagnostics / CSV
+  trace surface）** 是 M3.5 state surface 的 outcome trace
+  對應，**不新增玩法、不改公式、不改 save schema、不新增 CLI
+  flag**。Runner 每次執行都會無條件
   輸出兩個新檔案：`interest_group_country_feedback.csv`（M3.3
   outcome trace）與 `interest_group_authority_pressure.csv`（M3.4
   outcome trace），各 10 欄。Cadence 是「每次真實 mutation 一行」

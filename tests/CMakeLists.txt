@@ -53,6 +53,7 @@ add_executable(leviathan_tests
     integration/m0_end_to_end_test.cpp
     integration/m1_end_to_end_test.cpp
     integration/m2_end_to_end_test.cpp
+    integration/m3_end_to_end_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE
