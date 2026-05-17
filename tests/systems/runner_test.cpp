@@ -3113,6 +3113,52 @@ TEST_CASE("run: canonical scenario carries the M4.6 minimal CSS in map.html") {
     CHECK(svg.find("background-color") == std::string::npos);
 }
 
+TEST_CASE("run: canonical scenario emits M4.7 legend listing GER / FRA / JPN in map.html") {
+    // M4.7 adds a static <ul class="legend"> after the inline
+    // SVG. Pin canonical content (id_code + name + per-owner
+    // swatch colour) so a future fixture / palette edit fails
+    // this gate loudly. provinces.svg must remain legend-free.
+    TempDir td("leviathan_runner_m47_canonical_legend");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string html = read_file(td.path / "map.html");
+
+    // Legend element + one <li> per canonical country, with
+    // id_code, name, and a swatch fill matching the palette
+    // entry for owner index i.
+    CHECK(html.find("<ul class=\"legend\">") != std::string::npos);
+    CHECK(html.find("data-owner=\"0\"")      != std::string::npos);
+    CHECK(html.find("data-owner=\"1\"")      != std::string::npos);
+    CHECK(html.find("data-owner=\"2\"")      != std::string::npos);
+    // Canonical fixtures: name="Germany" / "France" / "Japan"
+    // (display_name is "French Republic" / "Empire of Japan"
+    // for those two, but per spec the legend renders name).
+    CHECK(html.find("GER &mdash; Germany") != std::string::npos);
+    CHECK(html.find("FRA &mdash; France")  != std::string::npos);
+    CHECK(html.find("JPN &mdash; Japan")   != std::string::npos);
+
+    namespace svgx = leviathan::systems::svg_export;
+    for (int i = 0; i < 3; ++i) {
+        const std::string fill =
+            std::string("fill=\"") +
+            std::string(svgx::kOwnerPalette[static_cast<std::size_t>(i)]) +
+            "\"";
+        CHECK(html.find(fill) != std::string::npos);
+    }
+
+    // The standalone SVG stays legend-free.
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find("<ul")     == std::string::npos);
+    CHECK(svg.find("legend")  == std::string::npos);
+    CHECK(svg.find("&mdash;") == std::string::npos);
+}
+
 TEST_CASE("run: map.html preserves byte-identical determinism on same seed") {
     TempDir td_a("leviathan_runner_m45_det_a");
     TempDir td_b("leviathan_runner_m45_det_b");

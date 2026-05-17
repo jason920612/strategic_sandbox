@@ -217,10 +217,50 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.6（HTML
-  viewer minimal CSS skeleton）** 在 M4.5 的 HTML wrapper
-  裡加入最小可能的 inline `<style>` block，三條 CSS
-  selector：`body { margin: 0; padding: 20px; background-color:
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.7（HTML
+  legend skeleton）** 在 `map.html` 內聯 SVG 之後加入靜態
+  `<ul class="legend">`，讓觀看者能解讀哪個 palette 顏色
+  對應哪個國家。每個 `<li data-owner="N">` 對應
+  `state.countries[i]`（vector order），內容是一個 16×16 的
+  inline SVG 色塊（顏色取自
+  `color_for_owner(CountryId{i})`）加上 `"id_code &mdash;
+  name"` 文字。色塊用 inline SVG（而非帶 `background-color`
+  的 HTML 元素）保留了 M4.6「個別元素不得有 inline
+  `style="..."`」這條 invariant ── `<circle>` 上的 `fill`
+  是 SVG presentation attribute，不是 HTML inline style。
+  M4.6 既有的三條 CSS rule 加上 M4.7 新增的三條
+  （`.legend`、`.legend li`、`.legend .swatch`），只做版面
+  排版（去掉預設 bullet、`max-width: 1000px` 置中、flex
+  排版讓色塊與文字並排、固定色塊大小）。Legend 文字透過 M4.4
+  的 `xml_text_escape` helper 跑 XML-text escape。空的
+  `state.countries` 仍輸出空 `<ul>`（沿用 always-present-file
+  契約）。**`provinces.svg` bytes 不變** ── legend 只存在
+  HTML wrapper 裡，standalone-SVG 路徑保持 CSS-free、
+  legend-free，給下游消費者（SVG-to-PNG pipeline、vector
+  tool）。所有 M4.5 / M4.6 的 not 都保留：沒有 JavaScript /
+  沒有 `<script>` / 沒有 `<link>` / 沒有 inline event
+  attribute / 沒有個別元素的 inline `style="..."` / 沒有
+  `<meta name="viewport">` / 沒有 CSS animation /
+  transition / media query / `@import` / `@font-face`。M4.4
+  `<text>` 自己不帶 font-family / font-size 的契約也保留。
+  **Artefact 數量不變（仍 10）；save 格式不變（仍 v12）**；
+  M1.17 / M2.22 / M3.7 byte-identical determinism contract
+  因 same state → same legend bytes → same map.html bytes
+  自然繼續成立。9 個新 doctest cases（8 svg_export + 1
+  runner；共 819）。**M4 in progress.** **M4.7 不做**
+  JavaScript / `<script>` / external stylesheet `<link>` /
+  inline event attribute / inline `style="..."` /
+  `<meta name="viewport">` / CSS animation / transition /
+  media query / `@import` / `@font-face` / click handler /
+  clickable UI / hover / tooltip / viewer 寫回 state /
+  `<text>` 自己的 font-family / font-size / ownership
+  dynamics / 鄰接 edge / terrain / events / AI / command
+  integration / 新 `PlayerCommandKind` / runner CLI flag /
+  save schema bump / 新 state field / 新 gameplay / atomic
+  `end_tick` / 動 `provinces.svg` bytes。
+  **M4.6（HTML viewer minimal CSS skeleton）** 在 M4.5 的
+  HTML wrapper 裡加入最小可能的 inline `<style>` block，
+  三條 CSS selector：`body { margin: 0; padding: 20px; background-color:
   #f0f0f0; }`（中性灰背景 + 少量 padding，讓白色 SVG 卡
   片浮起來）、`svg { display: block; margin: 0 auto;
   border: 1px solid #888; background-color: #ffffff; }`

@@ -1,8 +1,10 @@
-// M4.2 SvgExport unit tests.
+// SvgExport unit tests (M4.2 ... M4.7).
 //
-// render_provinces is the pure render path (no I/O); write_provinces
-// is the render + write path. Both are deterministic — same state →
-// byte-identical output every call.
+// render_provinces is the pure SVG render path (no I/O);
+// write_provinces is the render + write path. render_map_html /
+// write_map_html are their HTML-wrapped siblings (M4.5 onwards).
+// All four are deterministic — same state → byte-identical output
+// every call.
 
 #include <doctest/doctest.h>
 
@@ -19,6 +21,7 @@
 
 namespace fs = std::filesystem;
 using leviathan::core::CountryId;
+using leviathan::core::CountryState;
 using leviathan::core::GameState;
 using leviathan::core::ProvinceNode;
 namespace svg = leviathan::systems::svg_export;
@@ -55,6 +58,15 @@ ProvinceNode node(const std::string& id_code, int owner_idx,
     p.x       = x;
     p.y       = y;
     return p;
+}
+
+CountryState country(int idx, const std::string& id_code,
+                     const std::string& name) {
+    CountryState c;
+    c.id      = CountryId{idx};
+    c.id_code = id_code;
+    c.name    = name;
+    return c;
 }
 
 }  // namespace
@@ -526,4 +538,128 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.6 CSS") {
     CHECK(svg_text.find("<style")            == std::string::npos);
     CHECK(svg_text.find("font-family")       == std::string::npos);
     CHECK(svg_text.find("background-color")  == std::string::npos);
+}
+
+// ---------------------------------------------------------------------
+// M4.7 - static legend in the HTML viewer
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_map_html: emits a <ul class=\"legend\"> after the inline SVG") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    const std::string html = svg::render_map_html(state);
+
+    const auto svg_close = html.find("</svg>");
+    const auto ul_open   = html.find("<ul class=\"legend\">");
+    const auto ul_close  = html.find("</ul>");
+    REQUIRE(svg_close != std::string::npos);
+    REQUIRE(ul_open   != std::string::npos);
+    REQUIRE(ul_close  != std::string::npos);
+
+    // <ul> appears AFTER the inline SVG and before </body>.
+    CHECK(svg_close < ul_open);
+    CHECK(ul_open   < ul_close);
+    CHECK(ul_close  < html.find("</body>"));
+}
+
+TEST_CASE("render_map_html: empty state.countries → empty <ul class=\"legend\">") {
+    // Always-present-file contract: the legend element exists
+    // even when there's nothing to enumerate. Mirrors the
+    // empty-state header-only <svg> behaviour.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("<ul class=\"legend\">") != std::string::npos);
+    CHECK(html.find("</ul>")                 != std::string::npos);
+    CHECK(html.find("<li ")                  == std::string::npos);
+}
+
+TEST_CASE("render_map_html: one country → one <li> with id_code + name + swatch") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    const std::string html = svg::render_map_html(state);
+
+    // The <li> carries the canonical id_code + name text and a
+    // matching-coloured swatch.
+    CHECK(html.find("data-owner=\"0\"") != std::string::npos);
+    CHECK(html.find("GER &mdash; Germany") != std::string::npos);
+    const std::string expected_swatch_fill =
+        std::string("fill=\"") +
+        std::string(svg::kOwnerPalette[0]) + "\"";
+    CHECK(html.find(expected_swatch_fill) != std::string::npos);
+    // Swatch is a 16x16 inline SVG, not the main 1000x1000 one.
+    CHECK(html.find("class=\"swatch\"") != std::string::npos);
+    CHECK(html.find("viewBox=\"0 0 16 16\"") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: three countries → three <li>s in vector order") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.countries.push_back(country(1, "FRA", "France"));
+    state.countries.push_back(country(2, "JPN", "Japan"));
+    const std::string html = svg::render_map_html(state);
+
+    const auto ger_at = html.find("GER &mdash; Germany");
+    const auto fra_at = html.find("FRA &mdash; France");
+    const auto jpn_at = html.find("JPN &mdash; Japan");
+    REQUIRE(ger_at != std::string::npos);
+    REQUIRE(fra_at != std::string::npos);
+    REQUIRE(jpn_at != std::string::npos);
+    // Vector order preserved.
+    CHECK(ger_at < fra_at);
+    CHECK(fra_at < jpn_at);
+
+    // Each owner's palette colour appears at least once
+    // (swatches).
+    for (int i = 0; i < 3; ++i) {
+        const std::string fill =
+            std::string("fill=\"") +
+            std::string(svg::kOwnerPalette[static_cast<std::size_t>(i)]) +
+            "\"";
+        CHECK(html.find(fill) != std::string::npos);
+    }
+}
+
+TEST_CASE("render_map_html: legend text content is XML-text-escaped") {
+    // id_code / name are only required to be non-empty by the
+    // save layer; the renderer must escape `&`, `<`, `>` so
+    // strange country fixtures can't break the document.
+    GameState state;
+    state.countries.push_back(country(0, "X&Y", "A<B>C"));
+    const std::string html = svg::render_map_html(state);
+
+    CHECK(html.find(">X&amp;Y &mdash; A&lt;B&gt;C</li>")
+          != std::string::npos);
+    // Raw unescaped form must not appear inside a <li> body.
+    CHECK(html.find(">X&Y &mdash; A<B>C</li>") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: <style> block carries the M4.7 legend CSS rules") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find(".legend {")          != std::string::npos);
+    CHECK(html.find("list-style: none")   != std::string::npos);
+    CHECK(html.find(".legend li {")       != std::string::npos);
+    CHECK(html.find("display: flex")      != std::string::npos);
+    CHECK(html.find(".legend .swatch {")  != std::string::npos);
+    CHECK(html.find("width: 16px")        != std::string::npos);
+}
+
+TEST_CASE("render_map_html: legend is deterministic across repeat calls") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.countries.push_back(country(1, "FRA", "France & Co"));
+    CHECK(svg::render_map_html(state) == svg::render_map_html(state));
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.7 legend") {
+    // Legend lives only in the HTML wrapper. Standalone SVG
+    // path stays legend-free / CSS-free for downstream
+    // consumers.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("<ul")     == std::string::npos);
+    CHECK(svg_text.find("legend")  == std::string::npos);
+    CHECK(svg_text.find("&mdash;") == std::string::npos);
 }

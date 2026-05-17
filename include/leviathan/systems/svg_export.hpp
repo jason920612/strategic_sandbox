@@ -9,29 +9,32 @@
 // label per node immediately after the matching `<circle>`.
 // M4.5 added a minimal HTML5 wrapper around the same SVG body
 // so `provinces.svg` is also reachable as `map.html` for
-// browser-friendly viewing. M4.6 (this revision) adds the
-// smallest possible `<style>` block to the M4.5 wrapper —
-// three selectors that centre the SVG, give it a card-like
-// border on a neutral page background, and pick a sans-serif
-// font for the labels so they're more readable than the
-// browser's serif default. Future M4 sub-milestones (clickable
-// UI, legend, hover state, neighbour-adjacency lines, terrain,
-// etc.) will extend the renderer further.
+// browser-friendly viewing. M4.6 added the smallest possible
+// `<style>` block to the M4.5 wrapper — three selectors
+// (`body`, `svg`, `svg text`). M4.7 (this revision) adds a
+// static `<ul class="legend">` after the inline SVG so a
+// viewer can decode which palette colour belongs to which
+// country, plus three more CSS rules (`legend`, `legend li`,
+// `legend .swatch`) to lay it out. Future M4 sub-milestones
+// (clickable UI, hover state, neighbour-adjacency lines,
+// terrain, etc.) will extend the renderer further.
 //
-// What M4.6 deliberately does NOT do:
+// What M4.7 deliberately does NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer (`map.html` is a
-//     read-only render of `state.provinces`).
-//   * No legend / colour key inside the SVG or HTML.
+//     read-only render of `state.provinces` + `state.countries`).
+//   * No CSS animations / transitions / media queries /
+//     `@import` / `@font-face` — the M4.7 stylesheet is
+//     plain layout only.
 //   * No JavaScript / `<script>` (M4.5 constraint preserved).
 //   * No `<link>` to an external stylesheet (M4.5 constraint
-//     preserved; the M4.6 `<style>` block is inline only).
+//     preserved; the `<style>` block is inline only).
 //   * No inline event attributes (`onclick` / `onmouseover` /
 //     `onload` / ...) — M4.5 constraint preserved.
 //   * No inline `style="..."` attributes on individual
-//     elements — the M4.6 `<style>` block is the single
-//     CSS surface.
+//     elements — the `<style>` block is the single CSS
+//     surface (M4.6 constraint preserved).
 //   * No `<meta name="viewport">` — responsive sizing stays
 //     a future sub-milestone.
 //   * No per-province colour override.
@@ -46,18 +49,19 @@
 //     `RunnerOptions::map_html_path` (M4.5) as optional
 //     programmatic overrides.
 //   * No new save-format field (the renderer reads existing
-//     `state.provinces`; save format stays v12).
+//     `state.provinces` + `state.countries`; save format
+//     stays v12).
 //   * No change to `provinces.svg`'s bytes — the M4.5
 //     refactor extracted a shared `render_svg_root` helper
 //     so the standalone-SVG path is byte-identical with M4.4.
-//     M4.6 only touches the HTML wrapper (the M4.5 + M4.6
-//     `render_map_html` output); `provinces.svg` remains
-//     CSS-free standalone-SVG.
+//     M4.6 / M4.7 only touch the HTML wrapper;
+//     `provinces.svg` remains CSS-free, legend-free
+//     standalone-SVG.
 //   * No font-family / font-size / fill on `<text>` elements
 //     themselves (M4.4 contract preserved) — the only font
 //     change is the M4.6 CSS `svg text { font-family:
-//     sans-serif; }` rule, which only affects the HTML
-//     viewer, never the standalone SVG.
+//     sans-serif; }` rule plus the M4.7 `legend { ... }`
+//     rules, both of which only affect the HTML viewer.
 //
 // Output shape (M4.5):
 //   * `provinces.svg` (M4.2 unchanged on the wire):
@@ -70,25 +74,43 @@
 //           2. `<text x=... y=... text-anchor="middle">NAME</text>`
 //              with x = cx, y = cy + kLabelYOffset, and NAME
 //              the XML-text-escaped `ProvinceNode::name` (M4.4).
-//   * `map.html` (M4.5 new; M4.6 adds CSS):
+//   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
 //         `<head>` (`<meta charset="UTF-8">` + `<title>` +
-//         M4.6 `<style>` block).
-//       - The `<style>` block carries exactly three rules:
+//         `<style>` block).
+//       - The `<style>` block carries six rules:
 //         `body { margin: 0; padding: 20px;
-//                 background-color: #f0f0f0; }`
+//                 background-color: #f0f0f0; }`           (M4.6)
 //         `svg  { display: block; margin: 0 auto;
 //                 border: 1px solid #888;
-//                 background-color: #ffffff; }`
-//         `svg text { font-family: sans-serif; }`
-//         (centre the SVG card on a neutral page; give the
-//         SVG a card-like border + white fill so the
-//         coloured nodes pop; switch labels from the
-//         browser's default serif to sans-serif for
-//         readability.)
-//       - `<body>` contains the **exact same** `<svg>...</svg>`
-//         body as `provinces.svg`, but WITHOUT the XML prolog
-//         (which is invalid inside HTML).
+//                 background-color: #ffffff; }`           (M4.6)
+//         `svg text { font-family: sans-serif; }`         (M4.6)
+//         `.legend { list-style: none; padding: 0;
+//                    margin: 20px auto; max-width: 1000px;
+//                    font-family: sans-serif; }`          (M4.7)
+//         `.legend li { display: flex; align-items: center;
+//                       margin: 4px 0; }`                 (M4.7)
+//         `.legend .swatch { width: 16px; height: 16px;
+//                            margin-right: 8px;
+//                            flex-shrink: 0; }`           (M4.7)
+//       - `<body>` contains:
+//           1. The **exact same** `<svg>...</svg>` body as
+//              `provinces.svg`, but WITHOUT the XML prolog
+//              (which is invalid inside HTML).
+//           2. (M4.7) A `<ul class="legend">` immediately
+//              after the inline SVG. One `<li
+//              data-owner="N">` per entry in
+//              `state.countries`, in vector order. Each
+//              `<li>` carries a tiny 16x16 inline SVG
+//              swatch (`<svg class="swatch"
+//              viewBox="0 0 16 16" width="16" height="16">
+//              <circle cx="8" cy="8" r="8" fill="..."/>
+//              </svg>`) coloured by
+//              `color_for_owner(CountryId{i})` and the
+//              text `"<id_code> &mdash; <name>"` (both
+//              XML-text-escaped). Empty `state.countries`
+//              produces an empty `<ul>` (always-present
+//              file contract preserved).
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human

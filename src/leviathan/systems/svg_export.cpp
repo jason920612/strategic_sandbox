@@ -192,15 +192,18 @@ std::string render_map_html(const core::GameState& state) {
     // Minimal HTML5 wrapper around the inline SVG body. M4.5
     // shipped the wrapper with NO CSS / NO JS / NO <style> /
     // NO <script> / NO <link> / NO inline event attributes.
-    // M4.6 adds the smallest possible `<style>` block — three
+    // M4.6 added the smallest possible `<style>` block — three
     // selectors that centre the SVG, give it a card-like
     // border on a neutral page background, and pick a
-    // sans-serif font for the labels so they're more
-    // readable than the browser's serif default. All other
-    // M4.5 nots still hold: no <script>, no <link>, no
-    // JavaScript, no inline event attributes, no
-    // <meta name="viewport">. The full ruleset is documented
-    // in `svg_export.hpp` and pinned by
+    // sans-serif font for the labels. M4.7 (this revision)
+    // adds a static `<ul class="legend">` after the inline
+    // SVG so a viewer can decode which palette colour belongs
+    // to which country, plus three more CSS rules to lay the
+    // legend out. All other M4.5 / M4.6 nots still hold: no
+    // <script>, no <link>, no JavaScript, no inline event
+    // attributes, no inline style="..." per element, no
+    // <meta name="viewport">. Full ruleset documented in
+    // `svg_export.hpp` and pinned by
     // tests/systems/svg_export_test.cpp.
     std::ostringstream out;
     out << "<!DOCTYPE html>\n";
@@ -215,10 +218,42 @@ std::string render_map_html(const core::GameState& state) {
            " border: 1px solid #888;"
            " background-color: #ffffff; }\n";
     out << "  svg text { font-family: sans-serif; }\n";
+    out << "  .legend { list-style: none; padding: 0;"
+           " margin: 20px auto; max-width: 1000px;"
+           " font-family: sans-serif; }\n";
+    out << "  .legend li { display: flex; align-items: center;"
+           " margin: 4px 0; }\n";
+    out << "  .legend .swatch { width: 16px; height: 16px;"
+           " margin-right: 8px; flex-shrink: 0; }\n";
     out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";
     out << render_svg_root(state);
+
+    // M4.7 legend. One <li> per country, in vector order.
+    // Each <li> carries a tiny 16x16 inline SVG swatch
+    // coloured by `color_for_owner(CountryId{i})` so the
+    // legend matches what render_svg_root paints on each
+    // node. Empty state.countries → empty <ul> (kept for
+    // consistency with the always-present-file contract;
+    // mirrors the empty-state header-only <svg> behaviour).
+    out << "<ul class=\"legend\">\n";
+    for (std::size_t i = 0; i < state.countries.size(); ++i) {
+        const auto& c = state.countries[i];
+        const core::CountryId owner{static_cast<int>(i)};
+        const std::string_view fill = color_for_owner(owner);
+        out << "  <li data-owner=\"" << static_cast<int>(i) << "\">"
+               "<svg class=\"swatch\" viewBox=\"0 0 16 16\""
+               " width=\"16\" height=\"16\">"
+               "<circle cx=\"8\" cy=\"8\" r=\"8\" fill=\""
+            << fill
+            << "\"/></svg>"
+            << xml_text_escape(c.id_code) << " &mdash; "
+            << xml_text_escape(c.name)
+            << "</li>\n";
+    }
+    out << "</ul>\n";
+
     out << "</body>\n";
     out << "</html>\n";
     return out.str();
