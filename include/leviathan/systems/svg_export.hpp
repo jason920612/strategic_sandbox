@@ -10,16 +10,25 @@
 // M4.5 added a minimal HTML5 wrapper around the same SVG body
 // so `provinces.svg` is also reachable as `map.html` for
 // browser-friendly viewing. M4.6 added the smallest possible
-// `<style>` block to the M4.5 wrapper — three selectors
-// (`body`, `svg`, `svg text`). M4.7 (this revision) adds a
-// static `<ul class="legend">` after the inline SVG so a
-// viewer can decode which palette colour belongs to which
-// country, plus three more CSS rules (`legend`, `legend li`,
-// `legend .swatch`) to lay it out. Future M4 sub-milestones
-// (clickable UI, hover state, neighbour-adjacency lines,
-// terrain, etc.) will extend the renderer further.
+// `<style>` block to the M4.5 wrapper (three selectors).
+// M4.7 added a static `<ul class="legend">` after the inline
+// SVG (three more CSS selectors for layout). M4.8 (this
+// revision) widens the identity surface inside the SVG body:
+// every `<circle>` and every `<text>` now carries the same
+// four read-only `data-*` attributes (`data-id`,
+// `data-owner`, `data-owner-code`, `data-name`) so a future
+// clickable UI / DOM script can address either element
+// uniformly without DOM-walking sibling nodes. This is the
+// first M4.x sub-milestone since M4.4 that intentionally
+// changes the bytes of `provinces.svg` — the change is purely
+// additive (new attributes on existing elements; no rendered
+// pixels move), so downstream consumers (SVG-to-PNG
+// pipelines, vector tools) see no visual difference. Future
+// M4 sub-milestones (clickable UI, hover state,
+// neighbour-adjacency lines, terrain, etc.) will extend the
+// renderer further.
 //
-// What M4.7 deliberately does NOT do:
+// What M4.8 deliberately does NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer (`map.html` is a
@@ -51,12 +60,18 @@
 //   * No new save-format field (the renderer reads existing
 //     `state.provinces` + `state.countries`; save format
 //     stays v12).
-//   * No change to `provinces.svg`'s bytes — the M4.5
-//     refactor extracted a shared `render_svg_root` helper
-//     so the standalone-SVG path is byte-identical with M4.4.
-//     M4.6 / M4.7 only touch the HTML wrapper;
-//     `provinces.svg` remains CSS-free, legend-free
-//     standalone-SVG.
+//   * `provinces.svg` bytes DID change at M4.8 — the new
+//     `data-owner-code` / `data-name` attributes appear on
+//     every `<circle>` and the four data-* attributes appear
+//     on every `<text>`. This is the first M4.x sub-milestone
+//     since M4.4 that deliberately edits the standalone SVG
+//     body. The change is **additive only** (no removed
+//     attributes, no rendered-pixel movement); SVG-to-PNG
+//     pipelines and vector tools see identical visuals.
+//     M4.5 / M4.6 / M4.7's "no change to provinces.svg"
+//     guarantee no longer applies; the byte-identical
+//     determinism contract (same state → same bytes) is
+//     unchanged.
 //   * No font-family / font-size / fill on `<text>` elements
 //     themselves (M4.4 contract preserved) — the only font
 //     change is the M4.6 CSS `svg text { font-family:
@@ -64,16 +79,33 @@
 //     rules, both of which only affect the HTML viewer.
 //
 // Output shape (M4.5):
-//   * `provinces.svg` (M4.2 unchanged on the wire):
+//   * `provinces.svg`:
 //       - `<?xml version="1.0" encoding="UTF-8"?>` prolog.
 //       - SVG 1.1 root with viewBox `0 0 1000 1000`.
 //       - For each ProvinceNode, two paired elements emitted
 //         in `state.provinces` order:
 //           1. `<circle cx=... cy=... r="8" fill=... data-id=...
-//              data-owner=.../>` (M4.2 + M4.3 shape)
-//           2. `<text x=... y=... text-anchor="middle">NAME</text>`
-//              with x = cx, y = cy + kLabelYOffset, and NAME
-//              the XML-text-escaped `ProvinceNode::name` (M4.4).
+//              data-owner=... data-owner-code=... data-name=.../>`
+//              (M4.2 + M4.3 + M4.8 shape).
+//           2. `<text x=... y=... text-anchor="middle"
+//              data-id=... data-owner=... data-owner-code=...
+//              data-name=...>NAME</text>` with x = cx, y =
+//              cy + kLabelYOffset, and NAME the XML-text-
+//              escaped `ProvinceNode::name` (M4.4 + M4.8
+//              shape).
+//         M4.8 widens the identity surface uniformly: both
+//         `<circle>` and `<text>` carry the same four
+//         `data-*` attributes (`data-id`, `data-owner`,
+//         `data-owner-code`, `data-name`) so a future
+//         clickable UI / DOM script can address either
+//         element without DOM-walking siblings.
+//         `data-owner-code` resolves to
+//         `state.countries[owner.value()].id_code` when the
+//         owner index is valid, or the empty string
+//         otherwise (defense-in-depth for hand-built states;
+//         save / scenario layers reject invalid owners at
+//         load time). All four data-* values are
+//         XML-attribute-escaped (M4.2 helper).
 //   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
 //         `<head>` (`<meta charset="UTF-8">` + `<title>` +

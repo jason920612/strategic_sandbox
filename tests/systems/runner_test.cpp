@@ -3159,6 +3159,41 @@ TEST_CASE("run: canonical scenario emits M4.7 legend listing GER / FRA / JPN in 
     CHECK(svg.find("&mdash;") == std::string::npos);
 }
 
+TEST_CASE("run: canonical scenario carries M4.8 data-* attrs on both provinces.svg AND map.html") {
+    // M4.8 widens the identity surface inside the SVG body —
+    // both <circle> and <text> now carry data-id /
+    // data-owner / data-owner-code / data-name. The change
+    // happens inside `render_svg_root`, which both
+    // `render_provinces` (→ provinces.svg) and
+    // `render_map_html` (→ map.html) share, so the new
+    // attrs land in BOTH artefacts.
+    TempDir td("leviathan_runner_m48_canonical_data_attrs");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string svg  = read_file(td.path / "provinces.svg");
+    const std::string html = read_file(td.path / "map.html");
+
+    // Canonical fixtures: berlin owned by GER (index 0),
+    // paris owned by FRA (index 1), tokyo owned by JPN (index 2).
+    for (const std::string& body : {svg, html}) {
+        CHECK(body.find("data-id=\"berlin\"")           != std::string::npos);
+        CHECK(body.find("data-id=\"paris\"")            != std::string::npos);
+        CHECK(body.find("data-id=\"tokyo\"")            != std::string::npos);
+        CHECK(body.find("data-owner-code=\"GER\"")      != std::string::npos);
+        CHECK(body.find("data-owner-code=\"FRA\"")      != std::string::npos);
+        CHECK(body.find("data-owner-code=\"JPN\"")      != std::string::npos);
+        CHECK(body.find("data-name=\"Berlin\"")         != std::string::npos);
+        CHECK(body.find("data-name=\"Paris\"")          != std::string::npos);
+        CHECK(body.find("data-name=\"Tokyo\"")          != std::string::npos);
+    }
+}
+
 TEST_CASE("run: map.html preserves byte-identical determinism on same seed") {
     TempDir td_a("leviathan_runner_m45_det_a");
     TempDir td_b("leviathan_runner_m45_det_b");

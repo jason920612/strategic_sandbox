@@ -361,9 +361,19 @@ TEST_CASE("render_provinces: empty name still emits a (visually empty) <text> el
     state.provinces.push_back(p);
     const std::string svg_text = svg::render_provinces(state);
 
-    // The empty <text> body appears as "><...></text>" form.
-    CHECK(svg_text.find("text-anchor=\"middle\"></text>") !=
-          std::string::npos);
+    // The empty <text> body is observable as `data-name=""` on
+    // the <text> element (M4.8 widened the identity surface so
+    // both <circle> and <text> now carry data-name explicitly),
+    // and as an immediate `></text>` close-tag with no body
+    // characters between them. Use the data-name="" attribute as
+    // the stable anchor since M4.4's "text-anchor=\"middle\">"
+    // is no longer immediately followed by `</text>` after the
+    // M4.8 attribute additions.
+    CHECK(svg_text.find(" data-name=\"\"")     != std::string::npos);
+    CHECK(svg_text.find("\"></text>")          != std::string::npos);
+    // No literal "ghost" appears as a <text> body — only as
+    // attribute values (data-id="ghost").
+    CHECK(svg_text.find(">ghost</text>") == std::string::npos);
 }
 
 TEST_CASE("render_provinces: label rendering is deterministic across repeat calls") {
@@ -662,4 +672,141 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.7 legend") 
     CHECK(svg_text.find("<ul")     == std::string::npos);
     CHECK(svg_text.find("legend")  == std::string::npos);
     CHECK(svg_text.find("&mdash;") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------
+// M4.8 - widened identity surface (data-* attributes on circle + text)
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_provinces: <circle> carries M4.8 data-name and data-owner-code attrs") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("data-name=\"Berlin\"")    != std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"GER\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: <text> carries the same four data-* attrs as <circle>") {
+    // M4.8 makes the identity surface uniform across the
+    // sibling <circle>/<text> pair. Both should carry the same
+    // four data-* attributes for a given node.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Locate the <text> opening tag, then check each attribute
+    // appears inside it.
+    const auto text_open = svg_text.find("<text ");
+    const auto text_close_of_open = svg_text.find(">", text_open);
+    REQUIRE(text_open           != std::string::npos);
+    REQUIRE(text_close_of_open  != std::string::npos);
+    const std::string text_tag =
+        svg_text.substr(text_open, text_close_of_open - text_open + 1);
+
+    CHECK(text_tag.find("data-id=\"berlin\"")        != std::string::npos);
+    CHECK(text_tag.find("data-owner=\"0\"")          != std::string::npos);
+    CHECK(text_tag.find("data-owner-code=\"GER\"")   != std::string::npos);
+    CHECK(text_tag.find("data-name=\"Berlin\"")      != std::string::npos);
+}
+
+TEST_CASE("render_provinces: data-* attributes appear twice per node (circle + text)") {
+    // Each canonical attribute value should show up at least
+    // twice for a single node (once on the <circle>, once on
+    // the <text>).
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = svg_text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    CHECK(count_occurrences("data-id=\"berlin\"")        == 2u);
+    CHECK(count_occurrences("data-owner=\"0\"")          == 2u);
+    CHECK(count_occurrences("data-owner-code=\"GER\"")   == 2u);
+    CHECK(count_occurrences("data-name=\"Berlin\"")      == 2u);
+}
+
+TEST_CASE("render_provinces: data-name + data-owner-code are XML-attribute-escaped") {
+    // Same escape contract as data-id (M4.2 review fix). Use
+    // a country id_code and a province name with the five
+    // XML metacharacters; assert both attributes carry the
+    // escaped form, never the raw form.
+    GameState state;
+    state.countries.push_back(country(0, "X&Y\"Z<W>", "Country"));
+    state.provinces.push_back(node("p", 0, 0.5, 0.5, "A&B<C>\"D'E"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-name=\"A&amp;B&lt;C&gt;&quot;D&apos;E\"")
+          != std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"X&amp;Y&quot;Z&lt;W&gt;\"")
+          != std::string::npos);
+
+    // The raw form must NOT appear as a data-* attribute body.
+    CHECK(svg_text.find("data-name=\"A&B<")        == std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"X&Y")   == std::string::npos);
+}
+
+TEST_CASE("render_provinces: invalid owner → empty data-owner-code (defensive)") {
+    // Hand-built state with invalid CountryId (default -1).
+    // The save / scenario layers reject this in production but
+    // the renderer stays total.
+    GameState state;
+    ProvinceNode p;
+    p.id_code = "ghost";
+    p.name    = "Ghost";
+    p.owner   = CountryId::invalid();  // -1
+    p.x       = 0.5;
+    p.y       = 0.5;
+    state.provinces.push_back(p);
+    const std::string svg_text = svg::render_provinces(state);
+
+    // The attribute is still emitted (uniform identity surface)
+    // but with an empty value.
+    CHECK(svg_text.find("data-owner-code=\"\"") != std::string::npos);
+    // data-owner still carries the raw integer ("-1").
+    CHECK(svg_text.find("data-owner=\"-1\"")    != std::string::npos);
+    // data-name still carries the name.
+    CHECK(svg_text.find("data-name=\"Ghost\"")  != std::string::npos);
+}
+
+TEST_CASE("render_provinces: out-of-range owner → empty data-owner-code (defensive)") {
+    // Owner index 5 with only 1 country loaded — out of range.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("orphan", 5, 0.5, 0.5, "Orphan"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner=\"5\"")     != std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: data-owner-code matches state.countries[owner].id_code") {
+    // Three nodes owned by three different countries; each
+    // node's data-owner-code matches the corresponding
+    // country's id_code, not the country's name.
+    GameState state;
+    state.countries.push_back(country(0, "AAA", "Alpha Land"));
+    state.countries.push_back(country(1, "BBB", "Bravo Land"));
+    state.countries.push_back(country(2, "CCC", "Charlie Land"));
+    state.provinces.push_back(node("p0", 0, 0.1, 0.1, "Node0"));
+    state.provinces.push_back(node("p1", 1, 0.2, 0.2, "Node1"));
+    state.provinces.push_back(node("p2", 2, 0.3, 0.3, "Node2"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner-code=\"AAA\"") != std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"BBB\"") != std::string::npos);
+    CHECK(svg_text.find("data-owner-code=\"CCC\"") != std::string::npos);
+    // Country `name` should NOT appear inside data-owner-code.
+    CHECK(svg_text.find("data-owner-code=\"Alpha Land\"") ==
+          std::string::npos);
 }
