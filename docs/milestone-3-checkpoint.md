@@ -1,6 +1,12 @@
 # Milestone 3 Checkpoint
 
-Status: in progress
+> **Historical checkpoint.** M3 is now closed; see
+> [`milestone-3-result.md`](milestone-3-result.md) for the
+> final report. This file is preserved for archaeology — it
+> captures M3 state at the M3.7 checkpoint, before M3.8
+> canonical fixtures and the M3.9 close-out landed.
+
+Status: in progress (at M3.7 — historical)
 
 Companion notes for `feature/m3-07-reaction-loop-integration-checkpoint`.
 
