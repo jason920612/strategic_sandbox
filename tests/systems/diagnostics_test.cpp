@@ -1129,3 +1129,77 @@ TEST_CASE("write_authority_pressure_csv_row: byte-identical for the same row twi
     dg::write_authority_pressure_csv_row(b, row);
     CHECK(a.str() == b.str());
 }
+
+// ---------------------------------------------------------------------
+// M3.10 - per-system formula-trace CSV writer for M3.9 military_pressure
+// ---------------------------------------------------------------------
+
+TEST_CASE("write_military_pressure_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_military_pressure_csv_header(out);
+    CHECK(out.str() ==
+          "date,country_id,country_id_code,matched_groups,"
+          "weight_sum,weighted_military_loyalty,"
+          "target_military_loyalty,"
+          "military_loyalty_before,"
+          "military_loyalty_after,"
+          "military_loyalty_delta\n");
+}
+
+TEST_CASE("write_military_pressure_csv_row: emits a well-formed line with ten fields") {
+    ig::MilitaryPressureTraceRow row;
+    row.date                       = GameDate(1930, 2, 1);
+    row.country_id                 = 0;
+    row.country_id_code            = "GER";
+    row.matched_groups             = 1;
+    row.weight_sum                 = 0.6;
+    row.weighted_military_loyalty  = 0.9;
+    row.target_military_loyalty    = 0.9;
+    row.military_loyalty_before    = 0.4;
+    row.military_loyalty_after     = 0.405;
+    row.military_loyalty_delta     = 0.005;
+
+    std::ostringstream out;
+    dg::write_military_pressure_csv_row(out, row);
+    const std::string line = out.str();
+    // First four columns prefixed verbatim.
+    const std::string expected_prefix = "1930-02-01,0,GER,1,";
+    CHECK(line.substr(0, expected_prefix.size()) == expected_prefix);
+    // Ten columns → nine separators.
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 9);
+    CHECK(line.back() == '\n');
+    // Scientific notation present.
+    CHECK(line.find("e-") != std::string::npos);
+}
+
+TEST_CASE("write_military_pressure_csv_row: country_id_code with comma is quoted") {
+    ig::MilitaryPressureTraceRow row;
+    row.date            = GameDate(1930, 2, 1);
+    row.country_id      = 0;
+    row.country_id_code = "X, Y";
+    row.matched_groups  = 1;
+    row.weight_sum      = 0.5;
+    std::ostringstream out;
+    dg::write_military_pressure_csv_row(out, row);
+    CHECK(out.str().find("\"X, Y\"") != std::string::npos);
+}
+
+TEST_CASE("write_military_pressure_csv_row: byte-identical for the same row twice") {
+    ig::MilitaryPressureTraceRow row;
+    row.date                       = GameDate(1930, 5, 1);
+    row.country_id                 = 2;
+    row.country_id_code            = "FRA";
+    row.matched_groups             = 3;
+    row.weight_sum                 = 1.1;
+    row.weighted_military_loyalty  = 0.62;
+    row.target_military_loyalty    = 0.62;
+    row.military_loyalty_before    = 0.50;
+    row.military_loyalty_after     = 0.5012;
+    row.military_loyalty_delta     = 0.0012;
+    std::ostringstream a, b;
+    dg::write_military_pressure_csv_row(a, row);
+    dg::write_military_pressure_csv_row(b, row);
+    CHECK(a.str() == b.str());
+}

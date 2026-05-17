@@ -297,7 +297,6 @@ Total: 766 doctest cases on this branch (+18 vs main's 748).
   faction with high radicalism).
 - Influence drift driven by event / policy outcomes.
 
-Per the M-pacing rule (see [[feedback_pr_workflow]]), the
-next sub-milestone starts only when the reviewer's approval
-message names a direction or defaults to the top of this
-list.
+Per the M-pacing rule, the next sub-milestone starts only
+when the reviewer's approval message names a direction or
+defaults to the top of this list.

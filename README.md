@@ -11,8 +11,55 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.9 — InterestGroup-
-  derived `military_loyalty` pressure (sibling of M3.4).**
+- Latest shipped sub-milestone: **M3.10 — InterestGroup
+  `military_pressure` outcome CSV surface.** Retrofits the
+  M3.6 trace-CSV pattern onto M3.9. New 9th unconditional
+  runner artefact `interest_group_military_pressure.csv`
+  with 10 fixed columns mirroring the M3.6
+  authority_pressure CSV shape:
+  `date,country_id,country_id_code,matched_groups,
+  weight_sum,weighted_military_loyalty,
+  target_military_loyalty,military_loyalty_before,
+  military_loyalty_after,military_loyalty_delta`. Cadence
+  identical to the M3.6 pair: one row per actually-
+  mutated country per monthly pipeline tick. Skipped
+  countries produce no row; preflight failure produces
+  no partial rows. Canonical scenarios author zero
+  interest groups so the new file is header-only in
+  every default scenario. New `diagnostics::write_military_pressure_csv_header`
+  + `write_military_pressure_csv_row` writer pair
+  (reuses `csv_escape` + `std::scientific` +
+  `setprecision(17)`). `RunnerOptions` gains optional
+  `interest_group_military_pressure_csv_path` override
+  (no CLI flag; default
+  `<output_dir>/interest_group_military_pressure.csv`).
+  `RunOutcome` gains path + row counter.
+  `TickController` gains a buffer that `step_one_day`
+  drains from `MonthlyOutcome::interest_group_military_pressure_trace_rows`.
+  `end_tick` writes the new file as the 9th artefact
+  after `interest_group_authority_pressure.csv`.
+  `main()` prints two new summary lines.
+  Determinism contract grows 8 → 9 artefacts (M1.17 /
+  M2.22 / M3.7 byte-identical tests all extended).
+  **M2.9 pre-`end_tick` no-artefact contract**
+  automatically extends to the 9th file because
+  `end_tick` is still the only function that writes —
+  `runner_test.cpp`'s M2.9 helper grew the new path
+  field too. Drive-by: stripped the lone
+  `[[feedback_pr_workflow]]` wiki-link from
+  `docs/m3-9-interest-group-military-pressure.md`
+  (PR #58 reviewer non-blocker — `[[...]]` is a Claude
+  memory-file convention, not a repo-doc convention).
+  **No new gameplay, no save schema bump (still v11),
+  no formula change to any M3.X system, no new CLI
+  flag, no new `InterestGroupKind` variants, no new
+  `PlayerCommandKind`, no events / AI / UI / REPL, no
+  command-gate integration, no `intelligence_capability`
+  / `media_control` sibling channel, no atomic
+  `end_tick` writes.** 10 new doctest cases. Doctest
+  count 766 → 776.
+- Previously shipped: **M3.9 — InterestGroup-derived
+  `military_loyalty` pressure (sibling of M3.4).**
   Adds the second authority-layer pressure channel:
   Military-kind interest groups' influence-weighted loyalty
   drifts each country's `government_authority.military_loyalty`
@@ -319,21 +366,19 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.9): **M3.10** — open.
-  Natural candidates after the second authority sibling
-  shipped: (a) per-system CSV file for `military_pressure`
-  — `interest_group_military_pressure.csv`, smallest
-  possible follow-up mirroring the M3.6 retrofit; (b) the
-  third sibling authority channel (`intelligence_capability`
-  or `media_control`); (c) interest-group integration into
-  the M2.18 / M2.19 command-execution gate; (d) influence
-  drift driven by event / policy outcomes; (e) a second
-  feedback input weighting loyalty alongside radicalism for
-  the stability channel; (f) M3.2 `react` per-mutation
-  trace as a third trace CSV. None committed.
+- Next sub-milestone candidate (post-M3.10): **M3.11** —
+  open. Natural candidates after M3.10 wired the 9th
+  artefact: (a) the third sibling authority channel
+  (`intelligence_capability` or `media_control`); (b)
+  interest-group integration into the M2.18 / M2.19
+  command-execution gate as an additional input; (c)
+  influence drift driven by event / policy outcomes; (d)
+  M3.2 `react` per-mutation trace as a 10th artefact;
+  (e) atomic `end_tick` writes (temp-file + rename),
+  long-deferred from M2.9. None committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8
-  + M3.9 shipped). See `docs/milestone-0-result.md`,
+  + M3.9 + M3.10 shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports;
   `docs/milestone-3-checkpoint.md` for the M3 mid-milestone
@@ -363,8 +408,9 @@ prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9
-shipped (M3 NOT closed — see `docs/milestone-3-checkpoint.md`).
-Forty-seven sub-milestones shipped:
++ M3.10 shipped (M3 NOT closed — see
+`docs/milestone-3-checkpoint.md`). Forty-eight sub-milestones
+shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -511,6 +557,27 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.10 InterestGroup military_pressure outcome CSV surface —
+retrofits the M3.6 trace-CSV pattern onto M3.9. New 9th
+unconditional runner artefact
+`interest_group_military_pressure.csv` (10 cols mirroring
+the M3.6 authority_pressure CSV shape). One row per
+actually-mutated country per monthly pipeline tick;
+canonical scenarios produce header-only file. New
+diagnostics writer pair, RunnerOptions optional override
+(no CLI flag), RunOutcome path + row counter,
+TickController buffer that `step_one_day` drains from
+`MonthlyOutcome::interest_group_military_pressure_trace_rows`.
+`end_tick` writes the new file 9th after
+`interest_group_authority_pressure.csv`. Determinism
+contract grows 8 → 9 artefacts; M2.9 pre-`end_tick`
+no-artefact contract automatically extends to the 9th
+file. Drive-by: stripped the lone `[[wiki-link]]` from
+`docs/m3-9-...md`. **No new gameplay, no save schema bump
+(still v11), no formula change to any M3.X system, no
+CLI flag, no command-gate integration, no
+`intelligence_capability` / `media_control` channel.**
+10 new doctest cases. Doctest count 766 → 776;
 **M3.9 InterestGroup-derived military_loyalty pressure
 (sibling of M3.4) — second authority-layer pressure
 channel: Military-kind influence-weighted loyalty drifts
