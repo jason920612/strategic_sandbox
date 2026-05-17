@@ -14,39 +14,61 @@ it still holds.
 ## 1. Scope
 
 When `--replay PATH` is set, the runner can fail for several reasons
-the user can't control from outside:
+the user can't control from outside. M2.9 splits those failures into
+two groups:
+
+**Pre-`end_tick` failures (covered by the contract — zero artefacts):**
 
 - The source save at `PATH` is missing or corrupt
   (`save_system::load` failure).
 - `--scenario` was not provided, so `state.countries` is empty.
-- The replayed log is out of order (`replay_with_time` monotonicity
-  check).
-- The replayed log references an unknown policy `id_code`, or an
-  `AdjustBudget` with an unknown category / non-finite delta.
-- The monthly pipeline fails advancing between commands.
-- `begin_tick` / `end_tick` reject their preconditions.
+- `begin_tick` rejects its preconditions (bad `--player` id_code,
+  double-begin, etc.).
+- `replay_with_time` fails: out-of-order log (monotonicity check),
+  unknown policy `id_code`, `AdjustBudget` with unknown category or
+  non-finite delta, monthly pipeline failure while advancing.
 
-In every one of those cases, M2.9 cements the contract: NO output
-artefacts (save.json / events.jsonl / summary.csv / countries.csv /
-factions.csv) survive. The caller's `output_dir` is left exactly as
-it was before `run()` was invoked. Retry doesn't need a clean.
+For every failure in this group, M2.9 cements the contract: NO
+output artefacts (save.json / events.jsonl / summary.csv /
+countries.csv / factions.csv) survive. The caller's `output_dir`
+is left exactly as it was before `run()` was invoked. Retry doesn't
+need a clean.
 
-This holds end-to-end because `end_tick` is the only function on the
-runner side that touches disk, and every replay-failure path returns
+This holds because `end_tick` is the only function on the runner
+side that touches disk, and every failure listed above returns
 before `end_tick` is reached.
+
+**Inside-`end_tick` failures (NOT covered — partial artefacts
+possible):**
+
+- Any `std::ofstream` open or write error during `end_tick`'s five
+  sequential writes (save → log → summary CSV → countries CSV →
+  factions CSV).
+
+These are deliberately out of scope for M2.9. `end_tick` is not
+transactional: a write that fails after one or more earlier writes
+already succeeded leaves a partial set of files behind. Making
+`end_tick` atomic (temp-file + rename, or a single staging dir) is
+a separate refactor a future PR can do; this PR only documents and
+tests the pre-`end_tick` boundary.
 
 ## 2. Public API
 
 No changes to types, options, or function signatures.
 
 `runner::run`'s doc comment gains an explicit "M2.9 contract" block
-listing the failure conditions and stating the no-artefact guarantee.
-The contract covers the non-replay path too — same reason.
+listing the pre-`end_tick` failure conditions and stating the
+no-artefact guarantee, plus a NOTE explaining that failures inside
+`end_tick` are deliberately out of scope and can leave partial
+artefacts. The non-replay run path is shaped identically (`run_state`
+also funnels through `end_tick`), but M2.9 only commits to the
+replay-mode wording — the non-replay path's failure-artefact
+semantics are documented elsewhere as they emerge.
 
 ## 3. Implementation
 
 Nothing to implement. The three pieces that already give us the
-guarantee:
+pre-`end_tick` guarantee:
 
 1. **Source load failure short-circuits before any state mutation.**
    In `run()`'s replay branch, `ss::load(opts.replay_path)` runs
@@ -62,14 +84,20 @@ guarantee:
 
 So a failure from `ss::load`, the `state.countries.empty()` guard,
 `begin_tick`, or `replay_with_time` returns before `end_tick`, and
-zero files are written. The non-replay `run_state` path obeys the
-same shape: every per-day failure returns from inside the loop, and
-file writes only happen in `end_tick`.
+zero files are written.
+
+Failures inside `end_tick` itself remain out of scope: it writes the
+five artefacts sequentially through `std::ofstream` + a small helper
+that creates parent directories and reports stream errors, and there
+is no rollback. A future PR can make those writes atomic if a use
+case demands it — M2.9 deliberately doesn't.
 
 ## 4. Tests
 
 3 new doctest cases (all under `LEVIATHAN_TEST_DATA_DIR` so they can
-load the canonical scenario):
+load the canonical scenario). Each exercises a pre-`end_tick`
+failure path. `end_tick`-internal failures are deliberately not
+tested in this PR (see §1):
 
 - **`--replay with a missing source file fails and writes no
   artifacts`** — point `replay_path` at a path that doesn't exist.
@@ -109,9 +137,15 @@ Deliberate non-goals:
 - **No new `state.logs` entry on failure**. The runner's existing
   error-return shape is the only signal; we don't sprinkle log
   writes on the failure paths.
-- **No retry / rollback machinery in the runner**. The guarantee is
-  "nothing was written", not "previous artefacts are restored".
-  Users who want history keep their own backups.
+- **No retry / rollback machinery in the runner**. The
+  pre-`end_tick` guarantee is "nothing was written", not "previous
+  artefacts are restored". Users who want history keep their own
+  backups.
+- **No atomic `end_tick`**. `end_tick`'s five sequential writes
+  stay non-transactional. Switching them to temp-file + rename
+  (or staging into a sibling directory) is the natural follow-up
+  if mid-`end_tick` I/O failures ever start mattering; M2.9 only
+  scopes the contract to pre-`end_tick` failures.
 - **No M1 system change**. The monthly-pipeline failure path is
   reachable via `step_one_day` inside `replay_with_time`, but M2.9
   doesn't touch its internals; it only documents the runner's

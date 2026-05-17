@@ -126,19 +126,29 @@ struct RunOutcome {
 // simply does not advance) but `--days` is REQUIRED at the CLI;
 // parse_args() rejects the unset case.
 //
-// M2.9 contract — replay-mode artefact atomicity:
-// When `opts.replay_path` is set, a failure from any of:
+// M2.9 contract — replay-mode pre-end_tick artefact atomicity:
+// When `opts.replay_path` is set, failures that occur BEFORE
+// `end_tick` is called write no output artefacts. This includes:
 //   * `save_system::load` on the source save (missing/corrupt),
-//   * the empty-`state.countries` precondition,
-//   * `commands::replay_with_time` (out-of-order log, unknown policy
-//     id_code, malformed budget command, monthly pipeline failure),
-//   * `begin_tick` / `end_tick`,
-// returns BEFORE `end_tick` is reached, so NO output artefacts
-// (save.json / events.jsonl / summary.csv / countries.csv /
-// factions.csv) are written. Callers can safely retry against
-// the same `output_dir` without first cleaning it. The same
-// guarantee covers the non-replay run path because all file writes
-// are gated through `end_tick`.
+//   * the empty-`state.countries` replay precondition,
+//   * `begin_tick` rejection (bad `--player`, double-begin, etc.),
+//   * `commands::replay_with_time` failure (out-of-order log,
+//     unknown policy id_code, malformed budget command, monthly
+//     pipeline failure while advancing).
+//
+// These paths return before `end_tick`, and `end_tick` is the only
+// function on the runner side that writes save.json / events.jsonl
+// / summary.csv / countries.csv / factions.csv. Callers whose run
+// fails on one of the listed paths can safely retry against the
+// same `output_dir` without cleaning it first.
+//
+// NOTE: failures that occur INSIDE `end_tick` itself are not
+// covered by this contract. `end_tick` writes its five artefacts
+// sequentially (save → log → summary CSV → countries CSV →
+// factions CSV) and is not transactional, so a mid-`end_tick`
+// I/O failure can leave a partial set of files on disk. If atomic
+// end-of-run writes become a requirement, a future PR can switch
+// `end_tick` to temp-file + rename and update this contract.
 core::Result<RunOutcome> run(const RunnerOptions& opts);
 
 // Same as run() but operates on a pre-built GameState. Used by tests

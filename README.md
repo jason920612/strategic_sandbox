@@ -12,12 +12,17 @@
   hardening.** Documentation + regression-test PR with zero library
   behaviour change. `runner::run`'s doc comment gains an explicit
   "M2.9 contract" block stating that `--replay`-mode failures
-  (missing/corrupt source save, missing `--scenario`, out-of-order
+  occurring BEFORE `end_tick` is reached (missing/corrupt source
+  save, missing `--scenario`, `begin_tick` rejection, out-of-order
   log, unknown policy id_code, bad `AdjustBudget` payload, monthly
-  pipeline failure, `begin_tick` / `end_tick` rejection) write
-  ZERO output artefacts (save.json / events.jsonl / summary.csv /
-  countries.csv / factions.csv). 3 new doctest cases pin the
-  guarantee end-to-end: missing source file, out-of-order log,
+  pipeline failure while advancing) write ZERO output artefacts
+  (save.json / events.jsonl / summary.csv / countries.csv /
+  factions.csv). Failures INSIDE `end_tick` itself are explicitly
+  out of scope — `end_tick`'s five writes are sequential and not
+  transactional, so a mid-`end_tick` I/O failure can leave a
+  partial set on disk; switching to atomic temp-file + rename is
+  a deliberate non-goal for this PR. 3 new doctest cases pin the
+  pre-`end_tick` guarantee: missing source file, out-of-order log,
   unknown policy id_code — each wires all five artefact paths and
   asserts none exist after the failed run. No save format bump
   (still v9); no new flag; no M1 system change. Closes the gap M2.8
@@ -195,17 +200,22 @@ a new `RunOutcome::replay_commands_replayed` field. `main()`
 prints two extra summary lines. The CLI does NOT auto-compare —
 user diffs source vs target save files. No save format change;
 **M2.9 Replay CLI error-path hardening — doc + tests PR with no
-library behaviour change. Cements the contract: a `--replay`
-failure from any path (`save_system::load` failure, missing
-`--scenario`, out-of-order log, unknown policy id_code,
-malformed budget command, monthly pipeline failure, `begin_tick`
-/ `end_tick` rejection) writes ZERO output artefacts because
-every replay failure returns before `end_tick`, which is the
-only function that touches disk. `runner::run`'s doc comment
-gains an explicit "M2.9 contract" block; 3 regression tests pin
-missing source / out-of-order log / unknown policy id_code with
-all five artefact paths wired and checked absent. No save format
-change;
+library behaviour change. Cements the **pre-`end_tick`** contract:
+a `--replay` failure that occurs before `end_tick` is reached
+(`save_system::load` failure, missing `--scenario`, `begin_tick`
+rejection, `replay_with_time` failure on out-of-order log /
+unknown policy id_code / malformed budget command / monthly
+pipeline failure) writes ZERO output artefacts because `end_tick`
+is the only function that touches disk. Failures INSIDE `end_tick`
+itself are explicitly NOT covered — its five writes (save → log
+→ summary CSV → countries CSV → factions CSV) are sequential and
+non-transactional, so a mid-`end_tick` I/O failure can leave a
+partial set on disk; atomic temp-file + rename is a deliberate
+non-goal of this PR. `runner::run`'s doc comment gains an
+explicit "M2.9 contract" block with that scope split; 3
+regression tests pin missing source / out-of-order log / unknown
+policy id_code with all five artefact paths wired and checked
+absent. No save format change;
 **M2.10 State comparison API — new
 `systems::diagnostics::compare_states(a, b, opts)` free function
 returning a list of `StateMismatch` entries (field_path +
