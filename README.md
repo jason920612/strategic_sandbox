@@ -6,12 +6,46 @@
 
 ## Status
 
-- Phase: **Milestone 2 — player-operation prototype (closed).**
-  Both M1 single-country internal-politics prototype and M2
-  player-operation prototype have shipped. See
-  `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M2.22 — M2 exit / integration
-  tests.** Closes M2. Ships three end-to-end integration tests
+- Phase: **Milestone 3 — internal politics / interest-group
+  reaction layer (in progress).** M0 / M1 / M2 closed; M3
+  opens with M3.1 introducing the political-actor data
+  layer. See `docs/milestone-2-result.md` for the M2 exit
+  report.
+- Latest shipped sub-milestone: **M3.1 — InterestGroupState /
+  political actors skeleton.** Opens M3 with a stripped-down
+  data layer for political interest groups. New
+  `core::InterestGroupKind` enum (10 variants: `Bureaucracy`,
+  `Military`, `Workers`, `Farmers`, `Religious`, `Media`,
+  `Students`, `LocalElites`, `Business`, `Technocrats`). New
+  `core::InterestGroupState` POD with `id_code`, `name`, `kind`,
+  `country` (numeric handle), and three `[0, 1]` behavioural
+  ratios (`influence`, `loyalty` defaulting to 0.5;
+  `radicalism` defaulting to 0.0). New
+  `GameState::interest_groups` root-level vector so future
+  cross-country interactions compose naturally; each entry's
+  `country` field points back to the country it belongs to.
+  **Save format bumped v10 → v11** with the block REQUIRED at
+  the save layer (empty array allowed) and validated entry by
+  entry — non-empty id_code + name, known kind string, country
+  index resolving into `state.countries`, three ratios in
+  `[0, 1]` via `require_ratio`, duplicate `id_code` rejected.
+  `scenario_loader` accepts an optional `interest_groups`
+  array in the manifest; missing key → empty vector;
+  present-but-malformed rejected with `interest_groups[N]` and
+  the offending field name in the error. Existing scenarios
+  (`1930_minimal.json`, `1930_with_start_policies.json`) load
+  unchanged. `diagnostics::compare_states` walks the array
+  field-by-field under `interest_groups[N].*`. **Data only**:
+  no M1 / M2 system reads or writes the new fields; M1
+  monthly pipeline and M2 command path are byte-identical.
+  Future M3 sub-milestones (reactions, command-resistance
+  contributions, event triggers, AI) will consume the data.
+  20 new doctest cases. No new gameplay; no new CLI flag; no
+  new PlayerCommandKind; no new CSV column; no `state.logs`
+  entry; no replay primitive change; no M1 / M2 system
+  change.
+- Previously shipped: **M2.22 — M2 exit / integration tests
+  (closed M2).** Three end-to-end integration tests
   in `tests/integration/m2_end_to_end_test.cpp` pinning the
   M2 player-operation surface at the seam to M3+:
   (1) command script + replay + verify equivalence — drives
@@ -51,17 +85,15 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next phase: **M3 or targeted post-M2 follow-ups.** Natural
-  candidates (per `docs/milestone-2-result.md` §4): promote
-  `ExecutionStatus::Delayed` from reserved-name to a real
-  outcome with a pending-execution queue; surface rejection at
-  the runner / CLI level; add a CLI `--script PATH` entry point
-  driving `apply_command_script`; authority drift system;
-  faction reactions to player commands; multi-country
-  interaction. None committed.
-- M0 closed. M1 closed. M2 closed. See
-  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
-  and `docs/milestone-2-result.md` for the exit reports, and
+- Next sub-milestone candidate (post-M3.1): **M3.2 — first
+  interest-group reaction step.** Likely a monthly tick that
+  drifts `loyalty` / `radicalism` toward inputs from
+  `government_authority` + `corruption` + `stability`. Pure
+  read of the M3.1 data layer; save-neutral. Not committed.
+- M0 closed. M1 closed. M2 closed. M3 in progress (M3.1
+  shipped). See `docs/milestone-0-result.md`,
+  `docs/milestone-1-result.md`, and
+  `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
@@ -83,11 +115,10 @@ the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation
-prototype, RFC-090 §M2) is also complete with M2.1 + M2.2 +
-M2.3 + M2.4 + M2.5 + M2.6 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11
-+ M2.12 + M2.13 + M2.14 + M2.16 + M2.17 + M2.18 + M2.19 +
-M2.20 + M2.21 + M2.22 merged. Thirty-eight sub-milestones
-shipped:
+prototype, RFC-090 §M2) is also complete with M2.1–M2.22
+merged; **Milestone 3** (internal politics / interest-group
+reaction layer, RFC-090 §M3) opens with M3.1.
+Thirty-nine sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -234,6 +265,30 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.1 InterestGroupState / political actors skeleton — opens
+M3. New `core::InterestGroupKind` enum (10 variants:
+Bureaucracy / Military / Workers / Farmers / Religious / Media
+/ Students / LocalElites / Business / Technocrats). New
+`core::InterestGroupState` POD with id_code / name / kind /
+country (CountryId handle) / influence / loyalty (both default
+0.5) / radicalism (default 0.0). New `GameState::interest_groups`
+root-level vector (cross-country interactions can compose
+naturally; each entry's `country` field points back to the
+country). **Save format bumped v10 → v11** with the array
+REQUIRED at the save layer (empty allowed) and every entry
+strictly validated: non-empty id_code + name, known kind string,
+country index resolving into `state.countries`, three ratios in
+`[0, 1]` via `require_ratio`, duplicate id_code rejected.
+`scenario_loader` accepts an OPTIONAL `interest_groups` block
+in scenario JSON; missing → empty vector; present-but-malformed
+rejected with `interest_groups[N]` path in error.
+`diagnostics::compare_states` walks the array under
+`interest_groups[N].*`. **Data only** — no M1 / M2 system reads
+or writes the new fields. Future M3 sub-milestones layer
+reactions / command-resistance / events / AI on top. No new
+CLI flag; no new PlayerCommandKind; no new CSV column; no
+`state.logs` entry; no replay primitive change; no M1 / M2
+system change;
 **M2.22 M2 exit / integration tests — closes M2. New
 `tests/integration/m2_end_to_end_test.cpp` ships 3 end-to-end
 tests pinning the player-operation surface: command script +
@@ -626,7 +681,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.22 there are **627 doctest cases**. M0 contributed 179;
+As of M3.1 there are **647 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -636,7 +691,21 @@ added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
 M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
-M2.21 added 8; M2.22 adds 3 end-to-end integration tests in
+M2.21 added 8; M2.22 added 3 end-to-end integration tests;
+M3.1 adds 20 across the v10 → v11 save-format bump and the new
+`InterestGroupState` plumbing: 2 game_state baselines (empty
+default vector + default POD defaults 0.5/0.5/0.0), 9 save_system
+(serialize emits empty array; round-trip preserves arbitrary
+values; old v10 save rejected; v11 missing block rejected; v11
+wrong type rejected; unknown kind rejected; country OOB
+rejected; out-of-range ratio rejected; duplicate id_code
+rejected), 8 scenario_loader (absent → empty; wrong type
+rejected; missing field rejected; ratio out of range rejected;
+duplicate id_code rejected; happy-path load with two groups;
+unknown country id_code rejected; unknown kind rejected), and
+2 diagnostics compare_states tests (size mismatch + per-field
+mismatch paths). Previously M2.22 added 3 end-to-end integration
+tests in
 `m2_end_to_end_test.cpp` closing M2:
 (1) command script + replay reproduces source via
 `compare_states` (zero mismatches across every gameplay-

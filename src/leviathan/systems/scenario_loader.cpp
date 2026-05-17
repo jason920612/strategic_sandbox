@@ -142,6 +142,99 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
         }
     }
 
+    // ---- M3.1: optional interest_groups array ---------------------
+    // Missing key allowed (M1.11 / M2 manifests stay valid). Present-
+    // but-wrong-type rejected. Each entry validated for required
+    // string fields + numeric ratios; cross-reference to a loaded
+    // country happens later in `load_into_state` once countries are
+    // resolved.
+    if (s.contains("interest_groups")) {
+        const json& arr = s.at("interest_groups");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.interest_groups' is not an array"));
+        }
+        m.interest_groups.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            const std::string ctx =
+                "'scenario.interest_groups[" + std::to_string(i) + "]'";
+            if (!arr[i].is_object()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + " is not an object"));
+            }
+            const json& e = arr[i];
+            auto need_string = [&](const char* key,
+                                   std::string& out) -> core::Result<bool> {
+                if (!e.contains(key) || !e.at(key).is_string()) {
+                    return core::Result<bool>::failure(
+                        fmt_err(source_label,
+                                ctx + "." + key + " missing or not a string"));
+                }
+                out = e.at(key).get<std::string>();
+                if (out.empty()) {
+                    return core::Result<bool>::failure(
+                        fmt_err(source_label,
+                                ctx + "." + key + " must be non-empty"));
+                }
+                return core::Result<bool>::success(true);
+            };
+            auto need_ratio = [&](const char* key,
+                                  double& out) -> core::Result<bool> {
+                if (!e.contains(key) || !e.at(key).is_number()) {
+                    return core::Result<bool>::failure(
+                        fmt_err(source_label,
+                                ctx + "." + key + " missing or not a number"));
+                }
+                const double v = e.at(key).get<double>();
+                if (!(v >= 0.0 && v <= 1.0)) {
+                    return core::Result<bool>::failure(
+                        fmt_err(source_label,
+                                ctx + "." + key +
+                                " out of range (expected [0, 1])"));
+                }
+                out = v;
+                return core::Result<bool>::success(true);
+            };
+
+            ManifestInterestGroup g;
+            if (auto r = need_string("id_code",  g.id_code);          !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_string("name",     g.name);             !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_string("kind",     g.kind);             !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_string("country",  g.country_id_code);  !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_ratio("influence",  g.influence);       !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_ratio("loyalty",    g.loyalty);         !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            if (auto r = need_ratio("radicalism", g.radicalism);      !r) {
+                return core::Result<ScenarioManifest>::failure(std::move(r.error()));
+            }
+            // Duplicate id_code inside the manifest is a hard
+            // failure here — a future system that looks up by
+            // id_code would otherwise silently pick one or the
+            // other.
+            for (const auto& prev : m.interest_groups) {
+                if (prev.id_code == g.id_code) {
+                    return core::Result<ScenarioManifest>::failure(
+                        fmt_err(source_label,
+                                ctx + ".id_code '" + g.id_code +
+                                "' is a duplicate within the manifest"));
+                }
+            }
+            m.interest_groups.push_back(std::move(g));
+        }
+    }
+
     return core::Result<ScenarioManifest>::success(std::move(m));
 }
 
@@ -296,6 +389,74 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                 std::move(apply_r.error()));
         }
         ++outcome.starting_policies_applied;
+    }
+
+    // ---- 6. M3.1 interest_groups -----------------------------------
+    // Resolve each manifest entry's `country` id_code against the
+    // loaded countries map, parse the `kind` string into the enum,
+    // and append to state.interest_groups. The save layer enforces
+    // its own (stricter) validation; this is the scenario-JSON
+    // entry point, which fails loudly on the same shape issues so
+    // a typo in the manifest doesn't silently produce a half-
+    // populated political map.
+    {
+        // Local kind-string mapping. Duplicates save_system.cpp's
+        // anonymous helper deliberately — the InterestGroupKind
+        // surface is small and stable; introducing a shared helper
+        // would invert layering (scenario_loader does not depend on
+        // save_system today). Update both call sites when adding a
+        // new variant.
+        auto kind_from_string =
+            [](std::string_view s)
+                -> core::Result<core::InterestGroupKind> {
+            if (s == "Bureaucracy")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Bureaucracy);
+            if (s == "Military")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Military);
+            if (s == "Workers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Workers);
+            if (s == "Farmers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Farmers);
+            if (s == "Religious")    return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Religious);
+            if (s == "Media")        return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Media);
+            if (s == "Students")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Students);
+            if (s == "LocalElites")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::LocalElites);
+            if (s == "Business")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Business);
+            if (s == "Technocrats")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Technocrats);
+            std::string msg = "unknown interest_group kind '";
+            msg.append(s.data(), s.size());
+            msg += "' (expected Bureaucracy|Military|Workers|Farmers|"
+                   "Religious|Media|Students|LocalElites|Business|Technocrats)";
+            return core::Result<core::InterestGroupKind>::failure(std::move(msg));
+        };
+
+        state.interest_groups.reserve(manifest.interest_groups.size());
+        for (std::size_t i = 0; i < manifest.interest_groups.size(); ++i) {
+            const auto& entry = manifest.interest_groups[i];
+
+            auto country_it = country_by_id_code.find(entry.country_id_code);
+            if (country_it == country_by_id_code.end()) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() +
+                    ": interest_groups[" + std::to_string(i) +
+                    "] references unknown country id_code '" +
+                    entry.country_id_code + "'");
+            }
+
+            auto kind_r = kind_from_string(entry.kind);
+            if (!kind_r) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() +
+                    ": interest_groups[" + std::to_string(i) +
+                    "]: " + std::move(kind_r.error()));
+            }
+
+            core::InterestGroupState g;
+            g.id_code    = entry.id_code;
+            g.name       = entry.name;
+            g.kind       = kind_r.value();
+            g.country    = country_it->second;
+            g.influence  = entry.influence;
+            g.loyalty    = entry.loyalty;
+            g.radicalism = entry.radicalism;
+            state.interest_groups.push_back(std::move(g));
+        }
     }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);

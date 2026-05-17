@@ -94,6 +94,20 @@ struct StartingPolicy {
     std::string actor_id_code;   // matches a loaded CountryState::id_code
 };
 
+// One interest group / political actor entry inline in the
+// scenario manifest (M3.1). Field names match the on-disk JSON;
+// resolution against loaded countries + the
+// `InterestGroupKind` enum happens inside `load_into_state`.
+struct ManifestInterestGroup {
+    std::string id_code;
+    std::string name;
+    std::string kind;             // matches an `InterestGroupKind` spelling
+    std::string country_id_code;  // matches a loaded CountryState::id_code
+    double influence  = 0.5;
+    double loyalty    = 0.5;
+    double radicalism = 0.0;
+};
+
 // Parsed manifest. Paths are stored verbatim from JSON; resolving
 // them against a base directory is the caller's job (or use
 // `load_into_state`, which does it).
@@ -105,6 +119,10 @@ struct ScenarioManifest {
     // authored before M1.13 (no `starting_policies` field) are
     // accepted unchanged.
     std::vector<StartingPolicy> starting_policies;
+    // M3.1: optional. Missing key in JSON => empty vector. Manifests
+    // authored before M3.1 (no `interest_groups` field) are accepted
+    // unchanged. Present-but-malformed blocks are rejected.
+    std::vector<ManifestInterestGroup> interest_groups;
 };
 
 // Summary returned from a successful `load_into_state`.

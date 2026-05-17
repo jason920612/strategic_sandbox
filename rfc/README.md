@@ -217,6 +217,34 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.1（InterestGroupState
+  / political actors skeleton）** 為 M3 開頭，先建立 political
+  actor 的資料層：新 `core::InterestGroupKind` enum（10 個 variant：
+  Bureaucracy / Military / Workers / Farmers / Religious / Media /
+  Students / LocalElites / Business / Technocrats）+ 新
+  `core::InterestGroupState` POD（id_code / name / kind / country
+  CountryId / influence / loyalty 預設 0.5 / radicalism 預設 0.0）
+  + 新 `GameState::interest_groups` root-level vector（每個 entry
+  的 `country` 欄位指回所屬 country；root-level 設計為未來跨國
+  interaction 預留空間）。**Save format bumped v10 → v11**：save
+  層 block 必備（empty array 可），每個 entry 嚴格驗證
+  （non-empty id_code + name / known kind 字串 / country index
+  resolve 進 `state.countries` / 三個 ratio 在 [0, 1] 內，重複
+  id_code 拒絕）。`scenario_loader` 對 scenario JSON 中的
+  `interest_groups` block 採 optional 策略，missing → empty
+  vector；present-but-malformed 仍嚴格驗證並回報
+  `interest_groups[N]` 路徑與欄位名。`diagnostics::compare_states`
+  擴張到走訪 array 在 `interest_groups[N].*` 路徑下。**Data only**
+  ──完全沒有 M1 / M2 system 讀或寫這些欄位，M1 monthly pipeline
+  與 M2 command path 行為 byte-identical。對應 RFC-020 §5
+  長期 faction / interest-group 清單第一片落地，為 M3.2+ 的
+  reaction / command resistance / event triggers / AI 預留資料 seam。
+  **M3.1 不做** monthly reaction、command-resistance integration、
+  authority drift、demand / preferred policy / armed strength /
+  ideology / foreign links 欄位、automatic generation、coup /
+  strike / protest、新 CLI flag、新 `PlayerCommandKind`、新 CSV
+  欄位、新 `state.logs` 條目、replay primitive 變更、UI / AI /
+  events / scheduler、M1 / M2 system 變更。
   **M2.1（Player country
   selection）** 為 `core::GameState` 新增 `player_country` 欄位
   (`CountryId`，預設 `CountryId::invalid()` = -1)，並在 runner

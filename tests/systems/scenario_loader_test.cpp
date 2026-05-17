@@ -614,3 +614,156 @@ TEST_CASE("load_into_state: starting_policies multiple entries apply in order") 
     // 0.20 (initial) + 0.05 (tax_up) + 0.10 (tax_up2) = 0.35.
     CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.35));
 }
+
+// ---------------------------------------------------------------------
+// M3.1 - interest_groups in the scenario manifest
+// ---------------------------------------------------------------------
+
+TEST_CASE("parse_manifest: interest_groups absent parses as empty") {
+    const auto r = sl::parse_manifest(
+        R"({ "scenario": { "countries": [], "factions": [], "policies": [] } })");
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_groups.empty());
+}
+
+TEST_CASE("parse_manifest: interest_groups not an array rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "interest_groups": "bogus" }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("interest_groups") != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: interest_groups entry missing field rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "interest_groups": [
+                   { "id_code": "x", "kind": "Bureaucracy",
+                     "country": "GER", "influence": 0.5,
+                     "loyalty": 0.5, "radicalism": 0.0 }
+                 ] }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("name") != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: interest_groups ratio out of range rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "interest_groups": [
+                   { "id_code": "x", "name": "X",
+                     "kind": "Bureaucracy", "country": "GER",
+                     "influence": 1.5, "loyalty": 0.5,
+                     "radicalism": 0.0 }
+                 ] }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("interest_groups") != std::string::npos);
+    CHECK(r.error().find("influence")       != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: interest_groups duplicate id_code rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "interest_groups": [
+                   { "id_code": "dup", "name": "A",
+                     "kind": "Bureaucracy", "country": "GER",
+                     "influence": 0.5, "loyalty": 0.5,
+                     "radicalism": 0.0 },
+                   { "id_code": "dup", "name": "B",
+                     "kind": "Military", "country": "GER",
+                     "influence": 0.5, "loyalty": 0.5,
+                     "radicalism": 0.0 }
+                 ] }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("dup")       != std::string::npos);
+    CHECK(r.error().find("duplicate") != std::string::npos);
+}
+
+TEST_CASE("load_into_state: interest_groups happy path") {
+    TempDir td("scen_loader_m31_igs_happy");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  [],
+    "interest_groups": [
+      { "id_code": "ger_bureaucracy", "name": "German Bureaucracy",
+        "kind": "Bureaucracy", "country": "GER",
+        "influence": 0.60, "loyalty": 0.55, "radicalism": 0.05 },
+      { "id_code": "ger_military",    "name": "German Military",
+        "kind": "Military",    "country": "GER",
+        "influence": 0.40, "loyalty": 0.70, "radicalism": 0.15 }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.ok());
+    REQUIRE(state.interest_groups.size() == 2u);
+    CHECK(state.interest_groups[0].id_code    == "ger_bureaucracy");
+    CHECK(state.interest_groups[0].kind       ==
+          leviathan::core::InterestGroupKind::Bureaucracy);
+    CHECK(state.interest_groups[0].country.value() == 0);
+    CHECK(state.interest_groups[0].influence  == doctest::Approx(0.60));
+    CHECK(state.interest_groups[1].id_code    == "ger_military");
+    CHECK(state.interest_groups[1].kind       ==
+          leviathan::core::InterestGroupKind::Military);
+    CHECK(state.interest_groups[1].loyalty    == doctest::Approx(0.70));
+}
+
+TEST_CASE("load_into_state: interest_groups unknown country rejected") {
+    TempDir td("scen_loader_m31_igs_unknown_country");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  [],
+    "interest_groups": [
+      { "id_code": "x", "name": "X", "kind": "Bureaucracy",
+        "country": "XYZ",
+        "influence": 0.5, "loyalty": 0.5, "radicalism": 0.0 }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("interest_groups[0]") != std::string::npos);
+    CHECK(r.error().find("XYZ")                != std::string::npos);
+}
+
+TEST_CASE("load_into_state: interest_groups unknown kind rejected") {
+    TempDir td("scen_loader_m31_igs_unknown_kind");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": ["countries/ger.json"],
+    "factions":  [],
+    "policies":  [],
+    "interest_groups": [
+      { "id_code": "x", "name": "X", "kind": "FloatingMasons",
+        "country": "GER",
+        "influence": 0.5, "loyalty": 0.5, "radicalism": 0.0 }
+    ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("interest_groups[0]") != std::string::npos);
+    CHECK(r.error().find("FloatingMasons")     != std::string::npos);
+}
