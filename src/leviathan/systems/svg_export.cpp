@@ -97,9 +97,14 @@ std::string render_svg_root(const core::GameState& state) {
     // Fill is selected by owner via `color_for_owner` (M4.3);
     // the <text> (M4.4) is anchored at (cx, cy + kLabelYOffset)
     // with `text-anchor="middle"` and the XML-text-escaped
-    // `ProvinceNode::name` as content. The pair is interleaved
-    // (circle then text per node) so each node's elements stay
-    // grouped in the byte stream.
+    // `ProvinceNode::name` as content. M4.8 widens the
+    // identity surface on both elements: every <circle> and
+    // every <text> now carries the same four `data-*`
+    // attributes (`data-id`, `data-owner`, `data-owner-code`,
+    // `data-name`) so a future clickable UI / DOM script can
+    // address either element uniformly. The pair stays
+    // interleaved (circle then text per node) so each node's
+    // elements stay grouped in the byte stream.
     for (const auto& p : state.provinces) {
         const double cx_val = p.x * kSvgCoordScale;
         const double cy_val = p.y * kSvgCoordScale;
@@ -107,18 +112,46 @@ std::string render_svg_root(const core::GameState& state) {
         const std::string cy = fmt_coord(cy_val);
         const std::string ty = fmt_coord(cy_val + kLabelYOffset);
         const std::string_view fill = color_for_owner(p.owner);
+
+        // M4.8 owner-code lookup: resolve to state.countries
+        // entry; emit empty when the owner is invalid or out
+        // of range. The save / scenario layers reject such
+        // entries at load time, so this only matters for
+        // hand-built states. Mirrors the defensive fallback
+        // strategy used by `color_for_owner`.
+        std::string owner_code;
+        const auto owner_v = p.owner.value();
+        if (owner_v >= 0 &&
+            static_cast<std::size_t>(owner_v) < state.countries.size()) {
+            owner_code = state.countries[static_cast<std::size_t>(owner_v)].id_code;
+        }
+        const std::string id_attr =
+            xml_attr_escape(p.id_code);
+        const std::string name_attr =
+            xml_attr_escape(p.name);
+        const std::string owner_code_attr =
+            xml_attr_escape(owner_code);
+        const std::string owner_int_attr =
+            std::to_string(owner_v);
+
         out << "  <circle"
                " cx=\"" << cx << "\""
                " cy=\"" << cy << "\""
                " r=\"8\""
                " fill=\"" << fill << "\""
-               " data-id=\"" << xml_attr_escape(p.id_code) << "\""
-               " data-owner=\"" << p.owner.value() << "\""
+               " data-id=\"" << id_attr << "\""
+               " data-owner=\"" << owner_int_attr << "\""
+               " data-owner-code=\"" << owner_code_attr << "\""
+               " data-name=\"" << name_attr << "\""
                "/>\n";
         out << "  <text"
                " x=\"" << cx << "\""
                " y=\"" << ty << "\""
                " text-anchor=\"middle\""
+               " data-id=\"" << id_attr << "\""
+               " data-owner=\"" << owner_int_attr << "\""
+               " data-owner-code=\"" << owner_code_attr << "\""
+               " data-name=\"" << name_attr << "\""
                ">" << xml_text_escape(p.name) << "</text>\n";
     }
 

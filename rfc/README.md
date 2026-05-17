@@ -217,9 +217,51 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.7（HTML
-  legend skeleton）** 在 `map.html` 內聯 SVG 之後加入靜態
-  `<ul class="legend">`，讓觀看者能解讀哪個 palette 顏色
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.8（HTML
+  static province data attributes skeleton）** 把 SVG body
+  裡的 identity surface 加寬：每個 `<circle>` 和每個
+  `<text>` 都會帶相同四個 read-only `data-*` 屬性
+  （`data-id`、`data-owner`、`data-owner-code`、
+  `data-name`），未來 clickable UI / DOM script 可以對兩個
+  元素使用一致的查詢方式，不必走兄弟節點。
+  `data-owner-code` 從 `state.countries[owner.value()]
+  .id_code` 解析，索引無效時回空字串（hand-built state 的
+  防禦性 fallback；save / scenario layer 會在 load 時就拒絕
+  invalid owner）。`data-name` 把 `<text>` body 的內容也以
+  attribute 形式暴露，方便用 `getAttribute` 統一存取。四個
+  data-* 值全部走 M4.2 的 `xml_attr_escape`。**這是 M4.4
+  之後第一次刻意修改 standalone SVG body 的 sub-milestone**
+  ── 改動完全 additive（沒移除舊屬性，沒有任何像素位移）；
+  SVG-to-PNG pipeline、vector tool 看到的視覺結果與 M4.7
+  完全相同。`provinces.svg` 與 `map.html` 共用
+  `render_svg_root`，所以新屬性同時出現在兩個 artefact 裡。
+  所有 M4.5 / M4.6 / M4.7 既有的 not 都保留：沒 JavaScript /
+  沒 `<script>` / 沒 `<link>` / 沒 inline event attribute /
+  沒個別元素的 inline `style="..."` / 沒
+  `<meta name="viewport">` / 沒 CSS animation /
+  transition / media query / `@import` / `@font-face` /
+  沒 click handler / 沒 clickable UI / 沒 hover / 沒
+  tooltip / 沒 viewer 寫回 state。**Artefact 數量不變
+  （仍 10）；save 格式不變（仍 v12）**；M1.17 / M2.22 /
+  M3.7 byte-identical determinism contract 因 same state →
+  same attribute values → same bytes 自然繼續成立。8 個新
+  doctest cases（7 svg_export + 1 runner；M4.4 empty-name
+  test 改錨點對齊 M4.8 新 layout；共 827）。**M4 in
+  progress.** **M4.8 不做** JavaScript / click handler /
+  event handler / hover / tooltip / state mutation /
+  `<script>` / `<link>` / inline event attribute / inline
+  `style="..."` / `<meta name="viewport">` / CSS animation
+  / transition / media query / `@import` / `@font-face` /
+  新 artefact / save schema bump / 新 state field / 新
+  `InterestGroupKind` / `PlayerCommandKind` / runner CLI
+  flag / events / AI / command integration / ownership
+  dynamics / 鄰接 edge / terrain / 新 gameplay / atomic
+  `end_tick` / 個別 province 的顏色 override / 新增任何
+  `<circle>` / `<text>` 的 presentation attribute（M4.8
+  只新增 data-* 屬性，cx / cy / r / fill / x / y /
+  text-anchor 都不變）。
+  **M4.7（HTML legend skeleton）** 在 `map.html` 內聯 SVG
+  之後加入靜態 `<ul class="legend">`，讓觀看者能解讀哪個 palette 顏色
   對應哪個國家。每個 `<li data-owner="N">` 對應
   `state.countries[i]`（vector order），內容是一個 16×16 的
   inline SVG 色塊（顏色取自

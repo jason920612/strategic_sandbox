@@ -14,7 +14,56 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.7 — HTML legend
+- Latest shipped sub-milestone: **M4.8 — HTML static
+  province data attributes skeleton.** Widens the identity
+  surface inside the SVG body: every `<circle>` and every
+  `<text>` now carries the same four read-only `data-*`
+  attributes (`data-id`, `data-owner`, `data-owner-code`,
+  `data-name`) so a future clickable UI / DOM script can
+  address either element uniformly without DOM-walking
+  siblings. `data-owner-code` resolves to
+  `state.countries[owner.value()].id_code` when the index
+  is valid, or the empty string otherwise (defensive
+  fallback for hand-built states; save / scenario layers
+  reject invalid owners at load time). `data-name` mirrors
+  the `<text>` body content but exposes it as a uniform
+  attribute for programmatic lookup. All four data-* values
+  are XML-attribute-escaped via the M4.2 helper. **This is
+  the first M4.x sub-milestone since M4.4 that deliberately
+  edits the standalone SVG body** — the change is purely
+  additive (no removed attributes, no rendered-pixel
+  movement); SVG-to-PNG pipelines and vector tools see no
+  visual difference. Both `provinces.svg` and `map.html`
+  pick up the new attributes for free since they share the
+  `render_svg_root` helper. All M4.5 / M4.6 / M4.7 nots
+  preserved: no JavaScript, no `<script>`, no `<link>`, no
+  inline event attributes, no inline `style="..."` per
+  element, no `<meta name="viewport">`, no CSS animations /
+  transitions / media queries / `@import` / `@font-face`,
+  no click handlers, no clickable UI, no hover state, no
+  tooltips, no state mutation. Artefact set unchanged
+  (still 10). Save format unchanged (still v12). M1.17 /
+  M2.22 / M3.7 byte-identical determinism contracts
+  continue to pass by construction. 8 new doctest cases (7
+  svg_export + 1 runner; M4.4 empty-name test retuned to
+  anchor on the new stable surface; 827 total). **M4 in
+  progress.** **No JavaScript, no click handlers, no event
+  handlers / hover state / tooltips, no state mutation
+  (data-* are read-only viewer surface), no `<script>` / no
+  `<link>` / no inline event attributes / no inline
+  `style="..."` per element, no `<meta name="viewport">`,
+  no CSS animations / transitions / media queries /
+  `@import` / `@font-face`, no new artefact (still 10), no
+  save schema bump (still v12), no new state field, no new
+  `InterestGroupKind` / `PlayerCommandKind`, no runner CLI
+  flag, no events / AI / command integration, no
+  ownership-dynamics layer, no neighbour / adjacency edges,
+  no terrain / resources / population overlays, no new
+  gameplay, no atomic `end_tick` writes, no per-province
+  colour override, no new `<circle>` / `<text>` presentation
+  attributes (the change is data-* only; `cx` / `cy` / `r`
+  / `fill` / `x` / `y` / `text-anchor` are unchanged).**
+- Previously shipped: **M4.7 — HTML legend
   skeleton.** Adds a static `<ul class="legend">` to
   `map.html` immediately after the inline SVG so a viewer
   can decode which palette colour belongs to which country.
@@ -594,20 +643,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.7): **M4.8** — open.
-  M4.1 shipped the data layer, M4.2 the first SVG renderer,
-  M4.3 the owner-keyed palette, M4.4 the per-node labels,
-  M4.5 the HTML viewer wrapper, M4.6 the minimal CSS,
-  M4.7 the legend; natural next steps include (a) a
-  clickable map / country-panel surface, (b) hover state /
-  tooltips, (c) richer node fields (neighbour adjacency,
-  terrain, population) once a renderer needs them,
-  (d) `<meta name="viewport">` + media queries for
-  responsive sizing. None committed; reviewer chooses.
+- Next sub-milestone candidate (post-M4.8): **M4.9** — open.
+  M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
+  shipped the HTML viewer wrapper; M4.6 the minimal CSS;
+  M4.7 the legend; M4.8 widened the SVG identity surface.
+  Natural next steps include (a) a clickable map /
+  country-panel surface that uses the M4.8 data-* attrs as
+  the DOM lookup key, (b) hover state / tooltips, (c)
+  richer node fields (neighbour adjacency, terrain,
+  population) once a renderer needs them, (d)
+  `<meta name="viewport">` + media queries for responsive
+  sizing. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, and `rfc/RFC-090-roadmap.md` for
@@ -637,7 +687,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 shipped. Fifty-four sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 shipped. Fifty-five sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -784,6 +834,52 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.8 HTML static province data attributes skeleton —
+widens the identity surface inside the SVG body: every
+`<circle>` and every `<text>` now carries the same four
+read-only `data-*` attributes (`data-id`, `data-owner`,
+`data-owner-code`, `data-name`) so a future clickable UI /
+DOM script can address either element uniformly without
+DOM-walking siblings. `data-owner-code` resolves to
+`state.countries[owner.value()].id_code` when valid, or `""`
+otherwise (defensive fallback for hand-built states; save /
+scenario layers reject invalid owners at load time).
+`data-name` mirrors the `<text>` body content for uniform
+programmatic lookup. All four data-* values
+XML-attribute-escaped via the M4.2 helper. **First M4.x
+sub-milestone since M4.4 that deliberately edits the
+standalone SVG body** — the change is purely additive (no
+removed attributes, no rendered-pixel movement); SVG-to-PNG
+pipelines and vector tools see no visual difference. Both
+`provinces.svg` and `map.html` pick up the new attributes
+because they share the `render_svg_root` helper. All M4.5 /
+M4.6 / M4.7 nots preserved: no JavaScript, no `<script>`,
+no `<link>`, no inline event attributes, no inline
+`style="..."` per element, no `<meta name="viewport">`, no
+CSS animations / transitions / media queries / `@import` /
+`@font-face`, no click handlers, no clickable UI, no hover
+state, no tooltips, no state mutation. **Artefact set
+unchanged (still 10); save format unchanged (still v12);**
+M1.17 / M2.22 / M3.7 byte-identical determinism contracts
+continue to pass by construction. 8 new doctest cases (7
+svg_export + 1 runner; M4.4 empty-name test retuned to
+anchor on the new stable surface; 827 total). **M4 in
+progress.** **No JavaScript, no click handlers, no event
+handlers / hover state / tooltips, no state mutation
+(data-* are read-only), no `<script>` / no `<link>` / no
+inline event attributes / no inline `style="..."` per
+element, no `<meta name="viewport">`, no CSS animations /
+transitions / media queries / `@import` / `@font-face`, no
+new artefact (still 10), no save schema bump (still v12),
+no new state field, no new `InterestGroupKind` /
+`PlayerCommandKind`, no runner CLI flag, no events / AI /
+command integration, no ownership-dynamics layer, no
+neighbour / adjacency edges, no terrain / resources /
+population overlays, no new gameplay, no atomic `end_tick`
+writes, no per-province colour override, no new `<circle>`
+/ `<text>` presentation attributes (the change is data-*
+only; cx / cy / r / fill / x / y / text-anchor are
+unchanged).**;
 **M4.7 HTML legend skeleton — adds a static
 `<ul class="legend">` to `map.html` immediately after the
 inline SVG so a viewer can decode which palette colour
