@@ -11,8 +11,40 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.6 — InterestGroup
-  feedback outcome diagnostics / CSV trace surface.** Outcome-
+- Latest shipped sub-milestone: **M3.7 — M3 reaction-loop
+  integration checkpoint.** Pins the M3.1–M3.6 reaction loop
+  at the seam between M3 and any future milestone via three
+  new integration tests
+  (`tests/integration/m3_end_to_end_test.cpp`) plus a short
+  checkpoint doc (`docs/milestone-3-checkpoint.md`). The
+  integration tests cover (1) one-month
+  `monthly::tick_all_countries` driving every M3 leg
+  (M3.2 react + M3.3 country_feedback + M3.4 authority_pressure)
+  in a single call against a hand-built state, asserting each
+  reverse-direction counter, every mutable field changed, and
+  each trace vector got one row; (2) `runner::run_state`
+  emitting the full 8-artefact set with actual M3 data rows
+  (canonical M1.17 / M2 integration runs only ever exercised
+  the header-only path because canonical scenarios author zero
+  interest groups); (3) two byte-for-byte identical hand-built
+  states producing byte-identical 8-artefact output (M1.17 /
+  M2.22's determinism contract but with M3 mutation actually
+  on the wire). The checkpoint doc records the current
+  dataflow, the 8 artefacts, the invariants future
+  sub-milestones must preserve, and the deferred items
+  (events, AI, UI / REPL / CLI surfaces, atomic `end_tick`
+  writes, M3 close-out, etc.) that intentionally did not ship
+  yet. **M3 remains in progress** — no `docs/milestone-3-result.md`
+  is written; M3.7 is a checkpoint, not an exit report. No new
+  system, no new formula, no new artefact, no save schema
+  bump (still v11), no new state field, no new
+  `InterestGroupKind`, no new `PlayerCommandKind`, no events,
+  no logs from interest groups, no AI / UI / REPL / CLI
+  surface, no command gate formula change, no command-gate
+  diagnostic surface, no runner CLI flag, no atomic
+  `end_tick` write, no M4 / post-M3 governance follow-up.
+- Previously shipped: **M3.6 — InterestGroup feedback outcome
+  diagnostics / CSV trace surface.** Outcome-
   trace complement to M3.5's state surface. Two new
   unconditional CSVs join the artefact set:
   `interest_group_country_feedback.csv` (M3.3 outcome trace)
@@ -216,19 +248,20 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.6): **M3.7** — open.
+- Next sub-milestone candidate (post-M3.7): **M3.8** — open.
   With four reaction-loop legs (M3.2 / M3.3 / M3.4), the
-  M3.5 state-surface CSV, and the M3.6 outcome-trace CSVs
-  all in place, natural next steps include (a) a sibling
-  authority channel (e.g. Military loyalty →
-  `military_loyalty`), (b) interest-group integration into
-  the M2.18 / M2.19 command-execution gate, (c) influence
-  drift driven by event / policy outcomes, (d) a second
-  feedback input weighting loyalty alongside radicalism for
-  the stability channel, (e) M3.2 `react` per-mutation
-  trace as a third trace CSV. None committed.
+  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, and
+  the M3.7 reaction-loop integration checkpoint all in place,
+  natural next steps include (a) a sibling authority channel
+  (e.g. Military loyalty → `military_loyalty`), (b) interest-
+  group integration into the M2.18 / M2.19 command-execution
+  gate, (c) influence drift driven by event / policy
+  outcomes, (d) a second feedback input weighting loyalty
+  alongside radicalism for the stability channel, (e) M3.2
+  `react` per-mutation trace as a third trace CSV. None
+  committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 shipped). See
+  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 shipped). See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   and `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -255,7 +288,7 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 shipped. Forty-four sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 shipped. Forty-five sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -402,6 +435,36 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.7 M3 reaction-loop integration checkpoint — pins the
+M3.1–M3.6 closed loop at the seam between M3 and any future
+milestone. Adds `tests/integration/m3_end_to_end_test.cpp`
+with three cases: (1) one-month `monthly::tick_all_countries`
+fires M3.2 react + M3.3 country_feedback + M3.4
+authority_pressure in a single call against a hand-built
+one-country / one-Bureaucracy-group state, asserting every
+reverse-direction counter, every mutable field actually
+changed, and each trace vector got one row whose post-mutation
+value matches the live state field; (2) `runner::run_state`
+emits all eight artefacts with actual M3 data rows
+(`interest_groups.csv` with three snapshot rows, both M3.6
+trace CSVs with one row each); (3) two byte-for-byte identical
+hand-built states through `run_state` produce byte-identical
+eight artefacts (M1.17 / M2.22 determinism contract extended
+to the M3-mutation path, not just the canonical-scenario
+header-only path). Adds `docs/milestone-3-checkpoint.md`
+documenting the current dataflow, the eight artefacts, the
+invariants future sub-milestones must preserve, and the
+deferred items (events, AI, UI / REPL / CLI surfaces, atomic
+`end_tick` writes, M3 close-out, etc.) that intentionally
+did not ship yet. **M3 remains in progress** — no exit
+report, no "M3 closed" wording, no M4. **No new system, no
+new formula, no new artefact, no save schema bump (still
+v11), no new state field, no new `InterestGroupKind`, no new
+`PlayerCommandKind`, no events, no logs from interest
+groups, no AI / UI / REPL / CLI surface, no command gate
+formula change, no command-gate diagnostic surface, no
+runner CLI flag, no atomic `end_tick` writes.** 3 new
+integration doctest cases (744 total);
 **M3.6 InterestGroup feedback outcome diagnostics / CSV trace
 surface — outcome-trace complement to M3.5's state surface.
 Two new unconditional CSVs:
