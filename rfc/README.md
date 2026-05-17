@@ -248,6 +248,30 @@ M0 / M1 中落地，部分仍是未來工作：
   save schema 變更（仍 v8）、新 CLI flag（沒有 `--step` mode）、
   新 log、M1 system 行為變更、command queue（M2.3）、command log
   （M2.4）、UI / map、AI / events、mid-run save/load resume。
+  **M2.3（Player command queue）** 為 `core/` 新增
+  `core/player_commands.hpp`（含 `PlayerCommandKind` enum 與
+  `PlayerCommand{kind, policy_id_code}` POD，本期只支援
+  `EnactPolicy`），並新增 `systems/commands.{hpp,cpp}` 模組：
+  `CommandQueue` runtime container、`ApplyOutcome` outcome，以及
+  `apply_pending(state, queue)` free function。Queue 由 outer
+  driver 持有，**不**進 `GameState`、**不**進 `runner::TickController`，
+  所以 M2.3 沒有 save schema 變更。`apply_pending` 預先驗證
+  `state.player_country` 是 `state.countries` 的合法 index，
+  然後 in-order 處理 queue：每個 `EnactPolicy` dispatch 進
+  `policy::apply_policy_effects`，沿用 M1.5 per-command atomicity、
+  M1.15 active_policies tracking、M1.15 duration cap。**Cross-list
+  non-atomic**：首次失敗即停下，已成功的 commands 已 apply 並
+  從 queue pop 掉，失敗的 command 留在 head 等候 retry，後面
+  剩餘 commands 仍在 queue（與 M1.13 scenario starting_policies
+  的 mid-list-failure 規則一致）。對應 RFC-090 §M2 task 2.3 的
+  「first-class command queue」精神（RFC 文字較傾向把 task 2.4 預算
+  命令、2.5 政策命令、2.6 命令 log 分開列；我們把 queue 基礎設施
+  + 第一個 kind 合併為 M2.3，把 log 留給 M2.4）。**M2.3 不做**
+  save schema 變更（仍 v8）、新 CLI flag、`apply_pending` 自動
+  插進 `step_one_day` 內、其他 `PlayerCommandKind` variants
+  （`AdjustBudget` / `ChangeTaxBurden` 等留給 M2.5+）、command
+  log（M2.4）、queue 跨 save/load 持久化、multi-player command
+  interleaving、新 log line、M1 system 行為變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
