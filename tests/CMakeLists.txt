@@ -41,6 +41,7 @@ add_executable(leviathan_tests
     systems/faction_system_test.cpp
     systems/logging_system_test.cpp
     systems/monthly_pipeline_test.cpp
+    systems/order_execution_test.cpp
     systems/policy_system_test.cpp
     systems/random_service_test.cpp
     systems/runner_test.cpp

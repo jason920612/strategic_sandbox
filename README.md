@@ -8,37 +8,35 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.16 — GovernmentAuthorityState.**
-  First M2 gameplay-state extension. New
-  `core::GovernmentAuthorityState` POD with four `[0, 1]` ratio
-  fields defaulting to `0.5`: `bureaucratic_compliance`,
-  `military_loyalty`, `intelligence_capability`, `media_control`
-  — a stripped subset of RFC-020 §3「國家掌控力」chosen for their
-  proximity to future command-execution-resistance / information-
-  accuracy gameplay. Added to `CountryState` as the new
-  `government_authority` field. **Save format bumped v9 → v10**;
-  the block is REQUIRED at the save layer (`require_ratio` per
-  sub-field). DataLoader keeps it OPTIONAL in country JSON —
-  missing block defaults to all `0.5`, present block validated.
-  `diagnostics::compare_states` walks the four sub-fields with the
-  same tolerance machinery as the budget block; field paths mirror
-  the save JSON (`countries[0].government_authority.*`). **Data
-  only**: zero M1 systems read or write the new fields; existing
-  M1 monthly pipeline and M2 command path behave byte-identically.
-  Deferred from RFC-020 §3 with explicit documentation: distinct
-  `local_control`, `legal_mandate`, `leader_prestige`,
-  `party_organization` — each waits for a future PR with a real
-  gameplay consumer.
-- Previously shipped: **M2.14 — Replay target-date CLI**
-  (`--target-date YYYY-MM-DD` truncates the log + advances the
-  time system to the target day). **M2.9 — Replay CLI error-path
-  hardening** (doc + 3 regression tests cementing the
-  pre-`end_tick` no-artefact contract). **M2.13 — Verify tolerance
-  CLI**.
-- Next sub-milestone candidates: **M2.17** (first consumer of
-  `government_authority` — e.g. command-execution resistance
-  gating policy enactment, save-neutral system work) or **M2.15**
-  (relative-tolerance support in `CompareOptions` — save-neutral).
+- Latest shipped sub-milestone: **M2.17 — OrderExecutionSystem
+  skeleton.** First M2 system that reads the M2.16
+  `government_authority` block. New module
+  `leviathan::systems::order_execution` ships three types and one
+  free function: `OrderExecutionInputs` (4-field snapshot of the
+  actor country's authority ratios, defaults 0.5),
+  `ExecutionStatus` (enum with only `Accepted` shipped; `Rejected`
+  / `Delayed` / `Distorted` reserved by name for M2.18+),
+  `OrderExecutionOutcome { status, inputs }`, and
+  `evaluate(state, command) → Result<OrderExecutionOutcome>`.
+  `evaluate` mirrors the M2.3 precondition shape (valid
+  `player_country` indexing into countries), snapshots the actor's
+  authority into the outcome, and always returns `Accepted`. **No
+  caller wires the function in yet** — `commands::apply_pending`
+  is byte-identical with M2.5 / M2.16. **No `resistance` field**
+  in the outcome: ship the API surface without pretending the
+  formula shape is decided; M2.18+ will introduce the formula and
+  the resistance representation together. No save format change
+  (still v10); no new CLI flag; no `state.logs` entry; no policy
+  effect change.
+- Previously shipped: **M2.16 — GovernmentAuthorityState** (new
+  POD with 4 `[0, 1]` ratios on `CountryState`; save schema bumped
+  v9 → v10). **M2.14 — Replay target-date CLI**. **M2.9 — Replay
+  CLI error-path hardening**.
+- Next sub-milestone candidate: **M2.18 — EnactPolicy execution
+  gate.** Introduces the first formula over
+  `OrderExecutionInputs`, wires `evaluate` into
+  `commands::apply_pending`, and decides how non-Accepted outcomes
+  surface in the applied-commands log. Save-neutral.
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -63,8 +61,8 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 + M2.16
-merged. Thirty-two sub-milestones shipped:
++ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
+M2.16 + M2.17 merged. Thirty-three sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -211,6 +209,24 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.17 OrderExecutionSystem skeleton — first M2 system that reads
+the M2.16 `government_authority` block. New module
+`leviathan::systems::order_execution` with `OrderExecutionInputs`
+(4-field snapshot of the actor country's authority ratios,
+defaults 0.5), `ExecutionStatus` enum (only `Accepted` shipped;
+`Rejected` / `Delayed` / `Distorted` reserved by name), and
+`OrderExecutionOutcome { status, inputs }`. New free function
+`evaluate(state, command) → Result<OrderExecutionOutcome>` mirrors
+the M2.3 `apply_pending` preconditions (valid `player_country`
+indexing into countries), snapshots authority into the outcome,
+and always returns `Accepted`. **No caller wires the function in
+yet** — `commands::apply_pending` is byte-identical with M2.5 /
+M2.16. **No `resistance` field** in the outcome (deferred to the
+same PR that introduces the formula). Pure read: no state
+mutation, no logs, no RNG. CMake wires the new
+`order_execution.cpp` into `leviathan_systems` and the new
+`order_execution_test.cpp` into `leviathan_tests`. No save format
+change;
 **M2.16 GovernmentAuthorityState — first M2 gameplay-state
 extension. New `core::GovernmentAuthorityState` POD with four
 `[0, 1]` ratio fields defaulting to `0.5`
@@ -490,7 +506,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.16 there are **575 doctest cases**. M0 contributed 179;
+As of M2.17 there are **585 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -498,7 +514,18 @@ M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
-M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 adds 13 across
+M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
+M2.17 adds 10 covering the new `order_execution::evaluate`
+skeleton (3 precondition cases — no player_country, out of range,
+empty countries; 3 success-path cases — Accepted returned, inputs
+mirror the actor's authority block one-for-one, function reads
+the *selected* country rather than `countries[0]`; 3
+non-mutation / determinism / kind-independence cases — state is
+byte-identical after the call, `EnactPolicy` and `AdjustBudget`
+produce identical outcomes since the skeleton ignores
+`command.kind`, repeated calls return identical outcomes; 1
+default-construction baseline pinning all four `inputs` ratios at
+0.5 and `status == Accepted`). Previously M2.16 added 13 across
 the v10 save-format bump and the new
 `GovernmentAuthorityState` plumbing: 1 game_state baseline (default
 0.5 across all four sub-fields), 5 data_loader (missing block →
