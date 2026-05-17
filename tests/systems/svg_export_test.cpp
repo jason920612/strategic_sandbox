@@ -415,19 +415,23 @@ TEST_CASE("render_map_html: inlines the same <svg> body as render_provinces") {
     CHECK(html.find(svg_body) != std::string::npos);
 }
 
-TEST_CASE("render_map_html: no <style>, <script>, <link>, or inline event attributes") {
-    // M4.5 ships the minimum wrapper: no CSS, no JavaScript,
-    // no external resource references, no event handlers.
+TEST_CASE("render_map_html: no <script>, <link>, or inline event attributes") {
+    // M4.5 shipped a wrapper with no CSS or JS at all. M4.6
+    // adds a single `<style>` block (separately tested below)
+    // but every other M4.5 "no" still holds: no JavaScript /
+    // no external stylesheet link / no inline event handlers.
     GameState state;
     state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
     const std::string html = svg::render_map_html(state);
-    CHECK(html.find("<style")  == std::string::npos);
     CHECK(html.find("<script") == std::string::npos);
     CHECK(html.find("<link")   == std::string::npos);
     // Common inline event attributes — none should ever appear.
     CHECK(html.find("onclick")     == std::string::npos);
     CHECK(html.find("onmouseover") == std::string::npos);
     CHECK(html.find("onload")      == std::string::npos);
+    // No per-element inline style attributes either — the M4.6
+    // `<style>` block is the single CSS surface.
+    CHECK(html.find(" style=\"") == std::string::npos);
 }
 
 TEST_CASE("render_map_html: deterministic across repeat calls") {
@@ -457,4 +461,69 @@ TEST_CASE("write_map_html: creates parent directories") {
     const auto nested = td.path / "deep" / "nested" / "map.html";
     REQUIRE(svg::write_map_html(state, nested).ok());
     CHECK(fs::exists(nested));
+}
+
+// ---------------------------------------------------------------------
+// M4.6 - minimal CSS inside the HTML wrapper
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_map_html: emits a <style> block in <head>") {
+    // M4.6 adds the smallest possible inline CSS. The block
+    // lives in <head> alongside <meta> and <title>.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    const auto style_at = html.find("<style>");
+    const auto head_at  = html.find("</head>");
+    REQUIRE(style_at != std::string::npos);
+    REQUIRE(head_at  != std::string::npos);
+    // <style> is inside <head> (closes before </head>).
+    CHECK(style_at < head_at);
+    CHECK(html.find("</style>") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: body rule centres + backgrounds the page") {
+    // The `body` selector zeroes the browser margin, adds
+    // padding for breathing room, and gives the page a
+    // neutral grey background so the white SVG card pops.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("body {") != std::string::npos);
+    CHECK(html.find("margin: 0")              != std::string::npos);
+    CHECK(html.find("padding: 20px")          != std::string::npos);
+    CHECK(html.find("background-color: #f0f0f0") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: svg rule centres the SVG with a border") {
+    // The `svg` selector turns the SVG into a centred,
+    // bordered "card" on the page.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("svg {") != std::string::npos);
+    CHECK(html.find("display: block")            != std::string::npos);
+    CHECK(html.find("margin: 0 auto")            != std::string::npos);
+    CHECK(html.find("border: 1px solid #888")    != std::string::npos);
+    CHECK(html.find("background-color: #ffffff") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: svg text rule uses sans-serif for label readability") {
+    // SVG `<text>` elements deliberately don't carry their
+    // own font (M4.4 / M4.5 contract preserved). The M4.6
+    // CSS provides the default, fixing the browser's serif
+    // fallback which renders small labels poorly.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("svg text {") != std::string::npos);
+    CHECK(html.find("font-family: sans-serif") != std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.6 CSS") {
+    // The CSS lives in the HTML wrapper only. A standalone
+    // SVG file consumed by, e.g., an SVG-to-PNG pipeline
+    // must remain free of HTML-only constructs.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("<style")            == std::string::npos);
+    CHECK(svg_text.find("font-family")       == std::string::npos);
+    CHECK(svg_text.find("background-color")  == std::string::npos);
 }

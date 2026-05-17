@@ -217,10 +217,46 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.5（HTML
-  viewer skeleton）** 把 M4.2–M4.4 的 SVG body 包進一個最小
-  HTML5 document（`map.html`），讓地圖在瀏覽器打開時不再
-  被當成 raw XML。新公開函式
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.6（HTML
+  viewer minimal CSS skeleton）** 在 M4.5 的 HTML wrapper
+  裡加入最小可能的 inline `<style>` block，三條 CSS
+  selector：`body { margin: 0; padding: 20px; background-color:
+  #f0f0f0; }`（中性灰背景 + 少量 padding，讓白色 SVG 卡
+  片浮起來）、`svg { display: block; margin: 0 auto;
+  border: 1px solid #888; background-color: #ffffff; }`
+  （置中 + 卡片式邊框）、`svg text { font-family:
+  sans-serif; }`（修掉瀏覽器對 SVG `<text>` 預設 serif 字型，
+  讓小 label 更易讀）。`<style>` 在 `<head>` 內以 2-space
+  indent 與 `<meta>` / `<title>` 並列。**`provinces.svg`
+  bytes 不變** ── CSS 只在 HTML wrapper 裡；standalone-SVG
+  路徑保持 CSS-free，讓下游消費者（SVG-to-PNG pipeline、
+  vector tool）看到的 bytes 與 M4.5 完全相同。所有 M4.5 的
+  not 都保留：沒有 JavaScript、沒有 `<script>`、沒有
+  `<link>`、沒有 inline event attribute、沒有
+  `<meta name="viewport">`、沒有個別元素的 inline
+  `style="..."`。M4.4 `<text>` 自己不帶 font-family /
+  font-size 的契約也保留 ── 只有 CSS selector `svg text`
+  設字型，而且只影響 HTML viewer。**Artefact 數量不變（仍 10）；
+  save 格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 因 same state → same
+  CSS bytes → same map.html bytes 自然繼續成立。6 個新
+  doctest cases（5 svg_export + 1 runner；M4.5 的 "no
+  `<style>`" test 改名並調掉 `<style>` assertion、再加上
+  inline-`style=` 檢查；共 810）。**M4 in progress.**
+  **M4.6 不做** JavaScript / `<script>` / external
+  stylesheet `<link>` / inline event attribute / inline
+  `style="..."` / `<meta name="viewport">` / 個別元素的
+  CSS override / CSS animation / transition / media
+  query / `@import` / `@font-face` / click handler /
+  clickable UI / hover / tooltip / viewer 寫回 state /
+  legend / `<text>` 元素自己的 font-family / font-size /
+  ownership dynamics / 鄰接 edge / terrain / events / AI /
+  command integration / 新 `PlayerCommandKind` / runner
+  CLI flag / save schema bump / 新 state field / 新
+  gameplay / atomic `end_tick` / 動 `provinces.svg` bytes。
+  **M4.5（HTML viewer skeleton）** 把 M4.2–M4.4 的 SVG
+  body 包進一個最小 HTML5 document（`map.html`），讓地圖
+  在瀏覽器打開時不再被當成 raw XML。新公開函式
   `render_map_html(state) → std::string` 與
   `write_map_html(state, path) → Result<bool>`。內部 refactor
   抽出 `render_svg_root` helper，讓 `render_provinces` 保持

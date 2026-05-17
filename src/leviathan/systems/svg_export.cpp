@@ -189,19 +189,33 @@ core::Result<bool> write_provinces(const core::GameState& state,
 }
 
 std::string render_map_html(const core::GameState& state) {
-    // Minimal HTML5 wrapper around the inline SVG body. No
-    // CSS, no JavaScript, no `<meta name="viewport">`, no
-    // `<link>`, no event handlers. The wrapper exists purely
-    // so the SVG opens in a browser without the "raw XML"
-    // chrome browsers attach to standalone .svg files. M4.5
-    // ships the minimum viewer; presentation styling is a
-    // future sub-milestone.
+    // Minimal HTML5 wrapper around the inline SVG body. M4.5
+    // shipped the wrapper with NO CSS / NO JS / NO <style> /
+    // NO <script> / NO <link> / NO inline event attributes.
+    // M4.6 adds the smallest possible `<style>` block — three
+    // selectors that centre the SVG, give it a card-like
+    // border on a neutral page background, and pick a
+    // sans-serif font for the labels so they're more
+    // readable than the browser's serif default. All other
+    // M4.5 nots still hold: no <script>, no <link>, no
+    // JavaScript, no inline event attributes, no
+    // <meta name="viewport">. The full ruleset is documented
+    // in `svg_export.hpp` and pinned by
+    // tests/systems/svg_export_test.cpp.
     std::ostringstream out;
     out << "<!DOCTYPE html>\n";
     out << "<html lang=\"en\">\n";
     out << "<head>\n";
     out << "  <meta charset=\"UTF-8\">\n";
     out << "  <title>Leviathan Map</title>\n";
+    out << "  <style>\n";
+    out << "  body { margin: 0; padding: 20px;"
+           " background-color: #f0f0f0; }\n";
+    out << "  svg { display: block; margin: 0 auto;"
+           " border: 1px solid #888;"
+           " background-color: #ffffff; }\n";
+    out << "  svg text { font-family: sans-serif; }\n";
+    out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";
     out << render_svg_root(state);
