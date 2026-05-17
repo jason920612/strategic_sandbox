@@ -3,20 +3,25 @@
 //
 // M4.2 (predecessor) shipped the first renderer that turns
 // `state.provinces` into a visible deterministic SVG artefact.
-// M4.3 (this revision) layers a deterministic per-owner colour
-// onto the existing circles using a fixed 10-entry palette
-// indexed by `owner.value() % kOwnerPaletteSize`. Nothing else
-// about the SVG shape changes — same viewBox, same circles,
-// same `data-id` / `data-owner` attributes, same coord
-// precision. Future M4 sub-milestones (HTML viewer, clickable
-// map, neighbour-adjacency lines, terrain, labels / legend,
-// etc.) will extend the renderer further.
+// M4.3 layered a deterministic per-owner colour onto the
+// existing circles using a fixed 10-entry palette indexed by
+// `owner.value() % kOwnerPaletteSize`. M4.4 (this revision)
+// adds a `<text>` label per node immediately after the
+// matching `<circle>`, anchored at `x = cx`, `y = cy +
+// kLabelYOffset`, `text-anchor="middle"`, with the label text
+// the XML-text-escaped `ProvinceNode::name`. Everything else
+// about the SVG shape — viewBox, circle radius, fill palette,
+// `data-id` / `data-owner` attributes, coord precision, header-
+// only-on-empty — is byte-identical with M4.3. Future M4 sub-
+// milestones (HTML viewer, clickable map, neighbour-adjacency
+// lines, terrain, legend, etc.) will extend the renderer
+// further.
 //
-// What M4.3 deliberately does NOT do:
+// What M4.4 deliberately does NOT do:
 //   * No HTML viewer / wrapper.
 //   * No clickable UI / event handlers / hover state.
+//   * No tooltips (the label IS the only labelling surface).
 //   * No legend / colour key inside the SVG.
-//   * No labels / text elements.
 //   * No per-province colour override (the palette is owner-
 //     keyed only; future per-province overlays land in their
 //     own sub-milestone).
@@ -31,25 +36,33 @@
 //     override carried forward unchanged.
 //   * No new save-format field (the renderer reads existing
 //     `state.provinces`; save format stays v12).
-//   * No change to the M4.2 artefact set count (still 9).
+//   * No change to the artefact set count (still 9).
+//   * No font-family / font-size / fill on `<text>` — the SVG
+//     consumer's default applies. M4.4 ships minimum labels;
+//     typography is a future presentation sub-milestone.
 //
-// Output shape (M4.3):
+// Output shape (M4.4):
 //   * SVG 1.1 root with viewBox `0 0 1000 1000`.
-//   * One `<circle>` per ProvinceNode at
-//     `cx = round(node.x * 1000, 2)`, `cy = round(node.y * 1000, 2)`,
-//     `r = 8`, `fill` selected by owner via
-//     `kOwnerPalette[node.owner.value() % kOwnerPaletteSize]`.
-//     Invalid owners (negative index — should never happen at
-//     the save layer, which rejects them) get a defensive
-//     fallback fill of `#888888`.
-//   * Each `<circle>` carries `data-id="<id_code>"` and
-//     `data-owner="<int>"` so a future renderer / tester can
-//     identify nodes without parsing presentation values.
+//   * For each ProvinceNode, two paired elements emitted in
+//     `state.provinces` order:
+//       1. `<circle cx=... cy=... r="8" fill=... data-id=...
+//          data-owner=.../>` (M4.2 + M4.3 shape)
+//       2. `<text x=... y=... text-anchor="middle">NAME</text>`
+//          with x = cx, y = cy + kLabelYOffset, and NAME the
+//          XML-text-escaped `ProvinceNode::name`.
+//   * `<circle>` and `<text>` are interleaved (one of each per
+//     node, in that order) — keeps each node's elements
+//     grouped in the byte stream and matches the human
+//     mental model "a province is a node + a label".
 //   * Insertion order follows `state.provinces` (no sorting).
 //   * LF line terminators, fixed two-space indent. Coordinates
 //     emitted via `std::fixed` + `setprecision(2)` so output
 //     is byte-stable across platforms.
-//   * `data-id` is XML-attribute-escaped (M4.2 review fix).
+//   * `data-id` is XML-attribute-escaped (M4.2 review fix —
+//     escapes `& < > " '`). Label content uses the strict-XML
+//     text-content escape (`& < >` only) since `" '` are legal
+//     inside text content; both helpers live in the .cpp
+//     anonymous namespace.
 //   * Empty `state.provinces` produces a header-only SVG —
 //     the `<svg>` element is still written so the artefact
 //     contract is consistent (always-present file).
@@ -72,6 +85,17 @@ namespace leviathan::systems::svg_export {
 // SVG coordinate range. Normalised `[0, 1]` x / y on
 // `ProvinceNode` map to `[0, kSvgCoordScale]` in the output.
 inline constexpr double kSvgCoordScale = 1000.0;
+
+// M4.4: vertical offset (in SVG coordinate units) from a
+// node's circle centre to its label's baseline. With the M4.2
+// circle radius of 8 and the default SVG `<text>` font (16px
+// sans-serif on most renderers), 22 puts the label baseline
+// roughly 14 units below the circle's bottom edge — visually
+// clear of the node without overlapping the next row of
+// nodes at the canonical scenario's density. Exposed publicly
+// so tests can compute the expected y position without
+// hard-coding the constant at every assertion site.
+inline constexpr double kLabelYOffset = 22.0;
 
 // M4.3 deterministic per-owner palette. Fixed 10-entry table
 // of hex-RGB colours chosen to be visually distinct under
