@@ -217,7 +217,25 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.7（M3 reaction-
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.8（null-trace
+  baseline strengthened to byte-for-byte equivalence）** 是
+  tests-only 後續修正，補強 M3.6 在 PR #55 review 留下的
+  non-blocker nit。原 M3.6 的 null-trace baseline 測試只驗證
+  「有 mutation」，未保證 `trace_out = nullptr` 跟
+  `trace_out = &vec` 產生 byte-identical 結果。M3.8 用
+  `diagnostics::compare_states` (M2.10) 搭配
+  `CompareOptions{0.0}` 嚴格 tolerance 把這個 gap 補上。
+  策略：建一份 state，複製兩份，一份 null 一份 trace pointer
+  跑，比對 compare_states 應為空，並直接用 `==` 驗 mutated
+  double 欄位。Three scenarios per system: single-group / multi-
+  country / skipped-country no-mutation。共 6 個 new doctest
+  case。**不動 library、不改公式、不改 `MonthlyOutcome`、
+  不動 runner、不改 artefact set（仍 8 個）、不改 save schema
+  （仍 v11）**。`tests/systems/interest_group_system_test.cpp`
+  尾端新增 M3.8 section；其他檔案僅 README 與
+  `docs/m3-8-null-trace-baseline-comparison.md` 更新。
+  Doctest count: 742 → 748。
+  **M3.7（M3 reaction-
   loop integration checkpoint）** 是 M3 中段的 integration
   checkpoint，**不是 exit report，M3 仍 in progress**。
   新增 `tests/integration/m3_end_to_end_test.cpp` 三個端對端

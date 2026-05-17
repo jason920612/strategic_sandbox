@@ -2,10 +2,12 @@
 
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/systems/diagnostics.hpp"
 #include "leviathan/systems/interest_group_system.hpp"
 
 using leviathan::core::CountryId;
@@ -931,5 +933,208 @@ TEST_CASE("authority_pressure: trace pointer adds no partial rows on preflight f
     std::vector<ig::AuthorityPressureTraceRow> trace;
     const auto r = ig::authority_pressure(s, &trace);
     REQUIRE(r.failed());
+    CHECK(trace.empty());
+}
+
+// =====================================================================
+// M3.8 - null-trace baseline strengthened to byte-for-byte equivalence
+//
+// PR #55 reviewer non-blocker: the M3.6 null-trace baseline tests above
+// only checked that a null pointer produces "a mutation". They did not
+// prove the resulting state is byte-identical with a non-null-trace
+// run on the same initial state. M3.8 closes that gap.
+//
+// Strategy:
+//   1. Build a non-trivial initial state.
+//   2. Make two copies; run the system under test on copy A with
+//      trace_out=nullptr, on copy B with trace_out=&vec.
+//   3. Use `diagnostics::compare_states(a, b, CompareOptions{0.0})`
+//      to demand strict byte equality across every gameplay-relevant
+//      field. Tolerance 0.0 is intentional — we want a regression
+//      to fail loudly, not get masked by 1e-9 slack.
+//   4. Spot-check the specific fields each system mutates with
+//      `==` doubles to make the failure message readable when a
+//      regression hits.
+//
+// Same-state copy is sufficient; we don't need a fresh state-builder
+// pair because GameState is plain data and copying is well-defined.
+// =====================================================================
+
+namespace {
+
+// Build a state with two countries (GER, FRA), each with one
+// Bureaucracy + one Workers interest group, so both M3.3 and M3.4
+// have real per-country aggregates to fold. Counts and influence
+// values chosen so the formula deltas are all non-zero and the
+// resulting state diverges meaningfully from the starting point.
+GameState m38_multi_country_state() {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 1, 31);
+
+    s.countries.push_back(country_with_compliance(0.40, "GER"));
+    s.countries.back().stability = 0.55;
+    s.countries.push_back(country_with_compliance(0.65, "FRA"));
+    s.countries.back().stability = 0.45;
+
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.80, /*radicalism=*/0.20,
+                 /*influence=*/0.60,
+                 InterestGroupKind::Bureaucracy, "ger_bureaucracy"));
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.40, /*radicalism=*/0.65,
+                 /*influence=*/0.40,
+                 InterestGroupKind::Workers, "ger_workers"));
+    s.interest_groups.push_back(
+        group_at(CountryId{1}, /*loyalty=*/0.55, /*radicalism=*/0.35,
+                 /*influence=*/0.50,
+                 InterestGroupKind::Bureaucracy, "fra_bureaucracy"));
+    s.interest_groups.push_back(
+        group_at(CountryId{1}, /*loyalty=*/0.30, /*radicalism=*/0.70,
+                 /*influence=*/0.30,
+                 InterestGroupKind::Workers, "fra_workers"));
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("country_feedback: null vs non-null trace produce byte-identical state (single group)") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base = m36_state_ger_two_groups();
+    GameState s_null = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::country_feedback(s_null,  /*trace_out=*/nullptr).ok());
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    REQUIRE(ig::country_feedback(s_trace, &trace).ok());
+
+    // diagnostics::compare_states walks every gameplay-relevant
+    // field (current_date, countries[*], factions[*], applied_commands,
+    // interest_groups[*]). Tolerance 0.0 demands byte-identical doubles.
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    const auto mismatches = dg::compare_states(s_null, s_trace, opts);
+    CHECK(mismatches.empty());
+
+    // Specific spot-check on the single mutated country field so
+    // any failure message names the right path.
+    CHECK(s_null.countries[0].stability == s_trace.countries[0].stability);
+}
+
+TEST_CASE("country_feedback: null vs non-null trace produce byte-identical state (multi-country)") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base = m38_multi_country_state();
+    GameState s_null = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::country_feedback(s_null,  /*trace_out=*/nullptr).ok());
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    REQUIRE(ig::country_feedback(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    const auto mismatches = dg::compare_states(s_null, s_trace, opts);
+    CHECK(mismatches.empty());
+
+    // Both countries must have moved identically.
+    CHECK(s_null.countries[0].stability == s_trace.countries[0].stability);
+    CHECK(s_null.countries[1].stability == s_trace.countries[1].stability);
+
+    // Non-trivial trace: two countries each emitted one row.
+    CHECK(trace.size() == 2u);
+}
+
+TEST_CASE("country_feedback: null vs non-null trace are byte-identical when every country is skipped") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    // Two countries, zero interest groups -> every country skipped,
+    // no mutation, trace stays empty. Null vs non-null still byte-
+    // identical (the "no mutation" path is the easiest place to
+    // accidentally regress if a future refactor pushes a stub row
+    // before the skip check).
+    GameState base;
+    base.countries.push_back(country_at_stability(0.5, "GER"));
+    base.countries.push_back(country_at_stability(0.6, "FRA"));
+
+    GameState s_null  = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::country_feedback(s_null,  nullptr).ok());
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    REQUIRE(ig::country_feedback(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    CHECK(dg::compare_states(s_null, s_trace, opts).empty());
+    CHECK(trace.empty());
+}
+
+TEST_CASE("authority_pressure: null vs non-null trace produce byte-identical state (single group)") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base = m36_state_ger_two_groups();
+    GameState s_null = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::authority_pressure(s_null,  nullptr).ok());
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    REQUIRE(ig::authority_pressure(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    const auto mismatches = dg::compare_states(s_null, s_trace, opts);
+    CHECK(mismatches.empty());
+
+    CHECK(s_null.countries[0].government_authority.bureaucratic_compliance
+          == s_trace.countries[0].government_authority.bureaucratic_compliance);
+}
+
+TEST_CASE("authority_pressure: null vs non-null trace produce byte-identical state (multi-country)") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base = m38_multi_country_state();
+    GameState s_null = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::authority_pressure(s_null,  nullptr).ok());
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    REQUIRE(ig::authority_pressure(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    const auto mismatches = dg::compare_states(s_null, s_trace, opts);
+    CHECK(mismatches.empty());
+
+    CHECK(s_null.countries[0].government_authority.bureaucratic_compliance
+          == s_trace.countries[0].government_authority.bureaucratic_compliance);
+    CHECK(s_null.countries[1].government_authority.bureaucratic_compliance
+          == s_trace.countries[1].government_authority.bureaucratic_compliance);
+
+    // Trace: each country has one Bureaucracy-kind group, so one row each.
+    CHECK(trace.size() == 2u);
+}
+
+TEST_CASE("authority_pressure: null vs non-null trace are byte-identical when every country is skipped") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    // Country has only a non-Bureaucracy group -> M3.4 skips. Same
+    // safety check as the country_feedback skip case above.
+    GameState base;
+    base.countries.push_back(country_with_compliance(0.5, "GER"));
+    base.interest_groups.push_back(
+        group_at(CountryId{0}, 0.6, 0.3, 0.5,
+                 InterestGroupKind::Workers, "ger_workers"));
+
+    GameState s_null  = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::authority_pressure(s_null,  nullptr).ok());
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    REQUIRE(ig::authority_pressure(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    CHECK(dg::compare_states(s_null, s_trace, opts).empty());
     CHECK(trace.empty());
 }
