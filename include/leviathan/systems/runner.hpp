@@ -22,10 +22,12 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/diagnostics.hpp"
 
 namespace leviathan::systems::runner {
 
@@ -124,8 +126,104 @@ core::Result<RunOutcome> run(const RunnerOptions& opts);
 // so the log retains its canonical M0.9 ordering. RunOutcome.monthly_ticks
 // counts month boundaries crossed (one per pipeline call). With an
 // empty state.countries the pipeline still runs but processes 0.
+//
+// As of M2.2 this is a thin composition over `begin_tick` /
+// `step_one_day` / `end_tick`. External drivers (interactive REPL,
+// pause / step UI, future M2.3 command queue) can invoke those
+// primitives directly to interleave their own work between days.
+// run_state's behaviour is unchanged.
 core::Result<RunOutcome> run_state(core::GameState& state,
                                    const RunnerOptions& opts);
+
+// ============================================================================
+// M2.2 - step-at-a-time primitives.
+//
+// Lets an outer driver pause / step / resume the simulation without losing
+// the in-flight orchestration buffers (summary / country / faction CSV rows,
+// monthly_ticks counter, captured start_date). The controller lives OUTSIDE
+// the persistent GameState — it is never saved or loaded. A future M2.3+
+// command queue will sit between begin_tick and step_one_day, mutating
+// state with player commands before the next day advances.
+// ============================================================================
+
+// Runtime / orchestration state held between tick steps. Default-
+// constructed before the first `begin_tick`. Fields are exposed for
+// inspection by tests and future drivers; mutating them after
+// `begin_tick` has run is unsupported and will desync the writes
+// `end_tick` performs.
+struct TickController {
+    // Captured at begin_tick: state.current_date BEFORE any tick.
+    core::GameDate start_date{};
+
+    // Count of `month_changed` boundaries observed so far (one per
+    // monthly_pipeline call). Mirrors `RunOutcome::monthly_ticks`.
+    int monthly_ticks = 0;
+
+    // Number of times `step_one_day` has been called since
+    // `begin_tick`. Equals `RunOutcome::days_advanced` after
+    // `end_tick`.
+    int days_stepped = 0;
+
+    // M0.10 / M1.14 / M1.16 snapshot row buffers. Filled at the
+    // start, on each month boundary, and at end_tick. Empty when the
+    // corresponding --*-csv flag is unset.
+    std::vector<diagnostics::SummaryRow>        summary_rows;
+    std::vector<diagnostics::CountrySummaryRow> country_rows;
+    std::vector<diagnostics::FactionSummaryRow> faction_rows;
+
+    // Lifecycle flags. begin_tick sets started=true; end_tick sets
+    // ended=true. step_one_day / end_tick refuse to run if started is
+    // false, and step_one_day / begin_tick refuse to run if ended is
+    // true.
+    bool started = false;
+    bool ended   = false;
+};
+
+// Resolve --player (if set), capture state.current_date as
+// `ctrl.start_date`, emit the "simulation start" log entry, and write
+// the initial start-of-run snapshot row to each populated CSV buffer.
+//
+// Failure cases:
+//   - ctrl.started is already true (double-begin)
+//   - ctrl.ended is true (resurrecting a finished controller)
+//   - opts.player_id_code is set but state.countries is empty
+//   - opts.player_id_code is set but no country with that id_code
+//     was loaded
+core::Result<bool> begin_tick(core::GameState& state,
+                              const RunnerOptions& opts,
+                              TickController& ctrl);
+
+// Advance the simulation by exactly one day. Emits month_changed /
+// year_changed lifecycle logs as appropriate, runs
+// `monthly::tick_all_countries` on month boundaries, increments
+// `ctrl.monthly_ticks`, and appends snapshot rows on month boundaries
+// when the matching CSV flag is set.
+//
+// Failure cases:
+//   - ctrl.started is false (must call begin_tick first)
+//   - ctrl.ended is true (controller already finalised)
+//   - the M1.10 monthly pipeline fails
+//
+// On failure, partial day state is left in place (advance_one_day +
+// boundary logs may have already happened). The function does not
+// roll back; the M1.9 pipeline was already documented as non-atomic.
+core::Result<bool> step_one_day(core::GameState& state,
+                                const RunnerOptions& opts,
+                                TickController& ctrl);
+
+// Emit "simulation end" log, run sanity_check, log every issue,
+// append the final post-sanity snapshot row to each populated CSV
+// buffer, resolve output paths, write save.json / events.jsonl /
+// summary.csv / countries.csv / factions.csv as appropriate, and
+// return the populated RunOutcome.
+//
+// Sets `ctrl.ended = true` on success. Failure cases:
+//   - ctrl.started is false (cannot end an unstarted controller)
+//   - ctrl.ended is true (double-end)
+//   - any file-write step fails
+core::Result<RunOutcome> end_tick(core::GameState& state,
+                                  const RunnerOptions& opts,
+                                  TickController& ctrl);
 
 }  // namespace leviathan::systems::runner
 

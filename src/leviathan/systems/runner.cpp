@@ -271,26 +271,70 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
     return run_state(state, opts);
 }
 
-core::Result<RunOutcome> run_state(core::GameState& state,
-                                   const RunnerOptions& opts) {
-    namespace lt = leviathan::systems::time;
-    namespace lg = leviathan::systems::logging;
-    namespace ss = leviathan::systems::save_system;
-    namespace dg = leviathan::systems::diagnostics;
-    namespace mp = leviathan::systems::monthly;
+// ===========================================================================
+// M2.2: tick primitives — begin_tick / step_one_day / end_tick.
+// ===========================================================================
 
-    if (opts.days < 0) {
-        return core::Result<RunOutcome>::failure("--days must be >= 0");
+namespace {
+
+// Append one CountrySummaryRow per country to the controller's
+// country buffer at the current GameState time. Pulled out so every
+// snapshot point (start, per-month, final post-sanity) shares one
+// call site.
+core::Result<bool> snapshot_all_countries(const core::GameState& s,
+                                          TickController& ctrl) {
+    namespace dg = leviathan::systems::diagnostics;
+    for (std::size_t i = 0; i < s.countries.size(); ++i) {
+        const core::CountryId id{static_cast<int>(i)};
+        auto r = dg::country_snapshot(s, id);
+        if (!r) {
+            return core::Result<bool>::failure(std::move(r.error()));
+        }
+        ctrl.country_rows.push_back(std::move(r).value());
+    }
+    return core::Result<bool>::success(true);
+}
+
+// Same shape as above for the per-faction snapshot.
+core::Result<bool> snapshot_all_factions(const core::GameState& s,
+                                         TickController& ctrl) {
+    namespace dg = leviathan::systems::diagnostics;
+    for (std::size_t i = 0; i < s.factions.size(); ++i) {
+        const core::FactionId id{static_cast<int>(i)};
+        auto r = dg::faction_snapshot(s, id);
+        if (!r) {
+            return core::Result<bool>::failure(std::move(r.error()));
+        }
+        ctrl.faction_rows.push_back(std::move(r).value());
+    }
+    return core::Result<bool>::success(true);
+}
+
+}  // namespace
+
+core::Result<bool> begin_tick(core::GameState& state,
+                              const RunnerOptions& opts,
+                              TickController& ctrl) {
+    namespace lg = leviathan::systems::logging;
+    namespace dg = leviathan::systems::diagnostics;
+
+    if (ctrl.started) {
+        return core::Result<bool>::failure(
+            "begin_tick: controller already started (double-begin)");
+    }
+    if (ctrl.ended) {
+        return core::Result<bool>::failure(
+            "begin_tick: controller already ended; build a fresh"
+            " TickController to start a new run");
     }
 
     // M2.1: resolve --player COUNTRY_IDCODE against the loaded scenario.
-    // Must happen AFTER scenario_load (which populates state.countries
-    // in run()) and BEFORE the start log / first snapshot so a bad
-    // id_code aborts cleanly without emitting any artefact.
+    // Must run BEFORE the start log / first snapshot so a bad id_code
+    // aborts cleanly without emitting any artefact.
     if (opts.player_id_code.has_value()) {
         const std::string& want = opts.player_id_code.value();
         if (state.countries.empty()) {
-            return core::Result<RunOutcome>::failure(
+            return core::Result<bool>::failure(
                 "--player " + want +
                 " requires a non-empty state.countries (typically via"
                 " --scenario)");
@@ -305,60 +349,13 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             }
         }
         if (!found) {
-            return core::Result<RunOutcome>::failure(
+            return core::Result<bool>::failure(
                 "--player " + want +
                 ": no country with that id_code in the loaded scenario");
         }
     }
 
-    const core::GameDate start_date = state.current_date;
-
-    // Snapshot buffer for --summary-csv. We collect rows in-memory and
-    // dump them at the end; long enough runs that this matters can
-    // stream later. Empty buffer = no CSV requested.
-    std::vector<dg::SummaryRow> summary_rows;
-    const bool want_csv = opts.summary_csv_path.has_value();
-
-    // M1.14: parallel buffer for --countries-csv. Same cadence as the
-    // summary CSV; one row per country per snapshot point.
-    std::vector<dg::CountrySummaryRow> country_rows;
-    const bool want_country_csv = opts.countries_csv_path.has_value();
-
-    // Helper: append one CountrySummaryRow per country at the current
-    // GameState time. Pulled out so the start / per-month / final
-    // snapshots all share one call site.
-    const auto snapshot_all_countries =
-        [&country_rows](const core::GameState& s) -> core::Result<bool> {
-            for (std::size_t i = 0; i < s.countries.size(); ++i) {
-                const core::CountryId id{static_cast<int>(i)};
-                auto r = dg::country_snapshot(s, id);
-                if (!r) {
-                    return core::Result<bool>::failure(std::move(r.error()));
-                }
-                country_rows.push_back(std::move(r).value());
-            }
-            return core::Result<bool>::success(true);
-        };
-
-    // M1.16: parallel buffer for --factions-csv. Mirrors M1.14 country
-    // CSV; one row per faction per snapshot point.
-    std::vector<dg::FactionSummaryRow> faction_rows;
-    const bool want_faction_csv = opts.factions_csv_path.has_value();
-
-    const auto snapshot_all_factions =
-        [&faction_rows](const core::GameState& s) -> core::Result<bool> {
-            for (std::size_t i = 0; i < s.factions.size(); ++i) {
-                const core::FactionId id{static_cast<int>(i)};
-                auto r = dg::faction_snapshot(s, id);
-                if (!r) {
-                    return core::Result<bool>::failure(std::move(r.error()));
-                }
-                faction_rows.push_back(std::move(r).value());
-            }
-            return core::Result<bool>::success(true);
-        };
-
-    int monthly_ticks = 0;
+    ctrl.start_date = state.current_date;
 
     // Initial log. Metadata is intentionally path-independent so two
     // runs with the same options produce byte-identical event logs.
@@ -366,55 +363,95 @@ core::Result<RunOutcome> run_state(core::GameState& state,
                  {{"days_requested", std::to_string(opts.days)},
                   {"seed",           std::to_string(state.rng.seed)}});
 
-    if (want_csv) {
-        summary_rows.push_back(dg::snapshot(state));
+    if (opts.summary_csv_path.has_value()) {
+        ctrl.summary_rows.push_back(dg::snapshot(state));
     }
-    if (want_country_csv) {
-        auto r = snapshot_all_countries(state);
-        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    if (opts.countries_csv_path.has_value()) {
+        auto r = snapshot_all_countries(state, ctrl);
+        if (!r) return r;
     }
-    if (want_faction_csv) {
-        auto r = snapshot_all_factions(state);
-        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    if (opts.factions_csv_path.has_value()) {
+        auto r = snapshot_all_factions(state, ctrl);
+        if (!r) return r;
     }
 
-    // ---- Tick -------------------------------------------------------------
-    for (int i = 0; i < opts.days; ++i) {
-        const lt::TickResult r = lt::advance_one_day(state);
-        if (r.month_changed) {
-            lg::log_info(state, "time", "runner", "month rolled over");
+    ctrl.started = true;
+    return core::Result<bool>::success(true);
+}
+
+core::Result<bool> step_one_day(core::GameState& state,
+                                const RunnerOptions& opts,
+                                TickController& ctrl) {
+    namespace lt = leviathan::systems::time;
+    namespace lg = leviathan::systems::logging;
+    namespace dg = leviathan::systems::diagnostics;
+    namespace mp = leviathan::systems::monthly;
+
+    if (!ctrl.started) {
+        return core::Result<bool>::failure(
+            "step_one_day: controller has not been started (call"
+            " begin_tick first)");
+    }
+    if (ctrl.ended) {
+        return core::Result<bool>::failure(
+            "step_one_day: controller already ended");
+    }
+
+    const lt::TickResult tr = lt::advance_one_day(state);
+    if (tr.month_changed) {
+        lg::log_info(state, "time", "runner", "month rolled over");
+    }
+    if (tr.year_changed) {
+        lg::log_info(state, "time", "runner", "year rolled over");
+    }
+    // M1.10: monthly pipeline runs at each month boundary, AFTER the
+    // month-rolled-over log line so the canonical M0.9 log ordering
+    // is preserved. The pipeline itself writes no logs.
+    if (tr.month_changed) {
+        auto pipe_r = mp::tick_all_countries(state);
+        if (!pipe_r) {
+            return core::Result<bool>::failure(
+                "monthly pipeline failed on " +
+                state.current_date.to_string() + ": " +
+                std::move(pipe_r.error()));
         }
-        if (r.year_changed) {
-            lg::log_info(state, "time", "runner", "year rolled over");
-        }
-        // M1.10: monthly pipeline runs at each month boundary, AFTER
-        // the month-rolled-over log line so the canonical M0.9 log
-        // ordering is preserved. The pipeline itself writes no logs.
-        if (r.month_changed) {
-            auto pipe_r = mp::tick_all_countries(state);
-            if (!pipe_r) {
-                return core::Result<RunOutcome>::failure(
-                    "monthly pipeline failed on " +
-                    state.current_date.to_string() + ": " +
-                    std::move(pipe_r.error()));
-            }
-            ++monthly_ticks;
-        }
-        if (want_csv && r.month_changed) {
-            summary_rows.push_back(dg::snapshot(state));
-        }
-        if (want_country_csv && r.month_changed) {
-            auto r2 = snapshot_all_countries(state);
-            if (!r2) return core::Result<RunOutcome>::failure(std::move(r2.error()));
-        }
-        if (want_faction_csv && r.month_changed) {
-            auto r2 = snapshot_all_factions(state);
-            if (!r2) return core::Result<RunOutcome>::failure(std::move(r2.error()));
-        }
+        ++ctrl.monthly_ticks;
+    }
+    if (opts.summary_csv_path.has_value() && tr.month_changed) {
+        ctrl.summary_rows.push_back(dg::snapshot(state));
+    }
+    if (opts.countries_csv_path.has_value() && tr.month_changed) {
+        auto r = snapshot_all_countries(state, ctrl);
+        if (!r) return r;
+    }
+    if (opts.factions_csv_path.has_value() && tr.month_changed) {
+        auto r = snapshot_all_factions(state, ctrl);
+        if (!r) return r;
+    }
+
+    ++ctrl.days_stepped;
+    return core::Result<bool>::success(true);
+}
+
+core::Result<RunOutcome> end_tick(core::GameState& state,
+                                  const RunnerOptions& opts,
+                                  TickController& ctrl) {
+    namespace lg = leviathan::systems::logging;
+    namespace ss = leviathan::systems::save_system;
+    namespace dg = leviathan::systems::diagnostics;
+
+    if (!ctrl.started) {
+        return core::Result<RunOutcome>::failure(
+            "end_tick: controller has not been started (call"
+            " begin_tick first)");
+    }
+    if (ctrl.ended) {
+        return core::Result<RunOutcome>::failure(
+            "end_tick: controller already ended (double-end)");
     }
 
     lg::log_info(state, "lifecycle", "runner", "simulation end",
-                 {{"days_advanced", std::to_string(opts.days)}});
+                 {{"days_advanced", std::to_string(ctrl.days_stepped)}});
 
     // ---- Sanity checks ---------------------------------------------------
     // Run AFTER the end log but BEFORE the final snapshot, so any
@@ -426,29 +463,31 @@ core::Result<RunOutcome> run_state(core::GameState& state,
                       {{"code", iss.code}});
     }
 
-    if (want_csv) {
-        summary_rows.push_back(dg::snapshot(state));
+    if (opts.summary_csv_path.has_value()) {
+        ctrl.summary_rows.push_back(dg::snapshot(state));
     }
-    if (want_country_csv) {
-        auto r = snapshot_all_countries(state);
-        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    if (opts.countries_csv_path.has_value()) {
+        auto r = snapshot_all_countries(state, ctrl);
+        if (!r) {
+            return core::Result<RunOutcome>::failure(std::move(r.error()));
+        }
     }
-    if (want_faction_csv) {
-        auto r = snapshot_all_factions(state);
-        if (!r) return core::Result<RunOutcome>::failure(std::move(r.error()));
+    if (opts.factions_csv_path.has_value()) {
+        auto r = snapshot_all_factions(state, ctrl);
+        if (!r) {
+            return core::Result<RunOutcome>::failure(std::move(r.error()));
+        }
     }
 
     // ---- Resolve output paths --------------------------------------------
     const auto save_path = opts.save_path.value_or(opts.output_dir / "save.json");
     const auto log_path  = opts.log_path.value_or(opts.output_dir / "events.jsonl");
 
-    // ---- Write save -------------------------------------------------------
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
         return core::Result<RunOutcome>::failure(std::move(save_r.error()));
     }
 
-    // ---- Write JSONL log via the LoggingSystem exporter -------------------
     std::ostringstream ss_log;
     lg::export_jsonl(ss_log, state);
     auto log_w = write_string_to_file(log_path, ss_log.str());
@@ -456,11 +495,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
         return core::Result<RunOutcome>::failure(std::move(log_w.error()));
     }
 
-    // ---- Write summary CSV (if requested) --------------------------------
-    if (want_csv) {
+    if (opts.summary_csv_path.has_value()) {
         std::ostringstream csv;
         dg::write_csv_header(csv);
-        for (const auto& row : summary_rows) {
+        for (const auto& row : ctrl.summary_rows) {
             dg::write_csv_row(csv, row);
         }
         auto csv_w = write_string_to_file(opts.summary_csv_path.value(), csv.str());
@@ -468,12 +506,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
-
-    // ---- Write per-country CSV (if requested) (M1.14) --------------------
-    if (want_country_csv) {
+    if (opts.countries_csv_path.has_value()) {
         std::ostringstream csv;
         dg::write_country_csv_header(csv);
-        for (const auto& row : country_rows) {
+        for (const auto& row : ctrl.country_rows) {
             dg::write_country_csv_row(csv, row);
         }
         auto csv_w = write_string_to_file(opts.countries_csv_path.value(), csv.str());
@@ -481,12 +517,10 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
-
-    // ---- Write per-faction CSV (if requested) (M1.16) --------------------
-    if (want_faction_csv) {
+    if (opts.factions_csv_path.has_value()) {
         std::ostringstream csv;
         dg::write_faction_csv_header(csv);
-        for (const auto& row : faction_rows) {
+        for (const auto& row : ctrl.faction_rows) {
             dg::write_faction_csv_row(csv, row);
         }
         auto csv_w = write_string_to_file(opts.factions_csv_path.value(), csv.str());
@@ -495,23 +529,44 @@ core::Result<RunOutcome> run_state(core::GameState& state,
         }
     }
 
-    // ---- Outcome ----------------------------------------------------------
     RunOutcome outcome;
-    outcome.start_date           = start_date;
+    outcome.start_date           = ctrl.start_date;
     outcome.end_date             = state.current_date;
-    outcome.days_advanced        = opts.days;
+    outcome.days_advanced        = ctrl.days_stepped;
     outcome.log_count            = state.logs.size();
     outcome.save_path            = save_path;
     outcome.log_path             = log_path;
     outcome.summary_csv_path     = opts.summary_csv_path;
-    outcome.summary_rows         = summary_rows.size();
+    outcome.summary_rows         = ctrl.summary_rows.size();
     outcome.sanity_issues_logged = issues.size();
-    outcome.monthly_ticks        = monthly_ticks;
+    outcome.monthly_ticks        = ctrl.monthly_ticks;
     outcome.countries_csv_path   = opts.countries_csv_path;
-    outcome.countries_csv_rows   = country_rows.size();
+    outcome.countries_csv_rows   = ctrl.country_rows.size();
     outcome.factions_csv_path    = opts.factions_csv_path;
-    outcome.factions_csv_rows    = faction_rows.size();
+    outcome.factions_csv_rows    = ctrl.faction_rows.size();
+
+    ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));
+}
+
+core::Result<RunOutcome> run_state(core::GameState& state,
+                                   const RunnerOptions& opts) {
+    if (opts.days < 0) {
+        return core::Result<RunOutcome>::failure("--days must be >= 0");
+    }
+
+    TickController ctrl;
+    auto begin_r = begin_tick(state, opts, ctrl);
+    if (!begin_r) {
+        return core::Result<RunOutcome>::failure(std::move(begin_r.error()));
+    }
+    for (int i = 0; i < opts.days; ++i) {
+        auto step_r = step_one_day(state, opts, ctrl);
+        if (!step_r) {
+            return core::Result<RunOutcome>::failure(std::move(step_r.error()));
+        }
+    }
+    return end_tick(state, opts, ctrl);
 }
 
 }  // namespace leviathan::systems::runner

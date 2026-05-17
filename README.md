@@ -8,22 +8,27 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.1 — Player country selection.**
-  New `GameState::player_country` field (`CountryId`, default
-  `CountryId::invalid()`) and `--player COUNTRY_IDCODE` runner flag.
-  Resolution runs in `run_state` after scenario load: linear scan
-  for an `id_code` match, fail loudly on empty world or unknown
-  id_code. **Save format bumped v7 → v8** with `"player_country"`
-  as a required root-level integer (-1 = headless; non-negative
-  must index into `countries`); v7 saves rejected loudly. No
-  behaviour change yet — no M1 system reads `player_country`. The
-  pause / resume controller, command queue, and command log are
-  later M2 sub-milestones.
-- Next sub-milestone candidates: **M2.2** (pause / resume / step
-  tick-rate controller wrapping the runner's `for (i < days)`
-  loop, save-format-neutral) or **M2.3** (player command queue —
-  first-class command struct submitted by an outer driver, would
-  introduce a new save-format field for the queue).
+- Latest shipped sub-milestone: **M2.2 — Pause / resume / step
+  primitives.** New `runner::TickController` runtime struct (lives
+  outside `GameState`, never saved) plus three public free
+  functions: `begin_tick(state, opts, ctrl)`, `step_one_day(state,
+  opts, ctrl)`, `end_tick(state, opts, ctrl)`. `run_state` is
+  rewritten as a thin composition over them. Misuse paths (double
+  begin, step before begin, step after end, double end) all return
+  `Result::failure` with specific messages. **No save format
+  change** (still v8); no new CLI flag; no new logs; no M1 system
+  behaviour change. M1.17's 5-artefact byte-identical determinism
+  contract is preserved by construction — two new equivalence
+  tests pin it (`begin/step×N/end == run_state(days=N)` and
+  `begin/step×15/step×16/end == run_state(days=31)`). Drive-by: 2
+  regression tests addressing the PR #29 reviewer nit — bad
+  `--player` (empty world OR unknown id_code) leaves no `save.json`
+  / `events.jsonl` on disk.
+- Next sub-milestone candidates: **M2.3** (player command queue —
+  first-class command struct submitted by an outer driver between
+  `step_one_day` calls; would bump save format v8 → v9 if the queue
+  needs to persist) or **M2.4** (player command log — foundation
+  for deterministic replay).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -47,8 +52,8 @@ the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
-RFC-090 §M2) has begun with M2.1 merged. Eighteen sub-milestones
-shipped:
+RFC-090 §M2) has begun with M2.1 + M2.2 merged. Nineteen sub-
+milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -109,7 +114,15 @@ new `GameState::player_country` (`CountryId`, default invalid),
 new `--player COUNTRY_IDCODE` runner flag resolved after scenario
 load. Save format bumped v7 → v8 (`"player_country"` required at
 root; v7 rejected loudly). M1 systems unchanged: no behaviour
-branches on `player_country` yet. Opens RFC-090 §M2.**
+branches on `player_country` yet. Opens RFC-090 §M2; **M2.2 Pause
+/ resume / step primitives — new `runner::TickController` runtime
+struct (lives outside `GameState`) plus three free functions:
+`begin_tick` / `step_one_day` / `end_tick`. `run_state` is
+rewritten as a thin composition over them; M1.17's 5-artefact
+byte-identical determinism contract is preserved (two new
+equivalence tests pin it). Misuse rejected. No save format change
+(still v8); no new CLI flag; no new logs. Drive-by: 2 regression
+tests pinning that bad `--player` writes no on-disk artefacts.**
 
 ## Repository layout
 
@@ -264,13 +277,24 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.1 there are **452 doctest cases**. M0 contributed 179;
+As of M2.2 there are **462 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
-end-to-end integration tests; M2.1 adds 17 covering player country
-selection: 9 save_system cases (rejects an old v7 save loudly,
+end-to-end integration tests; M2.1 added 17; M2.2 adds 10
+covering pause / resume / step primitives: 6 misuse + counter
+cases (`begin_tick` double-begin rejected; `step_one_day` before
+begin / after end rejected; `end_tick` before begin / double end
+rejected; controller counters `start_date / days_stepped /
+monthly_ticks / started / ended` reflect actual lifecycle); 2
+equivalence cases (`begin/step×N/end` byte-identical to
+`run_state(days=N)` across save + events + all 3 CSVs;
+`begin/step×15/step×16/end` byte-identical to
+`run_state(days=31)`); 2 drive-by regression cases from the PR
+#29 nit (bad `--player` empty-world / unknown id_code both leave
+no `save.json` / `events.jsonl` on disk). Previously M2.1 added
+17 covering player country selection: 9 save_system cases (rejects an old v7 save loudly,
 serialize emits `"player_country": -1`, save+load round-trips
 both `-1` and a valid index, v8 missing `player_country` rejected,
 non-integer rejected, `< -1` rejected, out-of-range rejected,

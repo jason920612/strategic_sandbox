@@ -13,8 +13,10 @@
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/runner.hpp"
 #include "leviathan/systems/save_system.hpp"
+#include "leviathan/systems/scenario_loader.hpp"
 
 namespace fs = std::filesystem;
 namespace rn = leviathan::systems::runner;
@@ -1352,6 +1354,246 @@ TEST_CASE("run: no --player keeps player_country at -1 in the save") {
 
     const std::string save = read_file(td.path / "save.json");
     CHECK(save.find("\"player_country\": -1") != std::string::npos);
+}
+
+// PR #29 nit drive-bys: a failed --player resolution must not leave
+// half-written artefacts on disk. The error message check is already
+// covered above; these regressions pin the file-system side.
+
+TEST_CASE("run: bad --player on empty world leaves no save / events on disk") {
+    TempDir td("leviathan_runner_m202_bad_player_no_artifacts_empty");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 5;
+    opts.output_dir     = td.path;
+    opts.player_id_code = "GER";   // no --scenario => empty world => rejected
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK_FALSE(fs::exists(td.path / "save.json"));
+    CHECK_FALSE(fs::exists(td.path / "events.jsonl"));
+}
+
+TEST_CASE("run: bad --player unknown id_code leaves no save / events on disk") {
+    TempDir td("leviathan_runner_m202_bad_player_no_artifacts_unknown");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 5;
+    opts.output_dir     = td.path;
+    opts.scenario_path  = kCanonicalScenario;
+    opts.player_id_code = "BOGUS";
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK_FALSE(fs::exists(td.path / "save.json"));
+    CHECK_FALSE(fs::exists(td.path / "events.jsonl"));
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.2 - begin_tick / step_one_day / end_tick primitives
+// =====================================================================
+
+TEST_CASE("M2.2 begin_tick: misuse - double begin is rejected") {
+    rn::TickController ctrl;
+    GameState state;
+    rn::RunnerOptions opts;
+    opts.days = 0;
+    REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+    const auto r = rn::begin_tick(state, opts, ctrl);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("already started") != std::string::npos);
+}
+
+TEST_CASE("M2.2 step_one_day: misuse - step before begin is rejected") {
+    rn::TickController ctrl;
+    GameState state;
+    rn::RunnerOptions opts;
+    opts.days = 0;
+    const auto r = rn::step_one_day(state, opts, ctrl);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not been started") != std::string::npos);
+}
+
+TEST_CASE("M2.2 end_tick: misuse - end before begin is rejected") {
+    rn::TickController ctrl;
+    GameState state;
+    rn::RunnerOptions opts;
+    opts.days = 0;
+    const auto r = rn::end_tick(state, opts, ctrl);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not been started") != std::string::npos);
+}
+
+TEST_CASE("M2.2 step_one_day: misuse - step after end is rejected") {
+    TempDir td("leviathan_runner_m202_step_after_end");
+    rn::TickController ctrl;
+    GameState state;
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+    REQUIRE(rn::end_tick(state, opts, ctrl).ok());
+    const auto r = rn::step_one_day(state, opts, ctrl);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("already ended") != std::string::npos);
+}
+
+TEST_CASE("M2.2 end_tick: misuse - double end is rejected") {
+    TempDir td("leviathan_runner_m202_end_twice");
+    rn::TickController ctrl;
+    GameState state;
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+    REQUIRE(rn::end_tick(state, opts, ctrl).ok());
+    const auto r = rn::end_tick(state, opts, ctrl);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("already ended") != std::string::npos);
+}
+
+TEST_CASE("M2.2 controller: days_stepped + monthly_ticks reflect the step calls") {
+    TempDir td("leviathan_runner_m202_counters");
+    rn::TickController ctrl;
+    GameState state;
+    state.current_date = GameDate(1930, 1, 1);
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+
+    REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+    CHECK(ctrl.start_date  == GameDate(1930, 1, 1));
+    CHECK(ctrl.started     == true);
+    CHECK(ctrl.ended       == false);
+    CHECK(ctrl.days_stepped == 0);
+    CHECK(ctrl.monthly_ticks == 0);
+
+    for (int i = 0; i < 31; ++i) {
+        REQUIRE(rn::step_one_day(state, opts, ctrl).ok());
+    }
+    CHECK(ctrl.days_stepped == 31);
+    // 1930-01-01 + 31 days crosses Jan->Feb exactly once.
+    CHECK(ctrl.monthly_ticks == 1);
+
+    REQUIRE(rn::end_tick(state, opts, ctrl).ok());
+    CHECK(ctrl.ended == true);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("M2.2 step primitives: begin/step*N/end matches run_state byte-for-byte") {
+    // Equivalence proof: the new public primitives must produce the
+    // exact same save.json and events.jsonl as the original
+    // run_state(days = N) entry point. This pins the refactor as
+    // behaviour-preserving.
+    TempDir td_a("leviathan_runner_m202_eq_runstate");
+    TempDir td_b("leviathan_runner_m202_eq_primitives");
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path        = kCanonicalConfig;
+        o.days               = 31;
+        o.output_dir         = dir;
+        o.seed_override      = std::uint64_t{0xBEEF};
+        o.scenario_path      = kCanonicalScenario;
+        o.summary_csv_path   = dir / "summary.csv";
+        o.countries_csv_path = dir / "countries.csv";
+        o.factions_csv_path  = dir / "factions.csv";
+        return o;
+    };
+
+    // Path A: run() -> run_state (the existing entry point).
+    REQUIRE(rn::run(make_opts(td_a.path)).ok());
+
+    // Path B: drive the primitives directly. We have to replicate
+    // run()'s scenario-load step because begin_tick does NOT load
+    // scenarios (that's run()'s responsibility).
+    {
+        const auto opts = make_opts(td_b.path);
+        namespace dl = leviathan::systems::data_loader;
+        namespace sl = leviathan::systems::scenario_loader;
+        auto cfg_r = dl::load_simulation_config(opts.config_path);
+        REQUIRE(cfg_r.ok());
+        auto cfg = std::move(cfg_r).value();
+        cfg.seed = opts.seed_override.value();
+        auto state = leviathan::core::make_game_state(cfg);
+        REQUIRE(sl::load_into_state(state, opts.scenario_path.value()).ok());
+
+        rn::TickController ctrl;
+        REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+        for (int i = 0; i < opts.days; ++i) {
+            REQUIRE(rn::step_one_day(state, opts, ctrl).ok());
+        }
+        REQUIRE(rn::end_tick(state, opts, ctrl).ok());
+    }
+
+    CHECK(read_file(td_a.path / "save.json")    ==
+          read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") ==
+          read_file(td_b.path / "events.jsonl"));
+    CHECK(read_file(td_a.path / "summary.csv")  ==
+          read_file(td_b.path / "summary.csv"));
+    CHECK(read_file(td_a.path / "countries.csv") ==
+          read_file(td_b.path / "countries.csv"));
+    CHECK(read_file(td_a.path / "factions.csv") ==
+          read_file(td_b.path / "factions.csv"));
+}
+
+TEST_CASE("M2.2 step primitives: pause-then-resume produces byte-identical output") {
+    // Stronger property: calling step_one_day in two batches (e.g.
+    // 15 + 16) with an arbitrary delay between batches is observably
+    // identical to calling it all at once. This is the resume-from-
+    // pause case that justifies the refactor.
+    TempDir td_a("leviathan_runner_m202_pause_one_shot");
+    TempDir td_b("leviathan_runner_m202_pause_two_batches");
+
+    auto make_opts = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path        = kCanonicalConfig;
+        o.days               = 31;
+        o.output_dir         = dir;
+        o.seed_override      = std::uint64_t{0xCAFE};
+        o.scenario_path      = kCanonicalScenario;
+        o.summary_csv_path   = dir / "summary.csv";
+        return o;
+    };
+
+    // Path A: 31 days in one shot via run().
+    REQUIRE(rn::run(make_opts(td_a.path)).ok());
+
+    // Path B: drive 15 days, "pause" (do nothing), drive 16 more.
+    {
+        const auto opts = make_opts(td_b.path);
+        namespace dl = leviathan::systems::data_loader;
+        namespace sl = leviathan::systems::scenario_loader;
+        auto cfg_r = dl::load_simulation_config(opts.config_path);
+        REQUIRE(cfg_r.ok());
+        auto cfg = std::move(cfg_r).value();
+        cfg.seed = opts.seed_override.value();
+        auto state = leviathan::core::make_game_state(cfg);
+        REQUIRE(sl::load_into_state(state, opts.scenario_path.value()).ok());
+
+        rn::TickController ctrl;
+        REQUIRE(rn::begin_tick(state, opts, ctrl).ok());
+        for (int i = 0; i < 15; ++i) {
+            REQUIRE(rn::step_one_day(state, opts, ctrl).ok());
+        }
+        // --- pause ---
+        for (int i = 0; i < 16; ++i) {
+            REQUIRE(rn::step_one_day(state, opts, ctrl).ok());
+        }
+        REQUIRE(rn::end_tick(state, opts, ctrl).ok());
+    }
+
+    CHECK(read_file(td_a.path / "save.json")    ==
+          read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl") ==
+          read_file(td_b.path / "events.jsonl"));
+    CHECK(read_file(td_a.path / "summary.csv")  ==
+          read_file(td_b.path / "summary.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
