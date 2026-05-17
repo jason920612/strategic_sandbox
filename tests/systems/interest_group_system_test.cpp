@@ -443,3 +443,300 @@ TEST_CASE("country_feedback: clamp keeps stability inside [0, 1]") {
     CHECK(state.countries[0].stability >= 0.0);
     CHECK(state.countries[0].stability <= 1.0);
 }
+
+// =====================================================================
+// M3.4 - authority_pressure: Bureaucracy weighted-loyalty -> bureaucratic_compliance
+// =====================================================================
+
+namespace {
+
+// Build a fully populated country with the M2.16 authority
+// block defaulting to 0.5 across all four sub-fields, then
+// override the bureaucratic_compliance to a chosen value.
+CountryState country_with_compliance(double compliance,
+                                     const std::string& id_code) {
+    CountryState c = country_at_stability(0.5, id_code);
+    c.government_authority.bureaucratic_compliance = compliance;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("authority_pressure: empty state succeeds with zero updates") {
+    GameState state;
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+}
+
+TEST_CASE("authority_pressure: country with no Bureaucracy group is skipped") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.4, "GER"));
+    const double before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(before));
+}
+
+TEST_CASE("authority_pressure: single Bureaucracy group high loyalty raises compliance") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, /*radicalism=*/0.5,
+                 /*influence=*/1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    // target = 0.8
+    // new    = 0.4 + (0.8 - 0.4) * 0.01 = 0.404
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.404));
+}
+
+TEST_CASE("authority_pressure: single Bureaucracy group low loyalty lowers compliance") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.8, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.2, /*radicalism=*/0.5,
+                 /*influence=*/1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    // target = 0.2
+    // new    = 0.8 + (0.2 - 0.8) * 0.01 = 0.794
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.794));
+}
+
+TEST_CASE("authority_pressure: influence-weighted Bureaucracy aggregate over two groups") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.2, 0.5,
+                 /*influence=*/0.75,
+                 InterestGroupKind::Bureaucracy, "g1"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, 0.5,
+                 /*influence=*/0.25,
+                 InterestGroupKind::Bureaucracy, "g2"));
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    // weighted = (0.75*0.2 + 0.25*0.8) / (0.75 + 0.25) = 0.35
+    // new      = 0.5 + (0.35 - 0.5) * 0.01 = 0.4985
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.4985));
+}
+
+TEST_CASE("authority_pressure: non-Bureaucracy groups are ignored") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.4, "GER"));
+    // Military + Workers groups should NOT pull compliance.
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.9, 0.5, 1.0,
+                 InterestGroupKind::Military, "m"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.1, 0.5, 1.0,
+                 InterestGroupKind::Workers,  "w"));
+
+    const double before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(before));
+}
+
+TEST_CASE("authority_pressure: zero-influence Bureaucracy groups are ignored") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.9, 0.5,
+                 /*influence=*/0.0,
+                 InterestGroupKind::Bureaucracy));
+    const double before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(before));
+}
+
+TEST_CASE("authority_pressure: multi-country updates are independent") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));   // 0
+    state.countries.push_back(country_with_compliance(0.5, "FRA"));   // 1
+
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy, "ger_b"));
+    state.interest_groups.push_back(
+        group_at(CountryId{1}, /*loyalty=*/0.2, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy, "fra_b"));
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 2);
+
+    // GER: target 0.8, new = 0.5 + 0.3 * 0.01 = 0.503
+    // FRA: target 0.2, new = 0.5 + (-0.3) * 0.01 = 0.497
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.503));
+    CHECK(state.countries[1].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.497));
+}
+
+TEST_CASE("authority_pressure: interest groups themselves are never mutated") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.4, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, /*loyalty=*/0.71, /*rad=*/0.62,
+                 /*influence=*/0.83,
+                 InterestGroupKind::Bureaucracy);
+    state.interest_groups.push_back(g);
+
+    REQUIRE(ig::authority_pressure(state).ok());
+    const auto& after = state.interest_groups[0];
+    CHECK(after.loyalty    == doctest::Approx(0.71));
+    CHECK(after.radicalism == doctest::Approx(0.62));
+    CHECK(after.influence  == doctest::Approx(0.83));
+}
+
+TEST_CASE("authority_pressure: only bureaucratic_compliance is mutated; other authority sub-fields untouched") {
+    GameState state;
+    CountryState c = country_with_compliance(0.4, "GER");
+    c.government_authority.military_loyalty        = 0.33;
+    c.government_authority.intelligence_capability = 0.44;
+    c.government_authority.media_control           = 0.66;
+    state.countries.push_back(c);
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    REQUIRE(ig::authority_pressure(state).ok());
+    // bureaucratic_compliance moved...
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(0.404));
+    // ...the other three are byte-identical.
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(0.33));
+    CHECK(state.countries[0].government_authority.intelligence_capability
+          == doctest::Approx(0.44));
+    CHECK(state.countries[0].government_authority.media_control
+          == doctest::Approx(0.66));
+}
+
+TEST_CASE("authority_pressure: stability / legitimacy / corruption are untouched") {
+    GameState state;
+    CountryState c = country_with_compliance(0.4, "GER");
+    c.stability  = 0.61;
+    c.legitimacy = 0.55;
+    c.corruption = 0.27;
+    state.countries.push_back(c);
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    REQUIRE(ig::authority_pressure(state).ok());
+    CHECK(state.countries[0].stability  == doctest::Approx(0.61));
+    CHECK(state.countries[0].legitimacy == doctest::Approx(0.55));
+    CHECK(state.countries[0].corruption == doctest::Approx(0.27));
+}
+
+TEST_CASE("authority_pressure: invalid group country fails preflight without mutating any country") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    state.countries.push_back(country_with_compliance(0.5, "FRA"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy, "ok"));
+    InterestGroupState bad =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy, "bad");
+    bad.country = CountryId{7};
+    state.interest_groups.push_back(bad);
+
+    const double ger_before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+    const double fra_before =
+        state.countries[1].government_authority.bureaucratic_compliance;
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("authority_pressure") != std::string::npos);
+    CHECK(r.error().find("interest_groups[1]") != std::string::npos);
+
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(ger_before));
+    CHECK(state.countries[1].government_authority.bureaucratic_compliance
+          == doctest::Approx(fra_before));
+}
+
+TEST_CASE("authority_pressure: non-finite group loyalty fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy);
+    g.loyalty = std::nan("");
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("loyalty") != std::string::npos);
+}
+
+TEST_CASE("authority_pressure: out-of-range group influence fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy);
+    g.influence = 1.5;
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("influence") != std::string::npos);
+}
+
+TEST_CASE("authority_pressure: non-finite bureaucratic_compliance fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_compliance(0.5, "GER"));
+    state.countries[0].government_authority.bureaucratic_compliance =
+        std::nan("");
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    const auto r = ig::authority_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("bureaucratic_compliance") != std::string::npos);
+}
+
+TEST_CASE("authority_pressure: clamp keeps bureaucratic_compliance inside [0, 1]") {
+    // Compliance starts at 1.0; weighted loyalty 1.0 nudges
+    // target above; clamp must keep it inside.
+    GameState state;
+    state.countries.push_back(country_with_compliance(1.0, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/1.0, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy));
+
+    REQUIRE(ig::authority_pressure(state).ok());
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          >= 0.0);
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          <= 1.0);
+}

@@ -58,6 +58,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-11-replay-verify.md`](m2-11-replay-verify.md) | M2.11 | **Replay verify CLI.** New `--verify` boolean runner flag (requires `--replay`) wires M2.10 `compare_states` into the M2.8 replay flow. After `end_tick` succeeds, the runner calls `compare_states(replayed_state, loaded_source)` and populates `RunOutcome::verify_mismatches`. `main()` prints `Verify mismatches: N` plus one bullet per mismatch (`  - <field_path> : <detail>`). **Informational only** — exit code stays 0 regardless of mismatch count; artefacts (save / JSONL / CSV) are still written so the user can forensically inspect. Reuses the already-loaded source save (no extra disk I/O). `parse_args` rejects `--verify` without `--replay` with both flag names in the error. **No save-format bump (still v9), no strict fail-on-mismatch mode (`--verify-strict` is a future candidate), no CLI tolerance knob, no `--verify` outside `--replay`, no mismatch-list truncation, no M1 system change.** |
 | [`m2-12-verify-strict.md`](m2-12-verify-strict.md) | M2.12 | **Replay strict mode.** New `--verify-strict` boolean runner flag (requires `--verify`) makes `main()` exit `EXIT_FAILURE` when M2.11 detects any mismatches. The full mismatch list still prints to stdout before the non-zero exit so CI logs capture every divergence. **Architectural decision**: `run()` semantics unchanged — it still returns success when the simulation+replay completes; strict mode is a `main()`-level exit-code policy. Tradeoff is one extra line of policy in `main()`; benefit is library/CLI separation stays clean and other consumers (tests, future embedders) can apply their own policy. `parse_args` rejects `--verify-strict` without `--verify` with both flag names in the error. Flag-chain: `--verify-strict` → `--verify` → `--replay`. **No save-format bump (still v9), no `--verify-tolerance` CLI knob (M2.13 candidate), no structured-diff output format, no mismatch-count threshold (strict is binary: any mismatch fails), no `run()` behaviour change, no M1 system change.** |
 | [`m2-13-verify-tolerance.md`](m2-13-verify-tolerance.md) | M2.13 | **Verify tolerance CLI.** New `--verify-tolerance FLOAT` runner flag (requires `--verify`) overrides M2.10's default `1e-9` `CompareOptions::double_tolerance` when calling `compare_states`. Parses via a new exception-free `parse_nonneg_double` helper that rejects empty input, trailing garbage (`"1.5x"`), non-finite values (`NaN`/`Inf`), and negatives at parse time with the flag name + bad value in the error. Plumbed into `run()`'s replay branch by building a `diagnostics::CompareOptions` with the override applied only when set. `main()` prints `Verify tolerance: <value>` when active so CI logs show which tolerance produced the mismatch count. **Completes the M2 replay-CLI family** (`--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`). **No save-format bump (still v9), no library behaviour change beyond passing the override through, no relative tolerance, no per-field tolerance, no new gameplay.** |
+| [`m3-4-interest-group-authority-pressure.md`](m3-4-interest-group-authority-pressure.md) | M3.4 | **InterestGroup-derived authority pressure skeleton.** Opens the second reverse-direction channel in the M3 reaction loop: interest groups press on `country.government_authority.bureaucratic_compliance`. Extends `interest_group_system` with `kInterestGroupAuthorityPressureRate = 0.01`, `AuthorityPressureOutcome { countries_updated }`, and `authority_pressure(state)` free function. For each country, computes influence-weighted loyalty over **Bureaucracy-kind** groups only and drifts `bureaucratic_compliance` toward that target at rate 0.01, clamped to `[0, 1]`. Countries with no Bureaucracy groups or zero total Bureaucracy influence skipped. Mutation surface restricted to `bureaucratic_compliance`: the other three authority sub-fields, plus country `stability` / `legitimacy` / `corruption`, are byte-identical. Strict preflight on inputs actually read (group.country / influence / loyalty / country.bureaucratic_compliance, all finite + `[0, 1]`); `radicalism` and `stability` deliberately NOT preflighted here. Wired into `tick_all_countries` as the THIRD global step, AFTER M3.3's `country_feedback`, completing the rate ladder mood (0.05) → stability (0.02) → authority (0.01). `MonthlyOutcome` gains `int interest_group_authority_countries_updated`. 19 new doctest cases. The M2.18 `EnactPolicy` gate is now a downstream consumer of the loop but M3.4 does NOT change the gate formula. **No save schema bump (still v11), no new state fields, no new `InterestGroupKind` variants, no mutation of `military_loyalty` / `intelligence_capability` / `media_control`, no mutation of `legitimacy` / `corruption` / `stability` / `central_control` / `administrative_efficiency`, no additional aggregate inputs (radicalism does not feed this step), no per-kind / per-country / per-output rate, no weighted multi-input formula beyond influence-weighted Bureaucracy loyalty, no RNG / probabilistic behaviour, no events / `state.logs` entry / AI / UI / CLI / REPL, no coup / strike / protest / civil war / cross-border behaviour, no automatic group generation, no command-gate integration, no faction reaction changes, no policy preference system, no `tick_country` change.** |
 | [`m3-3-interest-group-country-feedback.md`](m3-3-interest-group-country-feedback.md) | M3.3 | **InterestGroup country feedback skeleton.** Closes the M3 reaction loop: interest groups push back on country state. Extends the M3.2 `interest_group_system` module with `kInterestGroupCountryFeedbackRate = 0.02`, `CountryFeedbackOutcome { countries_updated }`, and `country_feedback(state)` free function. Per country, computes influence-weighted radicalism (`sum(g.influence * g.radicalism) / sum(g.influence)` over matching groups with `influence > 0`) and drifts `country.stability` toward `1.0 - weighted_radicalism` at rate 0.02, clamped to `[0, 1]`. Countries with no matching groups or zero total influence skipped. The single mutation surface is `country.stability` — `legitimacy`, `government_authority`, `corruption`, `central_control`, and `administrative_efficiency` are all untouched. Strict preflight (group.country + influence + radicalism + country.stability all validated finite + `[0, 1]` before any country mutates; one NaN would otherwise poison stability). Wired into the monthly pipeline as the FINAL step of `tick_all_countries` AFTER M3.2's `react`, so it reads just-updated radicalism. `MonthlyOutcome` gains `int interest_group_countries_updated`. Slower 0.02 rate (vs M3.2's 0.05) damps the closed loop. 14 new doctest cases. Drive-by: M3.2 monthly-pipeline integration test's exact-arithmetic assertion demoted to a directional check (the M3.3 step also mutates `country.stability` post-react). **No save schema bump (still v11), no new state fields, no new InterestGroupKind variants, no additional mutation targets, no additional aggregate inputs (loyalty does not feed this step), no per-kind / per-country / per-output rate, no RNG / probabilistic behaviour, no events / `state.logs` entry / AI / UI / CLI / REPL, no coup / strike / protest / civil war / cross-border behaviour, no automatic group generation, no command-gate integration, no `government_authority` mutation, no faction reaction changes, no policy preference system, no `tick_country` change.** |
 | [`m3-2-interest-group-reaction-system.md`](m3-2-interest-group-reaction-system.md) | M3.2 | **InterestGroupReactionSystem skeleton.** First M3 system to mutate the M3.1 data layer. New module `leviathan::systems::interest_group` with constant `kInterestGroupReactionRate = 0.05`, `ReactionOutcome { groups_updated }`, and `react(state)` free function. Reaction is a linear-toward-equilibrium drift on two fields driven by `country.stability`: `loyalty += (stability - loyalty) * 0.05`, `radicalism += ((1 - stability) - radicalism) * 0.05`, clamped to `[0, 1]`. `influence`, `kind`, `country`, `id_code`, and `name` are untouched. Preflight-validates every `group.country` against `state.countries` BEFORE mutating any group (atomicity). Wired into the monthly pipeline as the FINAL step of `tick_all_countries`, after every per-country `faction::react → stability::tick → economy::tick` runs; the global step reads each country's post-tick stability. `MonthlyOutcome` gains `int interest_groups_updated`. 13 new doctest cases. **No save schema bump (still v11), no influence drift, no per-kind formula, no events / AI / UI / scheduler, no country aggregate effect (interest groups do not push back on country state — M3.3+ candidate), no command-gate integration, no faction reaction changes, no RNG / probabilistic behaviour, no strikes / protests / coups / civil-war / cross-border behaviour, no new `PlayerCommandKind`, no new CSV column.** |
 | [`m3-1-interest-group-state.md`](m3-1-interest-group-state.md) | M3.1 | **InterestGroupState / political actors skeleton.** Opens M3. New `core::InterestGroupKind` enum (10 variants spanning Bureaucracy / Military / Workers / Farmers / Religious / Media / Students / LocalElites / Business / Technocrats) and `core::InterestGroupState` POD (id_code / name / kind / country / influence / loyalty / radicalism). New `GameState::interest_groups` root-level vector (each entry's `country` points back to the country). **Save format bumped v10 → v11**: block REQUIRED at save layer (empty allowed) with strict per-entry validation (non-empty id_code + name, known kind string, country index resolving into `state.countries`, three ratios in `[0, 1]` via `require_ratio`, duplicate id_code rejected). `scenario_loader` accepts OPTIONAL `interest_groups` block in scenario JSON; missing → empty vector; present-but-malformed rejected with `interest_groups[N]` path. `diagnostics::compare_states` walks the array under `interest_groups[N].*`. **Data only** — no M1 / M2 system reads or writes the new fields; M1 monthly pipeline and M2 command path are byte-identical. Future M3 sub-milestones (reactions, command-resistance contributions, event triggers, AI) layer behaviour onto this shape. 20 new doctest cases. **No new CLI flag, no new PlayerCommandKind, no new CSV column, no `state.logs` entry, no replay primitive change, no command-gate integration, no automatic per-country generation, no demands / preferred policies / armed strength / ideology / foreign links, no monthly reaction system, no event triggers, no AI / UI / scheduler, no M1 / M2 system change.** |
@@ -84,7 +85,7 @@ If you're new to the codebase:
    `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 →
    M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11 → M2.12 → M2.13 →
    M2.14 → M2.16 → M2.17 → M2.18 → M2.19 → M2.20 → M2.21 →
-   `milestone-2-result.md` → M3.1 → M3.2 → M3.3). They
+   `milestone-2-result.md` → M3.1 → M3.2 → M3.3 → M3.4). They
    build on each other and each one tries to call out the rules
    a future contributor must not silently break.
 
@@ -93,7 +94,7 @@ If you're new to the codebase:
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.
 
-**M3 in progress.** M3.1 + M3.2 + M3.3 shipped:
+**M3 in progress.** M3.1 + M3.2 + M3.3 + M3.4 shipped:
 
 - **M3.1** introduced the data shape (InterestGroupKind enum
   + InterestGroupState POD + root-level vector + save format
@@ -103,21 +104,28 @@ for the full M2 exit ledger.
   `loyalty` / `radicalism` drift toward
   `country.stability` / `1.0 - country.stability` at rate
   0.05, wired into `tick_all_countries` as the final step.
-- **M3.3** closes the reaction loop: each country's
-  `stability` drifts toward `1.0 - influence_weighted_radicalism`
-  of its own groups at rate 0.02. Wired as a second global
-  step in `tick_all_countries` after M3.2's `react` so it
-  reads the just-updated radicalism.
+- **M3.3** closes the reaction loop on `country.stability`:
+  each country's `stability` drifts toward
+  `1.0 - influence_weighted_radicalism` of its own groups at
+  rate 0.02. Wired as a second global step in
+  `tick_all_countries` after M3.2's `react` so it reads the
+  just-updated radicalism.
+- **M3.4** opens the second reverse-direction channel: each
+  country's `government_authority.bureaucratic_compliance`
+  drifts toward influence-weighted loyalty over its
+  **Bureaucracy-kind** groups at rate 0.01. Wired as a third
+  global step after M3.3's `country_feedback`. Completes the
+  rate ladder (0.05 → 0.02 → 0.01).
 
 Suggested next M3 sub-milestone:
 
-- **M3.4** — open. Natural candidates: (a) a second feedback
-  output target (radicalism aggregate driving
-  `legitimacy`), (b) a second feedback input (weighted
-  `loyalty` feeding stability alongside radicalism), (c)
-  interest-group integration into the M2.18 / M2.19 command-
-  execution gate, (d) influence drift driven by event /
-  policy outcomes. None committed.
+- **M3.5** — open. Natural candidates: (a) a sibling
+  authority channel (Military-kind loyalty driving
+  `military_loyalty`), (b) interest-group integration into
+  the M2.18 / M2.19 command-execution gate, (c) influence
+  drift driven by event / policy outcomes, (d) a second
+  feedback input weighting loyalty alongside radicalism for
+  the stability channel. None committed.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
@@ -125,7 +133,8 @@ land later as targeted follow-ups when the player loop needs them.
 
 M2 closed with M2.22. M3 in progress with M3.1 (data layer) +
 M3.2 (country → group mood) + M3.3 (group radicalism → country
-stability). Per the M-pacing rule, M3.4 waits for an explicit
+stability) + M3.4 (group loyalty → country bureaucratic
+compliance). Per the M-pacing rule, M3.5 waits for an explicit
 reviewer green-light.
 
 ## When to add a new file

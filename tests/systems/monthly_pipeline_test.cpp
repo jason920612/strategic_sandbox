@@ -568,3 +568,102 @@ TEST_CASE("tick_all_countries runs M3.2 react then M3.3 country_feedback in orde
     CHECK(state.countries[0].stability ==
           doctest::Approx(expected_one_more_step));
 }
+
+// =====================================================================
+// M3.4 - authority_pressure runs after react + country_feedback inside tick_all_countries
+// =====================================================================
+
+TEST_CASE("tick_all_countries runs M3.2 -> M3.3 -> M3.4 in order (M3.4)") {
+    // One country + one Bureaucracy-kind interest group with
+    // mid-range starting values. After tick_all_countries we
+    // expect:
+    //   * existing M1 systems ran (GDP shifted, stability ticked)
+    //   * M3.2 ran: group.loyalty moved off the starting 0.5
+    //   * M3.3 ran: country.stability moved off its post-tick value
+    //     (it was post-tick already shifted by M3.3 too)
+    //   * M3.4 ran: bureaucratic_compliance drifted toward the
+    //     post-react loyalty (NOT the pre-react loyalty)
+    //   * all three counters set
+    GameState state;
+    CountryState ger = germany_baseline(0);
+    // Start bureaucratic_compliance somewhere visible (default
+    // would be 0.5 from M2.16 baseline). Use the same default to
+    // keep the test focused.
+    state.countries.push_back(ger);
+    state.factions.push_back(make_faction(0, 0, /*support=*/0.3, /*loyalty=*/0.3));
+
+    leviathan::core::InterestGroupState g;
+    g.id_code    = "ger_b";
+    g.name       = "GER bureaucracy";
+    g.kind       = leviathan::core::InterestGroupKind::Bureaucracy;
+    g.country    = CountryId{0};
+    g.influence  = 1.0;
+    g.loyalty    = 0.5;
+    g.radicalism = 0.5;
+    state.interest_groups.push_back(g);
+
+    const double compliance_before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+    const double loyalty_before = state.interest_groups[0].loyalty;
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_processed                       == 1);
+    CHECK(r.value().interest_groups_updated                   == 1);
+    CHECK(r.value().interest_group_countries_updated          == 1);
+    CHECK(r.value().interest_group_authority_countries_updated == 1);
+
+    // M3.2 ran: group loyalty moved off 0.5.
+    CHECK(state.interest_groups[0].loyalty != doctest::Approx(loyalty_before));
+
+    // (M3.4 ran: see the closed-form ordering pin below. The
+    // 0.01-rate step is intentionally too small for an Approx-
+    // tolerant `!=` directional check at this scale; the
+    // re-run-on-resulting-state assertion is the strict pin.)
+    (void)compliance_before;
+
+    // Ordering pin: authority_pressure reads the JUST-updated
+    // loyalty, not the original 0.5. Re-run authority_pressure
+    // on the resulting state. The closed-form step
+    //   new_compliance = compliance + (target - compliance) * 0.01
+    // with target = post-pipeline loyalty must match.
+    const double post_compliance =
+        state.countries[0].government_authority.bureaucratic_compliance;
+    const double post_loyalty = state.interest_groups[0].loyalty;
+    const double expected_one_more_step =
+        post_compliance + (post_loyalty - post_compliance) * 0.01;
+    auto r2 = leviathan::systems::interest_group::authority_pressure(state);
+    REQUIRE(r2.ok());
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(expected_one_more_step));
+}
+
+TEST_CASE("tick_all_countries with no Bureaucracy groups still succeeds (M3.4)") {
+    // Country has interest groups but none of the Bureaucracy
+    // kind -> M3.4 skips, M3.2 / M3.3 still run as before.
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+
+    leviathan::core::InterestGroupState g;
+    g.id_code   = "ger_m";
+    g.name      = "GER military";
+    g.kind      = leviathan::core::InterestGroupKind::Military;
+    g.country   = CountryId{0};
+    g.influence = 1.0;
+    g.loyalty   = 0.5;
+    g.radicalism = 0.5;
+    state.interest_groups.push_back(g);
+
+    const double compliance_before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_groups_updated                    == 1);
+    CHECK(r.value().interest_group_countries_updated           == 1);
+    // M3.4 skipped because no Bureaucracy-kind group exists.
+    CHECK(r.value().interest_group_authority_countries_updated == 0);
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(compliance_before));
+}
