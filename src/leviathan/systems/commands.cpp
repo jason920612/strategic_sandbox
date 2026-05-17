@@ -180,4 +180,90 @@ core::Result<ReplayOutcome> replay(
     return core::Result<ReplayOutcome>::success(std::move(outcome));
 }
 
+// ===========================================================================
+// M2.7: replay_with_time
+// ===========================================================================
+
+core::Result<ReplayOutcome> replay_with_time(
+        core::GameState& state,
+        const runner::RunnerOptions& opts,
+        runner::TickController& ctrl,
+        const std::vector<core::AppliedPlayerCommand>& log) {
+    // ---- Preconditions ----------------------------------------------------
+    if (!state.player_country.valid() ||
+        state.player_country.value() < 0 ||
+        static_cast<std::size_t>(state.player_country.value()) >=
+            state.countries.size()) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay_with_time: state.player_country is not a"
+            " valid index into state.countries (caller must set"
+            " player_country before replay)");
+    }
+    if (!state.applied_commands.empty()) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay_with_time: state.applied_commands must be"
+            " empty on entry (build a fresh state from the scenario"
+            " loader, not a reloaded save)");
+    }
+    if (!ctrl.started) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay_with_time: TickController has not been"
+            " started (caller must call runner::begin_tick first)");
+    }
+    if (ctrl.ended) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay_with_time: TickController already ended;"
+            " build a fresh controller to start a new replay");
+    }
+
+    // ---- Replay loop ------------------------------------------------------
+    ReplayOutcome outcome;
+    for (std::size_t i = 0; i < log.size(); ++i) {
+        const auto& entry = log[i];
+
+        // Monotonicity: rejects out-of-order entries. The check is
+        // against current state.current_date, so the first entry that
+        // tries to go back in time fails — even if it is itself in
+        // order relative to entry i-1 (the state may already be past
+        // that date if the caller stepped beforehand).
+        if (entry.applied_on < state.current_date) {
+            return core::Result<ReplayOutcome>::failure(
+                "commands::replay_with_time[" + std::to_string(i) +
+                "]: out-of-order log entry (applied_on " +
+                entry.applied_on.to_string() +
+                " < current_date " + state.current_date.to_string() +
+                "); replay requires monotonically non-decreasing dates");
+        }
+
+        // Advance day-by-day until we reach the entry's date. Each
+        // step_one_day call runs the boundary logs + monthly pipeline
+        // when applicable; ctrl.days_stepped / monthly_ticks are
+        // updated accordingly.
+        while (state.current_date < entry.applied_on) {
+            auto step_r = runner::step_one_day(state, opts, ctrl);
+            if (!step_r) {
+                return core::Result<ReplayOutcome>::failure(
+                    "commands::replay_with_time[" + std::to_string(i) +
+                    "]: step_one_day failed advancing toward " +
+                    entry.applied_on.to_string() + ": " +
+                    std::move(step_r.error()));
+            }
+        }
+
+        // Dispatch through apply_pending so the M2.3 atomicity +
+        // M2.4 log-append + M1.5/M1.15 effect machinery all run.
+        CommandQueue q;
+        q.pending.push_back(entry.command);
+        auto apply_r = apply_pending(state, q);
+        if (!apply_r) {
+            return core::Result<ReplayOutcome>::failure(
+                "commands::replay_with_time[" + std::to_string(i) +
+                "]: " + std::move(apply_r.error()));
+        }
+        ++outcome.commands_replayed;
+    }
+
+    return core::Result<ReplayOutcome>::success(std::move(outcome));
+}
+
 }  // namespace leviathan::systems::commands

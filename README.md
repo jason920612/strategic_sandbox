@@ -8,28 +8,34 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.6 — Replay applied command
-  log prototype.** New `systems::commands::replay(state, log)`
-  free function + `ReplayOutcome` struct. For each entry in the
-  log, forces `state.current_date = entry.applied_on`, builds a
-  1-element `CommandQueue`, and calls `apply_pending`. The 1-elem-
-  per-entry approach inherits every M2.3 dispatch + M2.4 log-append
-  + M1.5/M1.15 effect machinery guarantee. **Preconditions**:
-  `state.player_country` valid + `state.applied_commands` empty.
-  **Atomicity across the log** mirrors M2.3 mid-list-failure:
-  entry-by-entry, failed entry reported with `replay[N]: ...` in
-  the error, prior entries stay applied + logged, subsequent
-  entries skipped. **Prototype limits** (documented + tested): no
-  time-system advancement between commands, `current_date` ends at
-  the last entry's `applied_on`, scenario must be pre-loaded by
-  caller. **No save format bump** (still v9); no new CLI flag; no
-  new log line; no M1 system change.
-- Next sub-milestone candidates: **M2.7** (further
+- Latest shipped sub-milestone: **M2.7 — Replay with time-system
+  advancement.** New `systems::commands::replay_with_time(state,
+  opts, ctrl, log)` free function. Lifts the M2.6 prototype's
+  "no time advance" limit by interleaving day-by-day simulation
+  advancement with command application: for each entry, advances
+  via M2.2 `step_one_day` until `state.current_date ==
+  entry.applied_on`, then dispatches the command via 1-element
+  `CommandQueue` + `apply_pending`. The M1.10 monthly pipeline
+  runs naturally on any month boundary between entries.
+  **Preconditions**: M2.6's pair + `ctrl.started && !ctrl.ended` +
+  monotonic non-decreasing dates (addresses PR #34 nit).
+  **Atomicity** mirrors M2.3 / M2.6 mid-list-failure with the
+  documented caveat that `state.current_date` may have advanced
+  partway on `step_one_day` failure. **Pinned by the killer
+  equivalence test**: replaying a recorded log onto a fresh state
+  reproduces the original simulation's `current_date`,
+  `days_stepped`, `monthly_ticks`, every log entry, the
+  command-effect fields, AND the monthly-pipeline-mutated fields
+  (`gdp`, `stability`, `last_gdp_growth_rate`). M2.6 `replay`
+  remains alongside for time-stripped replay needs.
+  **No save format bump** (still v9); no new CLI flag; no UI;
+  no AI; no event integration; no divergence-report API.
+- Next sub-milestone candidates: **M2.8** (replay CLI / harness —
+  e.g. `--replay PATH` flag that loads a save, builds a fresh
+  state from the same scenario, runs `replay_with_time`, and
+  compares; would not bump save format) or **M2.9** (further
   `PlayerCommandKind` variants — `ChangeTaxBurden`,
-  `ToggleMartialLaw`, …; save-neutral additive enum) or **M2.8**
-  (replay with full time-system advancement — lifts the M2.6
-  prototype's `current_date` and monthly-pipeline limits by
-  integrating with the M2.2 `step_one_day` primitive).
+  `ToggleMartialLaw`, …; save-neutral additive enum).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -54,7 +60,7 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-merged. Twenty-three sub-milestones shipped:
++ M2.7 merged. Twenty-four sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -167,7 +173,19 @@ failed entry reported with `replay[N]: ...` in the error,
 prior entries stay applied + logged, subsequent entries skipped.
 Prototype limits pinned by tests: no time-system advancement
 between commands, `current_date` ends at last entry, scenario
-must be pre-loaded. No save format change.**
+must be pre-loaded. No save format change; **M2.7 Replay with
+time-system advancement — new
+`systems::commands::replay_with_time(state, opts, ctrl, log)`
+free function lifting M2.6's "no time advance" limit. For each
+log entry, advances via M2.2 `step_one_day` until
+`current_date == applied_on` (so M1.10 monthly pipeline runs on
+boundaries naturally), then dispatches via 1-element queue +
+`apply_pending`. Preconditions add `ctrl.started && !ctrl.ended`
+and monotonic non-decreasing dates (addresses PR #34 nit).
+Killer equivalence test pins that replay reproduces the original
+simulation's state byte-for-byte (current_date, days_stepped,
+monthly_ticks, log entries, command effects, and monthly-
+pipeline-mutated fields). No save format change.**
 
 ## Repository layout
 
@@ -322,13 +340,22 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.6 there are **503 doctest cases**. M0 contributed 179;
+As of M2.7 there are **513 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
-added 8; M2.4 added 13; M2.5 added 11; M2.6 adds 9 in
+added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 adds 10
+in the same file under "M2.7: replay_with_time": empty log no-op,
+command at start_date (0 advance), command 5 days later (5
+advance), command past month boundary (45 days + 1 monthly_tick),
+multiple commands at different dates, out-of-order rejected,
+ctrl not started rejected, no player_country rejected, non-empty
+`applied_commands` rejected, **full equivalence vs original
+simulation** (drive source via step + apply, replay onto fresh
+target, verify every observable matches including gdp /
+stability / last_gdp_growth_rate). Previously M2.6 added 9 in
 `tests/systems/commands_test.cpp`: empty log replays cleanly;
 single EnactPolicy / single AdjustBudget / mixed-kind log all
 replay state + re-log correctly; replayed log mirrors source
