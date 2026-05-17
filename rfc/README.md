@@ -456,6 +456,36 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.18（EnactPolicy execution gate）** 是 M2 第一個會「拒絕」
+  玩家命令的 sub-milestone。`order_execution` 新增三件事：
+  常數 `kEnactPolicyComplianceThreshold = 0.3`、`ExecutionStatus`
+  enum 多一個 `Rejected` variant、`OrderExecutionOutcome` 多一個
+  `resistance` double field。`evaluate()` 根據 `command.kind`
+  分流：`PlayerCommandKind::EnactPolicy` 計算
+  `resistance = 1.0 - bureaucratic_compliance`，並依
+  `bureaucratic_compliance >= 0.3` 決定 `Accepted` / `Rejected`；
+  `PlayerCommandKind::AdjustBudget` 仍永遠 `Accepted`、
+  `resistance` 維持預設 0.0。`commands::apply_pending` 在 M2.3
+  policy lookup 之前先呼叫 `order_execution::evaluate`：
+  `Rejected` 時直接回 `Result::failure`，錯誤訊息包含
+  `order_execution` / `rejected` / `policy_id_code`；rejected
+  command 留在 queue head、`state.applied_commands` 不 append、
+  state 完全不 mutate（沿用 M2.3 / M2.4 mid-list-failure
+  atomicity）。Threshold 0.3 的選擇：canonical scenario 預設
+  `bureaucratic_compliance = 0.5`（M2.16 DataLoader 預設值），
+  0.3 讓現有測試與 fixture 全部 Accepted，但給 low-compliance
+  威權／崩潰政權留出可見的命令阻力空間，呼應 RFC-020 §2
+  「政策可能遭遇官僚拖延」的核心。Replay 相容性：M2.7
+  `replay_with_time` 對每個 log entry 呼叫 `apply_pending`，因為
+  v10 save 中所有 entry 都是在 default 0.5 authority 下被
+  Accepted，所以 replay 仍會重新 Accept。對應 RFC-020 §2 命令
+  阻力的第一個落地工作。**M2.18 不做** save format 變更（仍
+  v10）、`AdjustBudget` gate（留給 M2.19）、`Delayed` /
+  `Distorted` outcome、multi-input / weighted formula、
+  probabilistic / RNG gate、scheduler / pending-execution queue、
+  rejected 時的 `state.logs` 條目、`RunOutcome` 增加 rejected
+  counter、DataLoader / policy effect / replay primitive 變更、
+  新 `PlayerCommandKind`、新 CSV 欄位、M1 system 變更。
   **M2.17（OrderExecutionSystem skeleton）** 為 M2 引入第一個讀
   M2.16 `government_authority` 的 system。新模組
   `leviathan::systems::order_execution` 包含三個型別與一個 free
