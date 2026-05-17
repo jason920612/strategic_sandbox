@@ -2611,9 +2611,13 @@ TEST_CASE("run: interest_groups.csv with invalid country reference fails loudly 
     REQUIRE(r.failed());
     CHECK(r.error().find("phantom") != std::string::npos);
     CHECK(r.error().find("invalid country") != std::string::npos);
-    // The interest-group snapshot in `begin_tick` fails BEFORE the
-    // start log, so no artefact (including interest_groups.csv) is
-    // written. M2.9 pre-end_tick contract extended to the 6th file.
+    // The interest-group snapshot in `begin_tick` runs AFTER the
+    // "simulation start" log line is appended to state.logs, but
+    // BEFORE `end_tick` is ever called. `end_tick` is the only
+    // function that writes to disk, so no artefact (including
+    // interest_groups.csv) reaches the filesystem. M2.9
+    // pre-`end_tick` no-artefact contract extended to the 6th
+    // file.
     CHECK_FALSE(fs::exists(td.path / "save.json"));
     CHECK_FALSE(fs::exists(td.path / "events.jsonl"));
     CHECK_FALSE(fs::exists(td.path / "interest_groups.csv"));
