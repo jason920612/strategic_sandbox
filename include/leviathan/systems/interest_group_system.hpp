@@ -1,11 +1,22 @@
-// InterestGroupSystem - one step of interest-group reaction (M3.2).
+// InterestGroupSystem - interest-group reactions and the first
+// reverse-direction country feedback (M3.2 + M3.3).
 //
-// First M3 system to mutate the M3.1 `GameState::interest_groups`
-// data layer. Deliberately the smallest deterministic shape that
-// counts as a "reaction layer": each interest group's `loyalty`
-// drifts linearly toward its country's `stability`, and its
-// `radicalism` drifts linearly toward `1.0 - stability`. Both are
-// clamped to `[0, 1]` after the step. Nothing else moves.
+// M3.2 ships the country -> interest-group direction: each
+// interest group's `loyalty` drifts linearly toward its country's
+// `stability`, and its `radicalism` drifts linearly toward
+// `1.0 - stability`. Both are clamped to `[0, 1]` after the step.
+// Nothing else moves at that step.
+//
+// M3.3 closes the loop in the opposite direction with a small
+// `country_feedback` step: each country's `stability` drifts
+// toward `1.0 - influence_weighted_radicalism` of its own
+// interest groups, at the slower rate
+// `kInterestGroupCountryFeedbackRate` (0.02). Only `stability`
+// changes — no other country / faction / authority field is
+// touched. The feedback step is global (one call processes
+// every country), runs AFTER the M3.2 `react` step inside
+// `tick_all_countries`, and skips countries with no matching
+// groups or zero total influence.
 //
 // Reaction rules (M3.2):
 //
@@ -99,6 +110,60 @@ struct ReactionOutcome {
 // `state.rng`, `state.current_date`, country state, faction
 // state, policy state, or `state.applied_commands`.
 core::Result<ReactionOutcome> react(core::GameState& state);
+
+// ===========================================================================
+// M3.3 - interest-group -> country feedback
+// ===========================================================================
+
+// Drift rate applied to `country.stability` per monthly step,
+// chosen slower than `kInterestGroupReactionRate` so the
+// closed loop (M3.2 + M3.3) cannot oscillate quickly. Uniform
+// across countries and `InterestGroupKind` variants.
+inline constexpr double kInterestGroupCountryFeedbackRate = 0.02;
+
+struct CountryFeedbackOutcome {
+    // Count of countries whose `stability` was updated. A country
+    // with zero matching interest groups, or whose matching groups
+    // all have `influence <= 0.0`, is skipped (its stability stays
+    // byte-identical) and does NOT count toward this total.
+    int countries_updated = 0;
+};
+
+// Apply one step of M3.3 interest-group -> country feedback.
+//
+// For each country index `ci`:
+//
+//   weighted_radicalism =
+//     sum(g.influence * g.radicalism)  /  sum(g.influence)
+//     over every g in state.interest_groups with
+//     g.country.value() == ci and g.influence > 0.0
+//
+//   if weight_sum > 0:
+//       target = 1.0 - weighted_radicalism
+//       country.stability += (target - country.stability) *
+//                            kInterestGroupCountryFeedbackRate
+//       country.stability = clamp(country.stability, 0.0, 1.0)
+//
+//   otherwise the country is skipped (no mutation).
+//
+// Preconditions (preflight-validated BEFORE any mutation; a
+// single bad entry leaves every country untouched):
+//   * Every `g.country` in `state.interest_groups` indexes into
+//     `state.countries`.
+//   * Every `g.influence` and `g.radicalism` is finite and in
+//     `[0, 1]`.
+//   * Every `country.stability` is finite and in `[0, 1]`.
+//
+// Failure cases:
+//   * Any precondition above violated.
+//
+// Pure read of every other input field: `country_feedback` does
+// NOT touch interest groups, factions, policies, government
+// authority, legitimacy, corruption, central_control,
+// administrative_efficiency, RNG, logs, the date, or applied
+// commands. The single mutation surface is `country.stability`.
+core::Result<CountryFeedbackOutcome> country_feedback(
+    core::GameState& state);
 
 }  // namespace leviathan::systems::interest_group
 

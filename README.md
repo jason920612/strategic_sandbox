@@ -11,9 +11,43 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.2 —
-  InterestGroupReactionSystem skeleton.** First M3 system to
-  **mutate** the M3.1 data layer. New module
+- Latest shipped sub-milestone: **M3.3 — InterestGroup country
+  feedback skeleton.** Closes the M3 reaction loop: interest
+  groups now push back on country state. Extends the M3.2
+  `interest_group_system` module with a new constant
+  `kInterestGroupCountryFeedbackRate = 0.02`,
+  `CountryFeedbackOutcome { int countries_updated }`, and
+  `country_feedback(state)` free function. For each country,
+  computes an **influence-weighted radicalism**
+  (`sum(group.influence * group.radicalism) / sum(group.influence)`
+  across matching groups with `influence > 0`) and drifts
+  `country.stability` toward `1.0 - weighted_radicalism` at
+  rate 0.02, then clamps to `[0, 1]`. Countries with no
+  matching groups or zero total influence are skipped (no
+  mutation, not counted). The single output field is
+  `country.stability`; `legitimacy`, `government_authority`,
+  `corruption`, `central_control`, and `administrative_efficiency`
+  are all untouched. The single input aggregate is
+  influence-weighted radicalism; `loyalty` does not feed this
+  step. Strict preflight: every `group.country`,
+  `group.influence`, `group.radicalism`, and
+  `country.stability` validated for finite + `[0, 1]` BEFORE
+  any country mutates (atomicity across the list — a single
+  NaN would otherwise poison `country.stability`). Wired into
+  the monthly pipeline as the FINAL step of
+  `tick_all_countries`, after M3.2's `react`, so it reads the
+  just-updated `radicalism`. `MonthlyOutcome` gains
+  `int interest_group_countries_updated`. The slower 0.02 rate
+  (vs M3.2's 0.05) damps the closed loop. **No save schema
+  bump** (still v11); existing M1 / M2 / M3.1 / M3.2 callers
+  see byte-identical pipeline behaviour because canonical
+  scenarios author zero interest groups. 14 new doctest cases.
+  No events / AI / UI / command integration / new mutation
+  targets / per-kind formulas / RNG / coup / strike / civil
+  war / cross-border.
+- Previously shipped: **M3.2 — InterestGroupReactionSystem
+  skeleton.** First M3 system to **mutate** the M3.1 data
+  layer. New module
   `leviathan::systems::interest_group` with constant
   `kInterestGroupReactionRate = 0.05`, `ReactionOutcome { int
   groups_updated }`, and `react(state)` free function. The
@@ -113,15 +147,18 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.2): **M3.3** — likely
-  one of (a) interest-group reverse influence on `country.stability`
-  / `legitimacy` (the other direction of the reaction loop),
-  (b) a second reaction input layered onto M3.2's single
-  driver (e.g. `government_authority.bureaucratic_compliance`
-  or `corruption`), or (c) interest-group integration into the
-  M2.18 / M2.19 command-execution gate. None committed.
+- Next sub-milestone candidate (post-M3.3): **M3.4** — open.
+  With the closed loop now in place (M3.2 country → group
+  mood, M3.3 group radicalism → country stability), natural
+  next steps include (a) a second feedback output target
+  (e.g. radicalism aggregate driving `legitimacy`), (b) a
+  second feedback input (e.g. weighted `loyalty` feeding
+  stability alongside radicalism), (c) interest-group
+  integration into the M2.18 / M2.19 command-execution gate,
+  (d) influence drift driven by event / policy outcomes. None
+  committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 shipped). See `docs/milestone-0-result.md`,
+  M3.2 + M3.3 shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -148,7 +185,7 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-shipped. Forty sub-milestones shipped:
++ M3.3 shipped. Forty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -295,6 +332,35 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.3 InterestGroup country feedback skeleton — closes the
+M3 reaction loop: interest groups push back on country state.
+Extends the M3.2 `interest_group_system` module with constant
+`kInterestGroupCountryFeedbackRate = 0.02`,
+`CountryFeedbackOutcome { int countries_updated }`, and
+`country_feedback(state)` free function. Per country computes
+influence-weighted `radicalism` aggregate
+(`sum(g.influence * g.radicalism) / sum(g.influence)` over
+groups with `influence > 0`) and drifts `country.stability`
+toward `1.0 - weighted_radicalism` at rate 0.02, clamping to
+`[0, 1]`. Countries with no matching groups or zero total
+influence skipped. Only `country.stability` mutates;
+`legitimacy` / `government_authority` / `corruption` /
+`central_control` / `administrative_efficiency` all untouched.
+Only influence-weighted radicalism feeds the formula — loyalty
+is not consulted. Strict preflight validates every group +
+country before any mutation (atomicity guards against NaN
+poisoning). Wired into the monthly pipeline as the FINAL step
+of `tick_all_countries`, after M3.2's `react`, so it reads
+just-updated radicalism. `MonthlyOutcome` gains
+`int interest_group_countries_updated`. Slower 0.02 rate (vs
+M3.2's 0.05) damps the closed loop. No save schema bump (still
+v11). 14 new doctest cases. Drive-by: M3.2's monthly-pipeline
+integration test's exact-arithmetic assertion (which would
+have duplicated the M3.3 formula) demoted to a directional
+check; the new M3.3 monthly-pipeline test pins the layered
+behaviour. Existing M1 / M2 fixtures unaffected — canonical
+scenarios author zero interest groups so M3.3 finds no
+matching groups per country and skips all of them;
 **M3.2 InterestGroupReactionSystem skeleton — first M3 system
 that mutates the M3.1 data layer. New module
 `leviathan::systems::interest_group` with
@@ -733,7 +799,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M3.2 there are **660 doctest cases**. M0 contributed 179;
+As of M3.3 there are **674 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -744,8 +810,22 @@ added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
 M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
 M2.21 added 8; M2.22 added 3 end-to-end integration tests;
-M3.1 added 20 across the v10 → v11 save-format bump; M3.2 adds
-13 across the new `interest_group_system` module: 11 unit tests
+M3.1 added 20 across the v10 → v11 save-format bump; M3.2 added
+13 across the new `interest_group_system` module; M3.3 adds 14
+across the new `country_feedback` API: 12 unit tests
+(empty-state success / country-with-no-groups skipped / high-
+radicalism lowers stability / low-radicalism raises / influence-
+weighted aggregate over two groups / zero-influence groups
+skipped / multi-country independent / interest groups never
+mutated / invalid-group-country preflight atomicity / NaN
+radicalism preflight / out-of-range influence preflight / NaN
+country.stability preflight / clamp safety) and 2 monthly-
+pipeline tests (tick_all_countries runs M3.2 then M3.3 in that
+order, with both counters set and an order-pin via re-running
+feedback on the resulting state; empty-interest_groups still
+succeeds with `interest_group_countries_updated == 0`).
+Previously M3.2 adds 13 across the new `interest_group_system`
+module: 11 unit tests
 covering empty / high-stability / low-stability drift /
 multi-country routing / influence + identity fields untouched /
 clamp safety / preflight-atomicity-on-invalid-country / sentinel

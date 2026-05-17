@@ -217,7 +217,43 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.2（InterestGroupReactionSystem
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.3（InterestGroup
+  country feedback skeleton）** 把 M3 的反應 loop 收尾：interest
+  groups 反推 country state。延續 M3.2 的
+  `leviathan::systems::interest_group` 模組，新增常數
+  `kInterestGroupCountryFeedbackRate = 0.02`、
+  `CountryFeedbackOutcome { int countries_updated }`、與
+  `country_feedback(state)` free function。對每個 country：
+  計算 influence-weighted radicalism
+  `sum(g.influence * g.radicalism) / sum(g.influence)`，只算
+  `group.country == ci` 且 `influence > 0` 的 groups；然後
+  drift `country.stability` 朝 `1.0 - weighted_radicalism`
+  以 0.02 速率、clamp `[0, 1]`。沒有 matching groups 或全部
+  zero-influence 就 skip（不 mutate、不計數、不算失敗）。
+  輸出 surface **只動** `country.stability`：`legitimacy` /
+  `government_authority` / `corruption` / `central_control` /
+  `administrative_efficiency` 全不動。輸入 aggregate **只用**
+  influence-weighted radicalism，不用 loyalty。嚴格 preflight：
+  每個 `group.country` / `influence` / `radicalism` /
+  `country.stability` 都驗 finite + `[0, 1]`，任何一個違規
+  整批不 mutate（避免 NaN 擴散）。接進 monthly pipeline 作為
+  `tick_all_countries` 的**最後一步**、M3.2 `react` 之後，讀的是
+  剛 drift 完的 radicalism。`MonthlyOutcome` 新增
+  `int interest_group_countries_updated`。較慢的 0.02 速率
+  抑制 closed loop 震盪。**No save schema bump（仍 v11）**；
+  canonical scenario 沒 author interest_groups，所以既有
+  M1/M2/M3.1/M3.2 caller 完全沒有行為變更。對應 RFC-080 §5
+  stability 公式長期想要的 interest-group 反饋的第一片落地。
+  **M3.3 不做** save schema 變更、新欄位、新 InterestGroupKind、
+  `legitimacy` / `government_authority` / `corruption` mutation、
+  第二個 aggregate input、per-kind / per-country / per-output rate、
+  weighted multi-input formula 超出 influence-weighted radicalism、
+  RNG / 機率行為、events / `state.logs` entry、AI / UI / CLI、
+  coup / strike / protest / civil war / cross-border、automatic
+  group generation、command-gate integration、新 PlayerCommandKind、
+  faction reaction 變更、policy preference system、`tick_country`
+  變更、M1 / M2 system 變更。
+  **M3.2（InterestGroupReactionSystem
   skeleton）** 是 M3 第一個讓 interest_groups 真正 *mutate* 的
   system。新模組 `leviathan::systems::interest_group` 含常數
   `kInterestGroupReactionRate = 0.05`、`ReactionOutcome { int
