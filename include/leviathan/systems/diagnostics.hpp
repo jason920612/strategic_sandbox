@@ -23,6 +23,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/interest_group_system.hpp"
 
 namespace leviathan::systems::diagnostics {
 
@@ -218,6 +219,39 @@ void write_interest_group_csv_row(std::ostream& out,
 // doubled to `""`. Exposed so a caller writing CSV by hand (test
 // helpers, etc.) can reuse the same rule the M3.5 writer applies.
 std::string csv_escape(std::string_view field);
+
+// ---------------------------------------------------------------------------
+// Per-system formula traces (M3.6).
+//
+// The M3.5 surface (`interest_groups.csv`) snapshots interest-group
+// STATE at fixed snapshot points (start / each month_changed / final
+// post-sanity). M3.6 ships the complementary surface: for the two
+// reverse-direction interest-group systems (`country_feedback` /
+// `authority_pressure`), emit one CSV row per actually-mutated
+// country per monthly pipeline tick. Skipped countries (no matching
+// groups, zero total influence) produce no row; preflight failure
+// produces no partial rows.
+//
+// Cadence: ONLY during monthly pipeline execution. Unlike the M3.5
+// surface there is no start / end snapshot — every row corresponds
+// to a real mutation that just happened. Canonical scenarios with
+// no interest groups produce header-only files (the artefact set
+// is still constant).
+//
+// The row structs live in `leviathan::systems::interest_group` so
+// the systems themselves can fill them without depending on
+// diagnostics. The writers below format those rows into CSV.
+// ---------------------------------------------------------------------------
+
+void write_country_feedback_csv_header(std::ostream& out);
+void write_country_feedback_csv_row(
+    std::ostream& out,
+    const interest_group::CountryFeedbackTraceRow& row);
+
+void write_authority_pressure_csv_header(std::ostream& out);
+void write_authority_pressure_csv_row(
+    std::ostream& out,
+    const interest_group::AuthorityPressureTraceRow& row);
 
 // ---------------------------------------------------------------------------
 // M2.10: programmatic state-comparison API.

@@ -676,6 +676,10 @@ core::Result<bool> step_one_day(core::GameState& state,
     // M1.10: monthly pipeline runs at each month boundary, AFTER the
     // month-rolled-over log line so the canonical M0.9 log ordering
     // is preserved. The pipeline itself writes no logs.
+    //
+    // M3.6: drain the monthly outcome's formula-trace vectors into
+    // the controller's per-run buffers. Empty when no country was
+    // updated by the corresponding system this tick.
     if (tr.month_changed) {
         auto pipe_r = mp::tick_all_countries(state);
         if (!pipe_r) {
@@ -683,6 +687,13 @@ core::Result<bool> step_one_day(core::GameState& state,
                 "monthly pipeline failed on " +
                 state.current_date.to_string() + ": " +
                 std::move(pipe_r.error()));
+        }
+        auto& outcome = pipe_r.value();
+        for (auto& row : outcome.interest_group_country_feedback_trace_rows) {
+            ctrl.interest_group_country_feedback_rows.push_back(std::move(row));
+        }
+        for (auto& row : outcome.interest_group_authority_pressure_trace_rows) {
+            ctrl.interest_group_authority_pressure_rows.push_back(std::move(row));
         }
         ++ctrl.monthly_ticks;
     }
@@ -766,6 +777,14 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto interest_groups_csv_path =
         opts.interest_groups_csv_path.value_or(
             opts.output_dir / "interest_groups.csv");
+    // M3.6: two formula-trace CSVs, also always written. Default
+    // paths sit next to interest_groups.csv under output_dir.
+    const auto interest_group_country_feedback_csv_path =
+        opts.interest_group_country_feedback_csv_path.value_or(
+            opts.output_dir / "interest_group_country_feedback.csv");
+    const auto interest_group_authority_pressure_csv_path =
+        opts.interest_group_authority_pressure_csv_path.value_or(
+            opts.output_dir / "interest_group_authority_pressure.csv");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -827,6 +846,34 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
+    // M3.6: unconditionally write the country-feedback trace CSV.
+    // Empty buffer → header-only file (canonical scenarios with no
+    // interest groups, or runs with `--days` < one month).
+    {
+        std::ostringstream csv;
+        dg::write_country_feedback_csv_header(csv);
+        for (const auto& row : ctrl.interest_group_country_feedback_rows) {
+            dg::write_country_feedback_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(
+            interest_group_country_feedback_csv_path, csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
+    // M3.6: unconditionally write the authority-pressure trace CSV.
+    {
+        std::ostringstream csv;
+        dg::write_authority_pressure_csv_header(csv);
+        for (const auto& row : ctrl.interest_group_authority_pressure_rows) {
+            dg::write_authority_pressure_csv_row(csv, row);
+        }
+        auto csv_w = write_string_to_file(
+            interest_group_authority_pressure_csv_path, csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -845,6 +892,14 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     outcome.factions_csv_rows    = ctrl.faction_rows.size();
     outcome.interest_groups_csv_path = interest_groups_csv_path;
     outcome.interest_groups_csv_rows = ctrl.interest_group_rows.size();
+    outcome.interest_group_country_feedback_csv_path =
+        interest_group_country_feedback_csv_path;
+    outcome.interest_group_country_feedback_csv_rows =
+        ctrl.interest_group_country_feedback_rows.size();
+    outcome.interest_group_authority_pressure_csv_path =
+        interest_group_authority_pressure_csv_path;
+    outcome.interest_group_authority_pressure_csv_rows =
+        ctrl.interest_group_authority_pressure_rows.size();
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));

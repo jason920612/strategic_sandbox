@@ -667,3 +667,66 @@ TEST_CASE("tick_all_countries with no Bureaucracy groups still succeeds (M3.4)")
     CHECK(state.countries[0].government_authority.bureaucratic_compliance
           == doctest::Approx(compliance_before));
 }
+
+// =====================================================================
+// M3.6 - tick_all_countries populates per-system formula trace vectors
+// =====================================================================
+
+TEST_CASE("tick_all_countries surfaces M3.3 / M3.4 trace rows in MonthlyOutcome") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+
+    // One Bureaucracy + one Workers group so both M3.3 and M3.4
+    // get a non-empty aggregate and emit a trace row.
+    leviathan::core::InterestGroupState bureaucracy;
+    bureaucracy.id_code   = "ger_bureaucracy";
+    bureaucracy.name      = "GER Bureaucracy";
+    bureaucracy.kind      = leviathan::core::InterestGroupKind::Bureaucracy;
+    bureaucracy.country   = CountryId{0};
+    bureaucracy.influence = 0.6;
+    bureaucracy.loyalty   = 0.8;
+    bureaucracy.radicalism = 0.2;
+    state.interest_groups.push_back(bureaucracy);
+
+    leviathan::core::InterestGroupState workers;
+    workers.id_code   = "ger_workers";
+    workers.name      = "GER Workers";
+    workers.kind      = leviathan::core::InterestGroupKind::Workers;
+    workers.country   = CountryId{0};
+    workers.influence = 0.4;
+    workers.loyalty   = 0.4;
+    workers.radicalism = 0.6;
+    state.interest_groups.push_back(workers);
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    const auto& outcome = r.value();
+    // M3.3 fires across all matching groups → 1 row for GER.
+    REQUIRE(outcome.interest_group_country_feedback_trace_rows.size() == 1u);
+    CHECK(outcome.interest_group_country_feedback_trace_rows[0].country_id_code
+          == "GER");
+    // M3.4 fires across Bureaucracy-kind only → 1 row for GER.
+    REQUIRE(outcome.interest_group_authority_pressure_trace_rows.size() == 1u);
+    CHECK(outcome.interest_group_authority_pressure_trace_rows[0].country_id_code
+          == "GER");
+    // matched_groups: M3.3 saw both groups, M3.4 saw only Bureaucracy.
+    CHECK(outcome.interest_group_country_feedback_trace_rows[0].matched_groups
+          == 2);
+    CHECK(outcome.interest_group_authority_pressure_trace_rows[0].matched_groups
+          == 1);
+}
+
+TEST_CASE("tick_all_countries leaves trace vectors empty when no interest groups exist") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_group_country_feedback_trace_rows.empty());
+    CHECK(r.value().interest_group_authority_pressure_trace_rows.empty());
+    // Counts agree.
+    CHECK(r.value().interest_group_countries_updated           == 0);
+    CHECK(r.value().interest_group_authority_countries_updated == 0);
+}

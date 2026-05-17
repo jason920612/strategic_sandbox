@@ -55,6 +55,16 @@ struct RunnerOptions {
     // No CLI flag is wired through `parse_args`; programmatic callers
     // and tests can still override the path.
     std::optional<std::filesystem::path> interest_groups_csv_path;
+    // M3.6: two formula-trace CSVs, also UNCONDITIONAL like the M3.5
+    // state surface. They capture the inputs / before / after / delta
+    // of each successful per-country mutation produced by the two M3
+    // reverse-direction systems. No CLI flags; defaults:
+    //   <output_dir>/interest_group_country_feedback.csv
+    //   <output_dir>/interest_group_authority_pressure.csv
+    std::optional<std::filesystem::path>
+        interest_group_country_feedback_csv_path;
+    std::optional<std::filesystem::path>
+        interest_group_authority_pressure_csv_path;
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
@@ -113,6 +123,13 @@ struct RunOutcome {
     // (NOT including the header) written across every snapshot point.
     std::filesystem::path  interest_groups_csv_path;
     std::size_t            interest_groups_csv_rows = 0;
+    // M3.6: two formula-trace CSV outputs, also always written.
+    // Row counts are the number of data rows (NOT including the
+    // header) appended across every monthly tick.
+    std::filesystem::path  interest_group_country_feedback_csv_path;
+    std::size_t            interest_group_country_feedback_csv_rows = 0;
+    std::filesystem::path  interest_group_authority_pressure_csv_path;
+    std::size_t            interest_group_authority_pressure_csv_rows = 0;
     // M2.8: count of commands replayed from the loaded save when
     // `--replay PATH` is set. Zero when --replay was not used. The
     // outcome's `days_advanced` / `monthly_ticks` fields are
@@ -161,18 +178,21 @@ struct RunOutcome {
 // These paths return before `end_tick`, and `end_tick` is the only
 // function on the runner side that writes save.json / events.jsonl
 // / summary.csv / countries.csv / factions.csv / interest_groups.csv
-// (M3.5 added the sixth artefact). Callers whose run fails on one of
-// the listed paths can safely retry against the same `output_dir`
-// without cleaning it first.
+// / interest_group_country_feedback.csv /
+// interest_group_authority_pressure.csv. M3.5 grew the artefact set
+// from five files to six; M3.6 grew it from six to eight. Callers
+// whose run fails on one of the listed paths can safely retry
+// against the same `output_dir` without cleaning it first.
 //
 // NOTE: failures that occur INSIDE `end_tick` itself are not
-// covered by this contract. `end_tick` writes its six artefacts
+// covered by this contract. `end_tick` writes its eight artefacts
 // sequentially (save → log → summary CSV → countries CSV →
-// factions CSV → interest_groups CSV) and is not transactional,
-// so a mid-`end_tick` I/O failure can leave a partial set of files
-// on disk. If atomic end-of-run writes become a requirement, a
-// future PR can switch `end_tick` to temp-file + rename and update
-// this contract.
+// factions CSV → interest_groups CSV → country_feedback trace
+// CSV → authority_pressure trace CSV) and is not transactional,
+// so a mid-`end_tick` I/O failure can leave a partial set of
+// files on disk. If atomic end-of-run writes become a
+// requirement, a future PR can switch `end_tick` to temp-file
+// + rename and update this contract.
 core::Result<RunOutcome> run(const RunnerOptions& opts);
 
 // Same as run() but operates on a pre-built GameState. Used by tests
@@ -242,6 +262,15 @@ struct TickController {
     // header-only `interest_groups.csv` so the artefact set stays
     // constant.
     std::vector<diagnostics::InterestGroupSummaryRow> interest_group_rows;
+    // M3.6: formula-trace rows for the two M3 reverse-direction
+    // systems. Filled ONLY during monthly pipeline execution —
+    // `step_one_day` appends what each `MonthlyOutcome` reports.
+    // Empty (header-only file on disk) when no monthly tick has
+    // produced any country mutation in the corresponding system.
+    std::vector<interest_group::CountryFeedbackTraceRow>
+        interest_group_country_feedback_rows;
+    std::vector<interest_group::AuthorityPressureTraceRow>
+        interest_group_authority_pressure_rows;
 
     // Lifecycle flags. begin_tick sets started=true; end_tick sets
     // ended=true. step_one_day / end_tick refuse to run if started is
@@ -287,9 +316,13 @@ core::Result<bool> step_one_day(core::GameState& state,
 // append the final post-sanity snapshot row to each populated CSV
 // buffer, resolve output paths, write save.json / events.jsonl /
 // summary.csv / countries.csv / factions.csv / interest_groups.csv
-// as appropriate (M3.5: interest_groups.csv is always written,
-// header-only when state.interest_groups is empty), and return
-// the populated RunOutcome.
+// / interest_group_country_feedback.csv /
+// interest_group_authority_pressure.csv as appropriate. M3.5
+// made `interest_groups.csv` an unconditional artefact
+// (header-only when `state.interest_groups` is empty). M3.6
+// makes both formula-trace CSVs unconditional as well
+// (header-only when no monthly tick produced any mutation).
+// Return the populated RunOutcome.
 //
 // Sets `ctrl.ended = true` on success. Failure cases:
 //   - ctrl.started is false (cannot end an unstarted controller)

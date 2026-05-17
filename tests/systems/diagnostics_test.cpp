@@ -1002,3 +1002,130 @@ TEST_CASE("write_interest_group_csv_row: every InterestGroupKind variant round-t
         CHECK(r.value().kind == label);
     }
 }
+
+// ---------------------------------------------------------------------
+// M3.6 - per-system formula-trace CSV writers
+// ---------------------------------------------------------------------
+
+namespace ig = leviathan::systems::interest_group;
+
+TEST_CASE("write_country_feedback_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_country_feedback_csv_header(out);
+    CHECK(out.str() ==
+          "date,country_id,country_id_code,matched_groups,"
+          "weight_sum,weighted_radicalism,target_stability,"
+          "stability_before,stability_after,stability_delta\n");
+}
+
+TEST_CASE("write_country_feedback_csv_row: emits a well-formed line with ten fields") {
+    ig::CountryFeedbackTraceRow row;
+    row.date                = GameDate(1930, 2, 1);
+    row.country_id          = 0;
+    row.country_id_code     = "GER";
+    row.matched_groups      = 2;
+    row.weight_sum          = 1.0;
+    row.weighted_radicalism = 0.36;
+    row.target_stability    = 0.64;
+    row.stability_before    = 0.5;
+    row.stability_after     = 0.5028;
+    row.stability_delta     = 0.0028;
+
+    std::ostringstream out;
+    dg::write_country_feedback_csv_row(out, row);
+    const std::string line = out.str();
+    // First four columns prefixed verbatim.
+    const std::string expected_prefix = "1930-02-01,0,GER,2,";
+    CHECK(line.substr(0, expected_prefix.size()) == expected_prefix);
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 9);  // 10 columns → 9 separators
+    CHECK(line.back() == '\n');
+    // Scientific notation present.
+    CHECK(line.find("e-") != std::string::npos);
+}
+
+TEST_CASE("write_country_feedback_csv_row: country_id_code with comma is quoted") {
+    ig::CountryFeedbackTraceRow row;
+    row.date            = GameDate(1930, 2, 1);
+    row.country_id      = 0;
+    row.country_id_code = "X, Y";
+    row.matched_groups  = 1;
+    row.weight_sum      = 0.5;
+    std::ostringstream out;
+    dg::write_country_feedback_csv_row(out, row);
+    CHECK(out.str().find("\"X, Y\"") != std::string::npos);
+}
+
+TEST_CASE("write_country_feedback_csv_row: byte-identical for the same row twice") {
+    ig::CountryFeedbackTraceRow row;
+    row.date                = GameDate(1930, 3, 1);
+    row.country_id          = 1;
+    row.country_id_code     = "JPN";
+    row.matched_groups      = 3;
+    row.weight_sum          = 0.9;
+    row.weighted_radicalism = 0.41;
+    row.target_stability    = 0.59;
+    row.stability_before    = 0.5;
+    row.stability_after     = 0.5018;
+    row.stability_delta     = 0.0018;
+    std::ostringstream a, b;
+    dg::write_country_feedback_csv_row(a, row);
+    dg::write_country_feedback_csv_row(b, row);
+    CHECK(a.str() == b.str());
+}
+
+TEST_CASE("write_authority_pressure_csv_header: emits the documented column list") {
+    std::ostringstream out;
+    dg::write_authority_pressure_csv_header(out);
+    CHECK(out.str() ==
+          "date,country_id,country_id_code,matched_groups,"
+          "weight_sum,weighted_bureaucracy_loyalty,"
+          "target_bureaucratic_compliance,"
+          "bureaucratic_compliance_before,"
+          "bureaucratic_compliance_after,"
+          "bureaucratic_compliance_delta\n");
+}
+
+TEST_CASE("write_authority_pressure_csv_row: emits a well-formed line with ten fields") {
+    ig::AuthorityPressureTraceRow row;
+    row.date                              = GameDate(1930, 2, 1);
+    row.country_id                        = 0;
+    row.country_id_code                   = "GER";
+    row.matched_groups                    = 1;
+    row.weight_sum                        = 0.6;
+    row.weighted_bureaucracy_loyalty      = 0.8;
+    row.target_bureaucratic_compliance    = 0.8;
+    row.bureaucratic_compliance_before    = 0.4;
+    row.bureaucratic_compliance_after     = 0.404;
+    row.bureaucratic_compliance_delta     = 0.004;
+
+    std::ostringstream out;
+    dg::write_authority_pressure_csv_row(out, row);
+    const std::string line = out.str();
+    const std::string expected_prefix = "1930-02-01,0,GER,1,";
+    CHECK(line.substr(0, expected_prefix.size()) == expected_prefix);
+    int commas = 0;
+    for (char c : line) if (c == ',') ++commas;
+    CHECK(commas == 9);
+    CHECK(line.back() == '\n');
+    CHECK(line.find("e-") != std::string::npos);
+}
+
+TEST_CASE("write_authority_pressure_csv_row: byte-identical for the same row twice") {
+    ig::AuthorityPressureTraceRow row;
+    row.date                              = GameDate(1930, 5, 1);
+    row.country_id                        = 2;
+    row.country_id_code                   = "FRA";
+    row.matched_groups                    = 2;
+    row.weight_sum                        = 1.2;
+    row.weighted_bureaucracy_loyalty      = 0.55;
+    row.target_bureaucratic_compliance    = 0.55;
+    row.bureaucratic_compliance_before    = 0.5;
+    row.bureaucratic_compliance_after     = 0.5005;
+    row.bureaucratic_compliance_delta     = 0.0005;
+    std::ostringstream a, b;
+    dg::write_authority_pressure_csv_row(a, row);
+    dg::write_authority_pressure_csv_row(b, row);
+    CHECK(a.str() == b.str());
+}

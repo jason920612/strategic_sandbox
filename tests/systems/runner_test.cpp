@@ -2090,12 +2090,14 @@ TEST_CASE("run: --verify-tolerance tight enough catches a small mismatch") {
 namespace {
 
 // Set every artefact output path on `opts` to a distinct file
-// underneath `dir`, and report all six paths the test should later
-// assert absent. Used by every M2.9 regression test below so the
-// "no artefact survived" check is uniformly applied.
-// M3.5 added `interest_groups_csv` to the artefact set: it is
-// unconditionally written by `end_tick`, so the M2.9 pre-`end_tick`
-// no-artefact contract automatically extends to it.
+// underneath `dir`, and report all eight paths the test should
+// later assert absent. Used by every M2.9 regression test below
+// so the "no artefact survived" check is uniformly applied.
+// M3.5 added `interest_groups_csv` to the artefact set; M3.6
+// added the two formula-trace files. All three are
+// unconditionally written by `end_tick`, so the M2.9
+// pre-`end_tick` no-artefact contract automatically extends to
+// them.
 struct ArtifactPaths {
     fs::path save;
     fs::path log;
@@ -2103,6 +2105,8 @@ struct ArtifactPaths {
     fs::path countries_csv;
     fs::path factions_csv;
     fs::path interest_groups_csv;
+    fs::path country_feedback_csv;
+    fs::path authority_pressure_csv;
 };
 
 ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
@@ -2113,6 +2117,8 @@ ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
         dir / "out_countries.csv",
         dir / "out_factions.csv",
         dir / "out_interest_groups.csv",
+        dir / "out_country_feedback.csv",
+        dir / "out_authority_pressure.csv",
     };
     opts.save_path                  = a.save;
     opts.log_path                   = a.log;
@@ -2120,6 +2126,8 @@ ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
     opts.countries_csv_path         = a.countries_csv;
     opts.factions_csv_path          = a.factions_csv;
     opts.interest_groups_csv_path   = a.interest_groups_csv;
+    opts.interest_group_country_feedback_csv_path   = a.country_feedback_csv;
+    opts.interest_group_authority_pressure_csv_path = a.authority_pressure_csv;
     return a;
 }
 
@@ -2130,6 +2138,8 @@ void check_no_artifacts(const ArtifactPaths& a) {
     CHECK_FALSE(fs::exists(a.countries_csv));
     CHECK_FALSE(fs::exists(a.factions_csv));
     CHECK_FALSE(fs::exists(a.interest_groups_csv));
+    CHECK_FALSE(fs::exists(a.country_feedback_csv));
+    CHECK_FALSE(fs::exists(a.authority_pressure_csv));
 }
 
 }  // namespace
@@ -2645,6 +2655,198 @@ TEST_CASE("run: --summary-csv byte-stream is unchanged by interest_groups.csv wr
     REQUIRE(rn::run(opts_a).ok());
     REQUIRE(rn::run(opts_b).ok());
     CHECK(read_file(td_a.path / "summary.csv") == read_file(td_b.path / "summary.csv"));
+}
+
+// =====================================================================
+// M3.6 - interest_group_country_feedback.csv /
+//        interest_group_authority_pressure.csv (unconditional)
+// =====================================================================
+
+TEST_CASE("run: M3.6 trace CSVs are header-only for the empty world / short run") {
+    // No scenario + 0 days → no monthly tick fires, so no trace row
+    // is ever appended. Both files must still exist with the
+    // documented headers.
+    TempDir td("leviathan_runner_m36_empty");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_group_country_feedback_csv_rows   == 0u);
+    CHECK(r.value().interest_group_authority_pressure_csv_rows == 0u);
+
+    REQUIRE(fs::exists(td.path / "interest_group_country_feedback.csv"));
+    REQUIRE(fs::exists(td.path / "interest_group_authority_pressure.csv"));
+    CHECK(read_file(td.path / "interest_group_country_feedback.csv") ==
+          "date,country_id,country_id_code,matched_groups,"
+          "weight_sum,weighted_radicalism,target_stability,"
+          "stability_before,stability_after,stability_delta\n");
+    CHECK(read_file(td.path / "interest_group_authority_pressure.csv") ==
+          "date,country_id,country_id_code,matched_groups,"
+          "weight_sum,weighted_bureaucracy_loyalty,"
+          "target_bureaucratic_compliance,"
+          "bureaucratic_compliance_before,"
+          "bureaucratic_compliance_after,"
+          "bureaucratic_compliance_delta\n");
+}
+
+TEST_CASE("run: M3.6 trace CSVs default to <output_dir>/<name>.csv") {
+    TempDir td("leviathan_runner_m36_default_path");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    // Neither override is set.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().interest_group_country_feedback_csv_path ==
+          td.path / "interest_group_country_feedback.csv");
+    CHECK(r.value().interest_group_authority_pressure_csv_path ==
+          td.path / "interest_group_authority_pressure.csv");
+    CHECK(fs::exists(r.value().interest_group_country_feedback_csv_path));
+    CHECK(fs::exists(r.value().interest_group_authority_pressure_csv_path));
+}
+
+TEST_CASE("run: M3.6 trace CSV path overrides are honoured") {
+    TempDir td("leviathan_runner_m36_path_override");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    opts.interest_group_country_feedback_csv_path =
+        td.path / "custom" / "cf.csv";
+    opts.interest_group_authority_pressure_csv_path =
+        td.path / "custom" / "ap.csv";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(fs::exists(td.path / "custom" / "cf.csv"));
+    CHECK(fs::exists(td.path / "custom" / "ap.csv"));
+    // Default paths are NOT written when the overrides are set.
+    CHECK_FALSE(fs::exists(td.path / "interest_group_country_feedback.csv"));
+    CHECK_FALSE(fs::exists(td.path / "interest_group_authority_pressure.csv"));
+}
+
+TEST_CASE("run: M3.6 trace CSVs emit rows after a monthly boundary with active groups") {
+    // Hand-built state with one country + one Bureaucracy group
+    // (so authority_pressure fires) + one extra group (so
+    // country_feedback fires). 31 days crosses one month boundary.
+    TempDir td("leviathan_runner_m36_with_groups");
+
+    leviathan::core::SimulationConfig cfg;
+    cfg.start_date = leviathan::core::GameDate(1930, 1, 1);
+    cfg.seed       = 1u;
+    auto state = leviathan::core::make_game_state(cfg);
+
+    leviathan::core::CountryState c;
+    c.id         = leviathan::core::CountryId{0};
+    c.id_code    = "GER";
+    c.name       = "Germany";
+    c.stability  = 0.5;
+    c.legitimacy = 0.5;
+    c.government_authority.bureaucratic_compliance = 0.4;
+    state.countries.push_back(c);
+
+    leviathan::core::InterestGroupState g1;
+    g1.id_code    = "ger_bureaucracy";
+    g1.name       = "GER Bureaucracy";
+    g1.kind       = leviathan::core::InterestGroupKind::Bureaucracy;
+    g1.country    = leviathan::core::CountryId{0};
+    g1.influence  = 0.6;
+    g1.loyalty    = 0.8;
+    g1.radicalism = 0.2;
+    state.interest_groups.push_back(g1);
+
+    leviathan::core::InterestGroupState g2 = g1;
+    g2.id_code    = "ger_workers";
+    g2.kind       = leviathan::core::InterestGroupKind::Workers;
+    g2.influence  = 0.4;
+    g2.loyalty    = 0.4;
+    g2.radicalism = 0.6;
+    state.interest_groups.push_back(g2);
+
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 31;
+    opts.output_dir  = td.path;
+    const auto r = rn::run_state(state, opts);
+    REQUIRE(r.ok());
+    // One month boundary crossed → one row per system per
+    // updated country = 1 row each.
+    CHECK(r.value().interest_group_country_feedback_csv_rows   == 1u);
+    CHECK(r.value().interest_group_authority_pressure_csv_rows == 1u);
+
+    const std::string cf = read_file(
+        td.path / "interest_group_country_feedback.csv");
+    CHECK(cf.find("GER")    != std::string::npos);
+    CHECK(cf.find("1930-")  != std::string::npos);
+    CHECK(cf.find("e-")     != std::string::npos);
+
+    const std::string ap = read_file(
+        td.path / "interest_group_authority_pressure.csv");
+    CHECK(ap.find("GER")    != std::string::npos);
+    CHECK(ap.find("1930-")  != std::string::npos);
+    CHECK(ap.find("e-")     != std::string::npos);
+}
+
+TEST_CASE("run: M3.6 trace CSVs preserve byte-identical determinism on same seed") {
+    TempDir td_a("leviathan_runner_m36_det_a");
+    TempDir td_b("leviathan_runner_m36_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 90;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xC0FFEE};
+        o.scenario_path = kCanonicalScenario;
+        return o;
+    };
+
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "interest_group_country_feedback.csv") ==
+          read_file(td_b.path / "interest_group_country_feedback.csv"));
+    CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
+          read_file(td_b.path / "interest_group_authority_pressure.csv"));
+}
+
+TEST_CASE("run: M3.6 trace CSV writing does NOT change save / log / state CSVs") {
+    // Adding two new CSVs at end_tick must not perturb the existing
+    // five artefacts (M0.10 / M1.14 / M1.16 / M2.4 / M3.5 contracts
+    // all preserved).
+    TempDir td_a("leviathan_runner_m36_iso_a");
+    TempDir td_b("leviathan_runner_m36_iso_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path        = kCanonicalConfig;
+        o.days               = 60;
+        o.output_dir         = dir;
+        o.seed_override      = std::uint64_t{0xFACE};
+        o.scenario_path      = kCanonicalScenario;
+        o.summary_csv_path   = dir / "summary.csv";
+        o.countries_csv_path = dir / "countries.csv";
+        o.factions_csv_path  = dir / "factions.csv";
+        return o;
+    };
+
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    // Every pre-M3.6 artefact byte-stream must still be stable
+    // across two independent runs.
+    CHECK(read_file(td_a.path / "save.json")           ==
+          read_file(td_b.path / "save.json"));
+    CHECK(read_file(td_a.path / "events.jsonl")        ==
+          read_file(td_b.path / "events.jsonl"));
+    CHECK(read_file(td_a.path / "summary.csv")         ==
+          read_file(td_b.path / "summary.csv"));
+    CHECK(read_file(td_a.path / "countries.csv")       ==
+          read_file(td_b.path / "countries.csv"));
+    CHECK(read_file(td_a.path / "factions.csv")        ==
+          read_file(td_b.path / "factions.csv"));
+    CHECK(read_file(td_a.path / "interest_groups.csv") ==
+          read_file(td_b.path / "interest_groups.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

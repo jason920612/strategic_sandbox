@@ -53,7 +53,8 @@ core::Result<ReactionOutcome> react(core::GameState& state) {
 // ===========================================================================
 
 core::Result<CountryFeedbackOutcome> country_feedback(
-        core::GameState& state) {
+        core::GameState& state,
+        std::vector<CountryFeedbackTraceRow>* trace_out) {
     // ---- Preflight: validate every input before any mutation ---------
     // M3.3 is the first reverse-direction system. The preflight
     // pass is stricter than M3.2's because a NaN in influence or
@@ -103,6 +104,7 @@ core::Result<CountryFeedbackOutcome> country_feedback(
     for (std::size_t ci = 0; ci < state.countries.size(); ++ci) {
         double weighted_sum = 0.0;
         double weight_sum   = 0.0;
+        int    matched      = 0;
         for (const auto& g : state.interest_groups) {
             if (static_cast<std::size_t>(g.country.value()) != ci) {
                 continue;
@@ -112,9 +114,11 @@ core::Result<CountryFeedbackOutcome> country_feedback(
             }
             weighted_sum += g.influence * g.radicalism;
             weight_sum   += g.influence;
+            ++matched;
         }
         if (weight_sum <= 0.0) {
             // No matching groups (or all zero-influence) -> skip.
+            // M3.6: skipped countries produce no trace row by design.
             continue;
         }
 
@@ -122,11 +126,33 @@ core::Result<CountryFeedbackOutcome> country_feedback(
         const double target_stability    = 1.0 - weighted_radicalism;
 
         auto& country = state.countries[ci];
+        const double before = country.stability;
         country.stability +=
             (target_stability - country.stability) *
             kInterestGroupCountryFeedbackRate;
         country.stability = std::clamp(country.stability, 0.0, 1.0);
         ++outcome.countries_updated;
+
+        // M3.6: emit a trace row reflecting the mutation that just
+        // landed. Only countries actually updated produce a row,
+        // and the row is emitted AFTER the clamp so `stability_after`
+        // matches what the rest of the simulation will read this
+        // month. `trace_out == nullptr` is the default M3.3 / M3.4 /
+        // M3.5 behaviour.
+        if (trace_out != nullptr) {
+            CountryFeedbackTraceRow row;
+            row.date                = state.current_date;
+            row.country_id          = static_cast<int>(ci);
+            row.country_id_code     = country.id_code;
+            row.matched_groups      = matched;
+            row.weight_sum          = weight_sum;
+            row.weighted_radicalism = weighted_radicalism;
+            row.target_stability    = target_stability;
+            row.stability_before    = before;
+            row.stability_after     = country.stability;
+            row.stability_delta     = country.stability - before;
+            trace_out->push_back(std::move(row));
+        }
     }
 
     return core::Result<CountryFeedbackOutcome>::success(outcome);
@@ -137,7 +163,8 @@ core::Result<CountryFeedbackOutcome> country_feedback(
 // ===========================================================================
 
 core::Result<AuthorityPressureOutcome> authority_pressure(
-        core::GameState& state) {
+        core::GameState& state,
+        std::vector<AuthorityPressureTraceRow>* trace_out) {
     // ---- Preflight: validate inputs that this step actually reads -----
     // M3.4 reads ONLY:
     //   - group.country (every group, regardless of kind, because
@@ -193,6 +220,7 @@ core::Result<AuthorityPressureOutcome> authority_pressure(
     for (std::size_t ci = 0; ci < state.countries.size(); ++ci) {
         double weighted_sum = 0.0;
         double weight_sum   = 0.0;
+        int    matched      = 0;
         for (const auto& g : state.interest_groups) {
             if (static_cast<std::size_t>(g.country.value()) != ci) {
                 continue;
@@ -205,19 +233,42 @@ core::Result<AuthorityPressureOutcome> authority_pressure(
             }
             weighted_sum += g.influence * g.loyalty;
             weight_sum   += g.influence;
+            ++matched;
         }
         if (weight_sum <= 0.0) {
+            // M3.6: skipped countries produce no trace row by design.
             continue;
         }
 
         const double target_compliance = weighted_sum / weight_sum;
         auto& compliance =
             state.countries[ci].government_authority.bureaucratic_compliance;
+        const double before = compliance;
         compliance +=
             (target_compliance - compliance) *
             kInterestGroupAuthorityPressureRate;
         compliance = std::clamp(compliance, 0.0, 1.0);
         ++outcome.countries_updated;
+
+        // M3.6: emit a trace row reflecting the mutation that just
+        // landed. `target_compliance == weighted_bureaucracy_loyalty`
+        // by definition; we surface both names so the CSV column
+        // matches the formula reader's mental model.
+        if (trace_out != nullptr) {
+            AuthorityPressureTraceRow row;
+            row.date                            = state.current_date;
+            row.country_id                      = static_cast<int>(ci);
+            row.country_id_code                 =
+                state.countries[ci].id_code;
+            row.matched_groups                  = matched;
+            row.weight_sum                      = weight_sum;
+            row.weighted_bureaucracy_loyalty    = target_compliance;
+            row.target_bureaucratic_compliance  = target_compliance;
+            row.bureaucratic_compliance_before  = before;
+            row.bureaucratic_compliance_after   = compliance;
+            row.bureaucratic_compliance_delta   = compliance - before;
+            trace_out->push_back(std::move(row));
+        }
     }
 
     return core::Result<AuthorityPressureOutcome>::success(outcome);

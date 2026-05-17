@@ -282,6 +282,59 @@ void write_interest_group_csv_row(std::ostream& out,
         << '\n';
 }
 
+// ---------------------------------------------------------------------------
+// M3.6: per-system formula trace CSV writers.
+// ---------------------------------------------------------------------------
+
+void write_country_feedback_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column is breaking.
+    out << "date,country_id,country_id_code,matched_groups,"
+           "weight_sum,weighted_radicalism,target_stability,"
+           "stability_before,stability_after,stability_delta\n";
+}
+
+void write_country_feedback_csv_row(
+        std::ostream& out,
+        const interest_group::CountryFeedbackTraceRow& row) {
+    out << row.date.to_string()             << ','
+        << row.country_id                   << ','
+        << csv_escape(row.country_id_code)  << ','
+        << row.matched_groups               << ','
+        << fmt_double(row.weight_sum)               << ','
+        << fmt_double(row.weighted_radicalism)      << ','
+        << fmt_double(row.target_stability)         << ','
+        << fmt_double(row.stability_before)         << ','
+        << fmt_double(row.stability_after)          << ','
+        << fmt_double(row.stability_delta)
+        << '\n';
+}
+
+void write_authority_pressure_csv_header(std::ostream& out) {
+    // Pinned by tests. Bumping a column is breaking.
+    out << "date,country_id,country_id_code,matched_groups,"
+           "weight_sum,weighted_bureaucracy_loyalty,"
+           "target_bureaucratic_compliance,"
+           "bureaucratic_compliance_before,"
+           "bureaucratic_compliance_after,"
+           "bureaucratic_compliance_delta\n";
+}
+
+void write_authority_pressure_csv_row(
+        std::ostream& out,
+        const interest_group::AuthorityPressureTraceRow& row) {
+    out << row.date.to_string()             << ','
+        << row.country_id                   << ','
+        << csv_escape(row.country_id_code)  << ','
+        << row.matched_groups               << ','
+        << fmt_double(row.weight_sum)                       << ','
+        << fmt_double(row.weighted_bureaucracy_loyalty)     << ','
+        << fmt_double(row.target_bureaucratic_compliance)   << ','
+        << fmt_double(row.bureaucratic_compliance_before)   << ','
+        << fmt_double(row.bureaucratic_compliance_after)    << ','
+        << fmt_double(row.bureaucratic_compliance_delta)
+        << '\n';
+}
+
 std::vector<Issue> sanity_check(const core::GameState& state) {
     std::vector<Issue> issues;
 

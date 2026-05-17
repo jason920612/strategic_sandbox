@@ -740,3 +740,196 @@ TEST_CASE("authority_pressure: clamp keeps bureaucratic_compliance inside [0, 1]
     CHECK(state.countries[0].government_authority.bureaucratic_compliance
           <= 1.0);
 }
+
+// =====================================================================
+// M3.6 - formula-trace pointer arg
+// =====================================================================
+
+namespace {
+
+GameState m36_state_ger_two_groups() {
+    // Two interest groups with different radicalism / loyalty so
+    // the influence-weighted aggregates are non-trivial. Both
+    // groups have non-zero influence so both match.
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 1, 31);
+    s.countries.push_back(country_at_stability(0.5, "GER"));
+    s.countries[0].government_authority.bureaucratic_compliance = 0.4;
+
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.8, /*radicalism=*/0.2,
+                 /*influence=*/0.6,
+                 InterestGroupKind::Bureaucracy, "ger_bureaucracy"));
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.4, /*radicalism=*/0.6,
+                 /*influence=*/0.4,
+                 InterestGroupKind::Workers, "ger_workers"));
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("country_feedback: null trace pointer = M3.3 baseline behaviour") {
+    GameState s = m36_state_ger_two_groups();
+    const double before = s.countries[0].stability;
+    const auto r = ig::country_feedback(s, /*trace_out=*/nullptr);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    // Stability moved (or stayed if delta was 0 due to clamp /
+    // coincidence). The null-pointer path must NOT crash, must
+    // NOT skip the mutation.
+    CHECK(s.countries[0].stability != doctest::Approx(0.0).epsilon(0.0));
+    CHECK(s.countries[0].stability != doctest::Approx(before).epsilon(1e-18));
+}
+
+TEST_CASE("country_feedback: trace pointer emits one row per updated country") {
+    GameState s = m36_state_ger_two_groups();
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    const auto r = ig::country_feedback(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    REQUIRE(trace.size() == 1u);
+
+    const auto& row = trace[0];
+    CHECK(row.date            == leviathan::core::GameDate(1930, 1, 31));
+    CHECK(row.country_id      == 0);
+    CHECK(row.country_id_code == "GER");
+    CHECK(row.matched_groups  == 2);
+    // weight_sum = 0.6 + 0.4 = 1.0
+    CHECK(row.weight_sum == doctest::Approx(1.0));
+    // weighted_radicalism = (0.6*0.2 + 0.4*0.6) / 1.0 = 0.36
+    CHECK(row.weighted_radicalism == doctest::Approx(0.36));
+    // target_stability = 1 - 0.36 = 0.64
+    CHECK(row.target_stability == doctest::Approx(0.64));
+    // stability_before = 0.5 (from helper); rate = 0.02
+    // delta = (0.64 - 0.5) * 0.02 = 0.0028
+    CHECK(row.stability_before == doctest::Approx(0.5));
+    CHECK(row.stability_after  == doctest::Approx(0.5028));
+    CHECK(row.stability_delta  == doctest::Approx(0.0028));
+}
+
+TEST_CASE("country_feedback: trace pointer adds no row for skipped country") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    // Two countries, but no interest groups → both skipped.
+    s.countries.push_back(country_at_stability(0.5, "GER"));
+    s.countries.push_back(country_at_stability(0.5, "FRA"));
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    const auto r = ig::country_feedback(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(trace.empty());
+}
+
+TEST_CASE("country_feedback: trace pointer adds no partial rows on preflight failure") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_at_stability(0.5, "GER"));
+
+    // Group 1 is valid; group 2 has out-of-range country index.
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 0.5));
+    s.interest_groups.push_back(
+        group_at(CountryId{99}, 0.5, 0.5, 0.5));  // invalid
+
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    const auto r = ig::country_feedback(s, &trace);
+    REQUIRE(r.failed());
+    CHECK(trace.empty());
+}
+
+TEST_CASE("country_feedback: rows preserve country iteration order") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_at_stability(0.5, "GER"));
+    s.countries.push_back(country_at_stability(0.4, "FRA"));
+    s.countries.push_back(country_at_stability(0.6, "USA"));
+    s.interest_groups.push_back(
+        group_at(CountryId{1}, 0.5, 0.7, 0.5));  // FRA only
+    s.interest_groups.push_back(
+        group_at(CountryId{2}, 0.5, 0.3, 0.5));  // USA only
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 0.5));  // GER only
+
+    std::vector<ig::CountryFeedbackTraceRow> trace;
+    REQUIRE(ig::country_feedback(s, &trace).ok());
+    // The outer country loop walks 0, 1, 2 — so rows come back
+    // GER, FRA, USA regardless of interest-group insertion order.
+    REQUIRE(trace.size() == 3u);
+    CHECK(trace[0].country_id_code == "GER");
+    CHECK(trace[1].country_id_code == "FRA");
+    CHECK(trace[2].country_id_code == "USA");
+}
+
+TEST_CASE("authority_pressure: null trace pointer = M3.4 baseline behaviour") {
+    GameState s = m36_state_ger_two_groups();
+    const double before =
+        s.countries[0].government_authority.bureaucratic_compliance;
+    const auto r = ig::authority_pressure(s, /*trace_out=*/nullptr);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    CHECK(s.countries[0].government_authority.bureaucratic_compliance !=
+          doctest::Approx(before).epsilon(1e-18));
+}
+
+TEST_CASE("authority_pressure: trace pointer emits one row per updated country") {
+    GameState s = m36_state_ger_two_groups();
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    const auto r = ig::authority_pressure(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    REQUIRE(trace.size() == 1u);
+
+    const auto& row = trace[0];
+    CHECK(row.date            == leviathan::core::GameDate(1930, 1, 31));
+    CHECK(row.country_id      == 0);
+    CHECK(row.country_id_code == "GER");
+    // Only the Bureaucracy-kind group matches.
+    CHECK(row.matched_groups  == 1);
+    // weight_sum = 0.6
+    CHECK(row.weight_sum == doctest::Approx(0.6));
+    // weighted_bureaucracy_loyalty = (0.6 * 0.8) / 0.6 = 0.8
+    CHECK(row.weighted_bureaucracy_loyalty == doctest::Approx(0.8));
+    CHECK(row.target_bureaucratic_compliance ==
+          doctest::Approx(row.weighted_bureaucracy_loyalty));
+    // compliance_before = 0.4; rate 0.01
+    // delta = (0.8 - 0.4) * 0.01 = 0.004
+    CHECK(row.bureaucratic_compliance_before == doctest::Approx(0.4));
+    CHECK(row.bureaucratic_compliance_after  == doctest::Approx(0.404));
+    CHECK(row.bureaucratic_compliance_delta  == doctest::Approx(0.004));
+}
+
+TEST_CASE("authority_pressure: trace pointer adds no row for skipped country") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_with_compliance(0.5, "GER"));
+    // Non-Bureaucracy group only → skipped.
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.6, 0.3, 0.5,
+                 InterestGroupKind::Workers, "ger_workers"));
+
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    const auto r = ig::authority_pressure(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(trace.empty());
+}
+
+TEST_CASE("authority_pressure: trace pointer adds no partial rows on preflight failure") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_with_compliance(0.5, "GER"));
+
+    // Group 1 valid Bureaucracy; group 2 has invalid country.
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.7, 0.3, 0.5,
+                 InterestGroupKind::Bureaucracy, "g1"));
+    s.interest_groups.push_back(
+        group_at(CountryId{99}, 0.5, 0.5, 0.5,
+                 InterestGroupKind::Bureaucracy, "g2"));
+
+    std::vector<ig::AuthorityPressureTraceRow> trace;
+    const auto r = ig::authority_pressure(s, &trace);
+    REQUIRE(r.failed());
+    CHECK(trace.empty());
+}
