@@ -1783,23 +1783,49 @@ TEST_CASE("deserialize: v11 interest_groups country index out of range is reject
 }
 
 TEST_CASE("deserialize: v11 interest_groups out-of-range ratio is rejected") {
+    // Earlier version of this test used `country: -1`, which the
+    // save loader rejects FIRST via `require_u64`'s non-negative
+    // check — the ratio assertion never ran. Provide a single
+    // valid `countries[0]` and use `country: 0` so the failure
+    // really comes from `influence: 1.5` tripping `require_ratio`.
     const std::string text = R"({
         "save_version": 11,
         "rng_algorithm_version": 1,
         "current_date": "1930-01-01",
         "player_country": -1,
         "rng": {"seed": 0, "counter": 0},
-        "countries": [], "logs": [],
+        "countries": [
+            { "id": 0, "id_code": "GER", "name": "Germany",
+              "display_name": "Germany",
+              "gdp": 1.0, "tax_revenue": 0.0, "budget_balance": 0.0,
+              "legal_tax_burden": 0.1, "fiscal_capacity": 0.1,
+              "administrative_efficiency": 0.1, "central_control": 0.1,
+              "corruption": 0.1, "stability": 0.5, "legitimacy": 0.5,
+              "military_power": 0.5, "threat_perception": 0.5,
+              "last_gdp_growth_rate": 0.0,
+              "budget": {
+                "administration": 0.2, "military": 0.2, "education": 0.1,
+                "welfare": 0.1, "intelligence": 0.1, "infrastructure": 0.1,
+                "industry": 0.1
+              },
+              "government_authority": {
+                "bureaucratic_compliance": 0.5, "military_loyalty": 0.5,
+                "intelligence_capability": 0.5, "media_control": 0.5
+              },
+              "active_policies": [] }
+        ],
+        "logs": [],
         "applied_commands": [],
         "interest_groups": [
             { "id_code": "x", "name": "X", "kind": "Bureaucracy",
-              "country": -1,
+              "country": 0,
               "influence": 1.5, "loyalty": 0.5, "radicalism": 0.0 }
         ]
     })";
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
     CHECK(r.error().find("interest_groups[0]") != std::string::npos);
+    CHECK(r.error().find("influence")           != std::string::npos);
 }
 
 TEST_CASE("deserialize: v11 duplicate interest_groups id_code is rejected") {
