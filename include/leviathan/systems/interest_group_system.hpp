@@ -84,6 +84,10 @@
 #ifndef LEVIATHAN_SYSTEMS_INTEREST_GROUP_SYSTEM_HPP
 #define LEVIATHAN_SYSTEMS_INTEREST_GROUP_SYSTEM_HPP
 
+#include <string>
+#include <vector>
+
+#include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/result.hpp"
 
@@ -149,6 +153,29 @@ struct CountryFeedbackOutcome {
     int countries_updated = 0;
 };
 
+// One per-country formula trace emitted by `country_feedback`
+// (M3.6 outcome surface). Captures the inputs the formula
+// actually saw plus the before/after of the single mutated
+// field. Emitted ONLY for countries the function actually
+// updated — countries skipped because they had no matching
+// groups (or only zero-influence ones) produce no row.
+//
+// `country_feedback` only fills this vector when the caller
+// passes a non-null pointer; the default-null path is
+// byte-identical with M3.3 / M3.4 / M3.5 callers.
+struct CountryFeedbackTraceRow {
+    core::GameDate date;                    // state.current_date at apply time
+    int            country_id      = -1;    // raw CountryId::value()
+    std::string    country_id_code;         // owning country's id_code
+    int            matched_groups  = 0;     // groups counted in aggregate
+    double         weight_sum             = 0.0;
+    double         weighted_radicalism    = 0.0;
+    double         target_stability       = 0.0;  // 1.0 - weighted_radicalism
+    double         stability_before       = 0.0;
+    double         stability_after        = 0.0;  // post-clamp
+    double         stability_delta        = 0.0;  // after - before
+};
+
 // Apply one step of M3.3 interest-group -> country feedback.
 //
 // For each country index `ci`:
@@ -182,8 +209,18 @@ struct CountryFeedbackOutcome {
 // authority, legitimacy, corruption, central_control,
 // administrative_efficiency, RNG, logs, the date, or applied
 // commands. The single mutation surface is `country.stability`.
+//
+// M3.6: optional trace output. When `trace_out` is non-null the
+// function appends one `CountryFeedbackTraceRow` per actually-
+// updated country (skipped countries produce no row). On
+// preflight failure no row is appended and no mutation happens
+// — partial traces never leak. The trace pointer never changes
+// the formula, the mutation, or `countries_updated`. Callers
+// that don't care about traces pass `nullptr` (or omit the
+// argument) and get exactly the M3.3 / M3.4 / M3.5 behaviour.
 core::Result<CountryFeedbackOutcome> country_feedback(
-    core::GameState& state);
+    core::GameState& state,
+    std::vector<CountryFeedbackTraceRow>* trace_out = nullptr);
 
 // ===========================================================================
 // M3.4 - interest-group -> government_authority pressure
@@ -205,6 +242,23 @@ struct AuthorityPressureOutcome {
     // 0.0`, is skipped (its compliance stays byte-identical) and
     // does NOT count toward this total.
     int countries_updated = 0;
+};
+
+// One per-country formula trace emitted by `authority_pressure`
+// (M3.6 outcome surface). Same emission rules as
+// `CountryFeedbackTraceRow`: row only on actual mutation, skip
+// produces no row, preflight failure produces no partial rows.
+struct AuthorityPressureTraceRow {
+    core::GameDate date;
+    int            country_id      = -1;
+    std::string    country_id_code;
+    int            matched_groups  = 0;  // Bureaucracy-kind groups counted
+    double         weight_sum                       = 0.0;
+    double         weighted_bureaucracy_loyalty     = 0.0;
+    double         target_bureaucratic_compliance   = 0.0;  // == weighted loyalty
+    double         bureaucratic_compliance_before   = 0.0;
+    double         bureaucratic_compliance_after    = 0.0;  // post-clamp
+    double         bureaucratic_compliance_delta    = 0.0;
 };
 
 // Apply one step of M3.4 interest-group -> government-authority
@@ -256,8 +310,16 @@ struct AuthorityPressureOutcome {
 // fields, RNG, logs, the date, or applied commands. The
 // single mutation surface is
 // `country.government_authority.bureaucratic_compliance`.
+//
+// M3.6: optional trace output. Same shape and same guarantees
+// as the `country_feedback` trace pointer — rows are only
+// appended for countries the function actually updated;
+// preflight failure produces no partial rows; the trace
+// pointer never changes the formula, the mutation, or
+// `countries_updated`.
 core::Result<AuthorityPressureOutcome> authority_pressure(
-    core::GameState& state);
+    core::GameState& state,
+    std::vector<AuthorityPressureTraceRow>* trace_out = nullptr);
 
 }  // namespace leviathan::systems::interest_group
 

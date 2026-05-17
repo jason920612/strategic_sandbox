@@ -16,11 +16,13 @@
 //     (one per month boundary, M1.9 + M1.10);
 //   * the save round-trips with `active_policies` and
 //     `last_gdp_growth_rate` intact (M1.15, M1.12);
-//   * the determinism contract extends to SIX byte-identical
+//   * the determinism contract extends to EIGHT byte-identical
 //     artefacts: save.json, events.jsonl, summary.csv,
-//     countries.csv, factions.csv, interest_groups.csv (M3.5
-//     added the sixth file; canonical scenarios author zero
-//     interest groups so this one is header-only here).
+//     countries.csv, factions.csv, interest_groups.csv (M3.5),
+//     interest_group_country_feedback.csv (M3.6),
+//     interest_group_authority_pressure.csv (M3.6). Canonical
+//     scenarios author zero interest groups so the three M3
+//     files are all header-only here.
 //
 // Unlike `m0_end_to_end_test.cpp`, this test goes through the
 // runner. By M1.11 the runner accepts `--scenario` and loads the
@@ -255,6 +257,12 @@ TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all thr
     // header-only, but the path always exists and must round-trip.
     CHECK(read_file(td_a.path / "interest_groups.csv") ==
           read_file(td_b.path / "interest_groups.csv"));
+    // M3.6: two formula-trace CSVs round out the 8-artefact set.
+    // Canonical scenarios produce header-only files here too.
+    CHECK(read_file(td_a.path / "interest_group_country_feedback.csv") ==
+          read_file(td_b.path / "interest_group_country_feedback.csv"));
+    CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
+          read_file(td_b.path / "interest_group_authority_pressure.csv"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

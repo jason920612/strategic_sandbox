@@ -68,7 +68,11 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     // radicalism) of its own interest groups, at the slower
     // rate kInterestGroupCountryFeedbackRate (0.02). Runs AFTER
     // M3.2 so it sees the just-updated radicalism values.
-    auto fb = interest_group::country_feedback(state);
+    //
+    // M3.6: pass the trace vector so the runner can dump one row
+    // per actually-updated country to interest_group_country_feedback.csv.
+    auto fb = interest_group::country_feedback(
+        state, &out.interest_group_country_feedback_trace_rows);
     if (!fb.ok()) {
         return core::Result<MonthlyOutcome>::failure(
             "monthly::tick_all_countries: interest_group::"
@@ -83,7 +87,11 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     // interest groups, at the even slower rate
     // kInterestGroupAuthorityPressureRate (0.01). Runs AFTER
     // M3.3 so it sees the just-updated group loyalty values.
-    auto ap = interest_group::authority_pressure(state);
+    //
+    // M3.6: pass the trace vector so the runner can dump one row
+    // per actually-updated country to interest_group_authority_pressure.csv.
+    auto ap = interest_group::authority_pressure(
+        state, &out.interest_group_authority_pressure_trace_rows);
     if (!ap.ok()) {
         return core::Result<MonthlyOutcome>::failure(
             "monthly::tick_all_countries: interest_group::"

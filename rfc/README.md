@@ -217,7 +217,40 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.5（InterestGroup
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.6（InterestGroup
+  feedback outcome diagnostics / CSV trace surface）** 是 M3.5
+  state surface 的 outcome trace 對應，**不新增玩法、不改公式、
+  不改 save schema、不新增 CLI flag**。Runner 每次執行都會無條件
+  輸出兩個新檔案：`interest_group_country_feedback.csv`（M3.3
+  outcome trace）與 `interest_group_authority_pressure.csv`（M3.4
+  outcome trace），各 10 欄。Cadence 是「每次真實 mutation 一行」
+  ── 被 skip 的 country（沒 matching groups / `weight_sum <= 0`）
+  不輸出 row，preflight failure 不輸出 partial rows。新型別
+  `interest_group::CountryFeedbackTraceRow` +
+  `AuthorityPressureTraceRow`；`country_feedback` /
+  `authority_pressure` 新增 optional
+  `std::vector<...>* trace_out = nullptr` 參數（default-null =
+  byte-identical 與 M3.3 / M3.4 baseline）。`MonthlyOutcome`
+  新增兩個 trace vector，`tick_all_countries` 把指標往下傳，
+  `TickController` 在 `step_one_day` 把資料 drain 出來。
+  Diagnostics 新增 `write_country_feedback_csv_header / _row`
+  + `write_authority_pressure_csv_header / _row` 沿用 M3.5
+  `csv_escape` + `std::scientific` + `setprecision(17)`。
+  `RunnerOptions` 新增兩個 optional path override（**沒有 CLI
+  flag**，預設 `<output_dir>/interest_group_*_*.csv`）。
+  `RunOutcome` 新增兩個 path + 兩個 row counter；`main()` 列印
+  兩個。**No save schema bump（仍 v11）**；M1.17 / M2.22
+  byte-identical determinism contract 從 6 artefacts 擴張到 8
+  artefacts；M2.9 pre-`end_tick` no-artefact contract 自然涵蓋
+  第 7、8 個檔案（`end_tick` 仍是唯一寫磁碟的地方）。對應 RFC-080
+  / RFC-020 §5 reaction-loop 想要的可觀察 outcome 第一片落地。
+  **M3.6 不做** save schema 變更、formula change、新欄位、
+  新 InterestGroupKind、M3.2 `react` per-mutation trace、
+  per-tick state delta CSV、events / AI / UI / REPL、
+  新 CLI flag、新 `PlayerCommandKind`、command-gate integration、
+  atomic `end_tick` 寫檔、`--target-date` 行為變更、M1 / M2
+  system 變更。24 個新 doctest cases。
+  **M3.5（InterestGroup
   reaction diagnostics / CSV surface）** 是 M3 第一個 observability
   artefact，**不新增玩法、不改 save schema、不新增 CLI flag**。
   Runner 每次執行都會無條件輸出新檔 `interest_groups.csv`，

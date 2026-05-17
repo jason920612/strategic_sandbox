@@ -134,12 +134,25 @@ struct CountryMonthlyOutcome {
 // that call's `countries_updated` — countries with no
 // Bureaucracy-kind interest group (or only zero-influence ones)
 // are skipped.
+//
+// M3.6: `tick_all_countries` also populates the two formula-
+// trace vectors below with one row per actually-updated country
+// per system. Skipped countries produce no row, so on most
+// monthly ticks the row count equals the corresponding
+// `*_countries_updated` field. The trace vectors are NOT
+// persisted: they are a runtime observability surface consumed
+// by the runner's CSV writers and discarded once `end_tick`
+// has emitted them.
 struct MonthlyOutcome {
     int countries_processed = 0;
     std::vector<CountryMonthlyOutcome> countries;
     int interest_groups_updated                    = 0;
     int interest_group_countries_updated           = 0;
     int interest_group_authority_countries_updated = 0;
+    std::vector<interest_group::CountryFeedbackTraceRow>
+        interest_group_country_feedback_trace_rows;
+    std::vector<interest_group::AuthorityPressureTraceRow>
+        interest_group_authority_pressure_trace_rows;
 };
 
 // Run one month-boundary pipeline for a single country in the
