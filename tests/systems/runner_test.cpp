@@ -2849,4 +2849,53 @@ TEST_CASE("run: M3.6 trace CSV writing does NOT change save / log / state CSVs")
           read_file(td_b.path / "interest_groups.csv"));
 }
 
+// =====================================================================
+// M3.8 - canonical scenarios author Bureaucracy interest groups
+// =====================================================================
+
+TEST_CASE("run: canonical scenario produces data rows in all three M3 CSVs") {
+    // M3.8 added one Bureaucracy interest group per canonical
+    // country (GER / FRA / JPN). A 31-day run from the canonical
+    // 1930_minimal scenario crosses one month boundary, so:
+    //
+    //   * interest_groups.csv: 3 groups × 3 snapshot points
+    //     (start + month_changed + final post-sanity) = 9 rows.
+    //   * interest_group_country_feedback.csv: one monthly tick,
+    //     all 3 countries have at least one matching group with
+    //     non-zero influence = 3 rows.
+    //   * interest_group_authority_pressure.csv: same — all 3
+    //     countries have a Bureaucracy group with non-zero
+    //     influence = 3 rows.
+    TempDir td("leviathan_runner_m38_canonical_data_rows");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 31;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    CHECK(r.value().interest_groups_csv_rows                   == 9u);
+    CHECK(r.value().interest_group_country_feedback_csv_rows   == 3u);
+    CHECK(r.value().interest_group_authority_pressure_csv_rows == 3u);
+
+    // Every M3 CSV exists with data, not just a header line.
+    const std::string ig = read_file(td.path / "interest_groups.csv");
+    CHECK(ig.find("ger_bureaucracy") != std::string::npos);
+    CHECK(ig.find("fra_bureaucracy") != std::string::npos);
+    CHECK(ig.find("jpn_bureaucracy") != std::string::npos);
+
+    const std::string cf =
+        read_file(td.path / "interest_group_country_feedback.csv");
+    CHECK(cf.find("GER") != std::string::npos);
+    CHECK(cf.find("FRA") != std::string::npos);
+    CHECK(cf.find("JPN") != std::string::npos);
+
+    const std::string ap =
+        read_file(td.path / "interest_group_authority_pressure.csv");
+    CHECK(ap.find("GER") != std::string::npos);
+    CHECK(ap.find("FRA") != std::string::npos);
+    CHECK(ap.find("JPN") != std::string::npos);
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR

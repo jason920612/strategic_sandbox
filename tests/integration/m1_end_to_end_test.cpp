@@ -20,9 +20,12 @@
 //     artefacts: save.json, events.jsonl, summary.csv,
 //     countries.csv, factions.csv, interest_groups.csv (M3.5),
 //     interest_group_country_feedback.csv (M3.6),
-//     interest_group_authority_pressure.csv (M3.6). Canonical
-//     scenarios author zero interest groups so the three M3
-//     files are all header-only here.
+//     interest_group_authority_pressure.csv (M3.6). M3.8 added
+//     one Bureaucracy interest group per canonical country, so
+//     the three M3 files now contain real data rows here (no
+//     longer header-only); the byte-identical contract is the
+//     same shape — two same-seed runs match byte-for-byte
+//     whether the rows are present or not.
 //
 // Unlike `m0_end_to_end_test.cpp`, this test goes through the
 // runner. By M1.11 the runner accepts `--scenario` and loads the
@@ -253,12 +256,15 @@ TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all thr
     CHECK(read_file(td_a.path / "factions.csv") ==
           read_file(td_b.path / "factions.csv"));
     // M3.5: interest_groups.csv joins the byte-identical contract.
-    // Canonical scenarios author zero interest groups so the file is
-    // header-only, but the path always exists and must round-trip.
+    // M3.8 added one Bureaucracy group per canonical country, so the
+    // file now carries real data rows on this run; the byte-identical
+    // contract is unchanged in shape.
     CHECK(read_file(td_a.path / "interest_groups.csv") ==
           read_file(td_b.path / "interest_groups.csv"));
     // M3.6: two formula-trace CSVs round out the 8-artefact set.
-    // Canonical scenarios produce header-only files here too.
+    // M3.8: same shift from header-only to data rows applies — both
+    // M3.3 country_feedback and M3.4 authority_pressure fire on the
+    // Bureaucracy groups every monthly tick.
     CHECK(read_file(td_a.path / "interest_group_country_feedback.csv") ==
           read_file(td_b.path / "interest_group_country_feedback.csv"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==

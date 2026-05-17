@@ -217,8 +217,36 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.7（M3
-  reaction-loop integration checkpoint）** 把 M3.1–M3.6 的
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.8（canonical
+  scenario interest-group fixtures）** 是純資料 PR：在
+  `data/scenarios/1930_minimal.json` 與
+  `data/scenarios/1930_with_start_policies.json` 各加入一個
+  Bureaucracy interest group per canonical country（GER / FRA /
+  JPN，每個 `influence=0.55, loyalty=0.50, radicalism=0.10`），
+  讓 canonical-scenario run 走出 M3.7 之前 M3 三檔 CSV
+  header-only 的路徑：31 天 canonical run 現在
+  `interest_groups.csv` 有 9 個 data row、
+  `interest_group_country_feedback.csv` 有 3 個、
+  `interest_group_authority_pressure.csv` 有 3 個。Bureaucracy
+  是唯一新增的 kind，因為 M3.4 `authority_pressure` 只看
+  Bureaucracy-kind，所以單一 Bureaucracy group per country
+  正好讓三條 reverse-direction systems（M3.2 react / M3.3
+  country_feedback / M3.4 authority_pressure）全部跑到 data row
+  路徑，又不需要引入任何尚未實作的玩法。canonical scenario
+  loader test 多 6 個 assert 釘住 3-group 結構；M1.17 / M2.22
+  byte-identical determinism contracts 形狀不變（只有「canonical
+  scenarios author zero interest groups」的註解需要 refresh）。
+  **M3 仍在 in progress** ── 沒有 `docs/milestone-3-result.md`、
+  沒有「M3 closed」字樣、沒有 M4。**M3.8 不做** 新 system /
+  新 formula / 新 artefact（仍 8）/ save schema bump（仍 v11）/
+  loader semantic change / auto-generation / 新
+  `InterestGroupKind` / Military 等其他 kind / military_pressure
+  等其他 authority channel / events / command-gate diagnostic /
+  command-gate formula change / AI / UI / REPL / CLI / 新
+  `PlayerCommandKind` / runner CLI flag / atomic `end_tick`。
+  1 個新 doctest case + 6 個新 assert 在既有 case 上（共 745）。
+  **M3.7（M3 reaction-loop integration checkpoint）** 把
+  M3.1–M3.6 的
   closed loop 用 integration tests 釘住，**不新增任何新系統、
   公式、artefact、save schema、CLI flag、玩法**。新檔
   `tests/integration/m3_end_to_end_test.cpp` 三個 case：

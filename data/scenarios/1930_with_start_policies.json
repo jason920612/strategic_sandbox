@@ -25,6 +25,35 @@
     "starting_policies": [
       { "policy": "raise_taxes",              "actor": "GER" },
       { "policy": "increase_military_budget", "actor": "GER" }
+    ],
+    "interest_groups": [
+      {
+        "id_code":    "ger_bureaucracy",
+        "name":       "German Bureaucracy",
+        "kind":       "Bureaucracy",
+        "country":    "GER",
+        "influence":  0.55,
+        "loyalty":    0.50,
+        "radicalism": 0.10
+      },
+      {
+        "id_code":    "fra_bureaucracy",
+        "name":       "French Bureaucracy",
+        "kind":       "Bureaucracy",
+        "country":    "FRA",
+        "influence":  0.55,
+        "loyalty":    0.50,
+        "radicalism": 0.10
+      },
+      {
+        "id_code":    "jpn_bureaucracy",
+        "name":       "Japanese Bureaucracy",
+        "kind":       "Bureaucracy",
+        "country":    "JPN",
+        "influence":  0.55,
+        "loyalty":    0.50,
+        "radicalism": 0.10
+      }
     ]
   }
 }

@@ -358,6 +358,27 @@ TEST_CASE("load_into_state: canonical data/scenarios/1930_minimal.json loads cle
         CHECK(f.country_id_code == "GER");
         CHECK(f.country.value() == 0);
     }
+
+    // M3.8: canonical scenario now authors one Bureaucracy interest
+    // group per country (GER / FRA / JPN). Numeric values are pinned
+    // here so the manifest can't silently drift; cross-country
+    // ordering matches the country load order.
+    REQUIRE(state.interest_groups.size() == 3u);
+    CHECK(state.interest_groups[0].id_code        == "ger_bureaucracy");
+    CHECK(state.interest_groups[0].kind           ==
+          leviathan::core::InterestGroupKind::Bureaucracy);
+    CHECK(state.interest_groups[0].country.value() == 0);   // GER
+    CHECK(state.interest_groups[0].influence       == doctest::Approx(0.55));
+    CHECK(state.interest_groups[0].loyalty         == doctest::Approx(0.50));
+    CHECK(state.interest_groups[0].radicalism      == doctest::Approx(0.10));
+    CHECK(state.interest_groups[1].id_code        == "fra_bureaucracy");
+    CHECK(state.interest_groups[1].kind           ==
+          leviathan::core::InterestGroupKind::Bureaucracy);
+    CHECK(state.interest_groups[1].country.value() == 1);   // FRA
+    CHECK(state.interest_groups[2].id_code        == "jpn_bureaucracy");
+    CHECK(state.interest_groups[2].kind           ==
+          leviathan::core::InterestGroupKind::Bureaucracy);
+    CHECK(state.interest_groups[2].country.value() == 2);   // JPN
 }
 #endif
 

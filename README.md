@@ -11,7 +11,45 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.7 — M3 reaction-loop
+- Latest shipped sub-milestone: **M3.8 — canonical scenario
+  interest-group fixtures.** Data-only PR that adds one
+  Bureaucracy interest group per canonical country
+  (`ger_bureaucracy` / `fra_bureaucracy` / `jpn_bureaucracy`,
+  each with `influence=0.55, loyalty=0.50, radicalism=0.10`)
+  to `data/scenarios/1930_minimal.json` and
+  `data/scenarios/1930_with_start_policies.json`. Up through
+  M3.7 the M3 CSVs (`interest_groups.csv` /
+  `interest_group_country_feedback.csv` /
+  `interest_group_authority_pressure.csv`) were header-only on
+  canonical-scenario runs; M3.8 takes the canonical path off
+  the header-only branch so the three M3 CSVs now carry real
+  data rows (9 / 3 / 3 rows in the 31-day canonical run,
+  pinned by a new `runner_test` case). Bureaucracy was the
+  only `InterestGroupKind` chosen so the fixture exercises
+  all three reverse-direction systems (M3.2 react / M3.3
+  country_feedback / M3.4 authority_pressure — the last
+  reads only Bureaucracy-kind groups) without introducing
+  any unimplemented gameplay. The canonical
+  `scenario_loader` test gains six new assertions pinning
+  the 3-group shape; the M1 / M2 integration tests'
+  byte-identical determinism contracts are unchanged in
+  shape — only the "canonical scenarios author zero
+  interest groups" explanatory comments needed a refresh.
+  **M3 remains in progress** — no
+  `docs/milestone-3-result.md`, no "M3 closed" wording, no
+  M4. **No new system, no new formula, no new artefact
+  (still 8), no save schema bump (still v11), no loader
+  semantic change, no auto-generation of interest groups,
+  no new `InterestGroupKind`, no Military / Workers /
+  Media / etc. groups yet, no `military_pressure` /
+  `intelligence_pressure` / `media_pressure`, no event
+  triggers, no command-gate diagnostic surface, no
+  command-gate formula change, no AI / UI / REPL / CLI, no
+  new `PlayerCommandKind`, no runner CLI flag, no atomic
+  `end_tick` writes, no M3 close-out, no M4 / post-M3
+  governance follow-up.** 1 new doctest case + 6 new
+  asserts on an existing case (745 total).
+- Previously shipped: **M3.7 — M3 reaction-loop
   integration checkpoint.** Pins the M3.1–M3.6 reaction loop
   at the seam between M3 and any future milestone via three
   new integration tests
@@ -248,11 +286,12 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.7): **M3.8** — open.
+- Next sub-milestone candidate (post-M3.8): **M3.9** — open.
   With four reaction-loop legs (M3.2 / M3.3 / M3.4), the
-  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, and
-  the M3.7 reaction-loop integration checkpoint all in place,
-  natural next steps include (a) a sibling authority channel
+  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, the
+  M3.7 reaction-loop integration checkpoint, and the M3.8
+  canonical interest-group fixtures all in place, natural
+  next steps include (a) a sibling authority channel
   (e.g. Military loyalty → `military_loyalty`), (b) interest-
   group integration into the M2.18 / M2.19 command-execution
   gate, (c) influence drift driven by event / policy
@@ -261,7 +300,7 @@
   `react` per-mutation trace as a third trace CSV. None
   committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 shipped). See
+  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 shipped). See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   and `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -288,7 +327,7 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 shipped. Forty-five sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 shipped. Forty-six sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -435,6 +474,36 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.8 canonical scenario interest-group fixtures — adds one
+Bureaucracy interest group per canonical country
+(`ger_bureaucracy` / `fra_bureaucracy` / `jpn_bureaucracy`,
+each `influence=0.55, loyalty=0.50, radicalism=0.10`) to
+`data/scenarios/1930_minimal.json` and
+`data/scenarios/1930_with_start_policies.json`. Up through
+M3.7 the three M3 CSVs (`interest_groups.csv` /
+`interest_group_country_feedback.csv` /
+`interest_group_authority_pressure.csv`) were header-only on
+canonical-scenario runs; M3.8 takes the canonical path off the
+header-only branch so a 31-day canonical run now produces
+9 / 3 / 3 rows respectively. Bureaucracy is the only kind
+chosen because the M3.4 `authority_pressure` step reads only
+Bureaucracy-kind groups, so a single Bureaucracy group per
+country exercises all three reverse-direction systems without
+introducing any unimplemented gameplay. Canonical scenario
+loader test gains 6 new asserts pinning the 3-group shape;
+M1.17 / M2.22 byte-identical determinism contracts unchanged
+in shape (only the "canonical scenarios author zero interest
+groups" comments needed a refresh). **No new system, no new
+formula, no new artefact (still 8), no save schema bump
+(still v11), no loader semantic change, no auto-generation,
+no new `InterestGroupKind`, no Military / Workers / etc.
+groups yet, no `military_pressure` / `intelligence_pressure`
+/ `media_pressure`, no event triggers, no command-gate
+diagnostic surface, no command-gate formula change, no AI /
+UI / REPL / CLI, no new `PlayerCommandKind`, no runner CLI
+flag, no atomic `end_tick` writes, no M3 close-out, no M4.**
+1 new doctest case + 6 new asserts on an existing case (745
+total);
 **M3.7 M3 reaction-loop integration checkpoint — pins the
 M3.1–M3.6 closed loop at the seam between M3 and any future
 milestone. Adds `tests/integration/m3_end_to_end_test.cpp`
