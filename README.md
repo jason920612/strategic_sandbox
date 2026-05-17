@@ -8,26 +8,27 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.11 — Replay verify CLI.**
-  New `--verify` boolean runner flag (requires `--replay`) wires
-  M2.10 `compare_states` into the M2.8 replay flow. After
-  `end_tick` completes, the runner auto-compares the replayed
-  state against the loaded source save and populates a new
-  `RunOutcome::verify_mismatches` (vector of `StateMismatch`).
-  `main()` prints `Verify mismatches: N` plus one bullet per
-  mismatch (`  - <field_path> : <detail>`). **Informational
-  only** — the run exits with status 0 regardless of mismatch
-  count; the artefacts (save, JSONL, CSVs) are still written so
-  the user can inspect them. Strict fail-on-mismatch is a future
-  candidate (`--verify-strict`). **No save format bump** (still
-  v9); no new state field; no M1 system change; reuses the
-  already-loaded source save (no extra disk I/O).
-- Next sub-milestone candidates: **M2.12** (further
-  `PlayerCommandKind` variants — `ChangeTaxBurden`,
-  `ToggleMartialLaw`, …; save-neutral additive enum) or **M2.13**
-  (`--verify-strict` / `--verify-tolerance` ergonomics
-  extension — exit non-zero on mismatch, custom tolerance from
-  the CLI; save-neutral).
+- Latest shipped sub-milestone: **M2.12 — Replay strict mode.**
+  New `--verify-strict` boolean runner flag (requires `--verify`)
+  makes `main()` exit `EXIT_FAILURE` when M2.11 detects any
+  mismatches. The full mismatch list still prints to stdout
+  before the non-zero exit so CI logs capture every divergence.
+  **Architectural decision**: `run()` semantics unchanged — it
+  still returns success when the simulation+replay completes;
+  strict mode is a `main()`-level policy. Tradeoff is one extra
+  line of policy in `main()`; benefit is library/CLI separation
+  stays clean and other consumers (tests, future embedders) can
+  apply their own policy. Flag-chain validation:
+  `--verify-strict` → `--verify` → `--replay`, each with its
+  own loud-rejection message naming the missing dependency.
+  **No save format bump** (still v9); no new state field; no
+  `run()` behaviour change; no new flags beyond strict.
+- Next sub-milestone candidates: **M2.13** (`--verify-tolerance`
+  CLI knob for `CompareOptions::double_tolerance`; the obvious
+  next ergonomics step once numerics get more complex) or
+  **M2.14** (further `PlayerCommandKind` variants —
+  `ChangeTaxBurden`, `ToggleMartialLaw`, …; save-neutral
+  additive enum).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -52,8 +53,8 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.10 + M2.11 merged. Twenty-seven sub-milestones
-shipped:
++ M2.7 + M2.8 + M2.10 + M2.11 + M2.12 merged. Twenty-eight sub-
+milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -203,7 +204,15 @@ loaded source save and populates
 `RunOutcome::verify_mismatches`. `main()` prints
 `Verify mismatches: N` plus one bullet per mismatch.
 Informational only (exit code stays 0; strict mode deferred).
-Reuses the already-loaded source save. No save format change.**
+Reuses the already-loaded source save. No save format change;
+**M2.12 Replay strict mode — new `--verify-strict` boolean
+runner flag (requires `--verify`) makes `main()` exit
+`EXIT_FAILURE` when M2.11 reports any mismatches. Full mismatch
+list still printed first so CI logs capture every divergence.
+`run()` semantics unchanged — strict is a `main()`-level exit
+policy (library / CLI separation stays clean). Flag-chain
+`--verify-strict → --verify → --replay` each with loud rejection
+on missing dependency. No save format change.**
 
 ## Repository layout
 
@@ -343,6 +352,17 @@ on Windows).
     --replay   path/to/source.json \
     --verify \
     --output   replay_out/
+
+# M2.12 - same as above but make the process exit EXIT_FAILURE
+# on any mismatch. The full mismatch list still prints first so
+# CI logs see the divergence; useful as a build/replay regression
+# gate.
+./build/bin/Debug/leviathan \
+    --days     0 \
+    --scenario data/scenarios/1930_with_start_policies.json \
+    --replay   path/to/golden.json \
+    --verify --verify-strict \
+    --output   replay_out/
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -379,14 +399,20 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.11 there are **537 doctest cases**. M0 contributed 179;
+As of M2.12 there are **542 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
-10; M2.8 added 7; M2.10 added 12; M2.11 adds 5 covering the
+10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 adds 5
+covering `--verify-strict`: parse plumbed (with `--verify`),
+defaults false, `--verify-strict` without `--verify` rejected
+with both flag names; run with strict + matching source succeeds
+empty mismatches; run with strict + tweaked source still
+succeeds at `run()` level (exit code is `main()`'s concern) but
+reports mismatches. Previously M2.11 added 5 covering the
 `--verify` CLI flag: parse_args plumbed (with `--replay`),
 defaults false, `--verify` without `--replay` rejected with both
 flag names in the error; full-replay with matching source

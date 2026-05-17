@@ -1849,3 +1849,93 @@ TEST_CASE("run: --replay + --verify on a tweaked source detects mismatch") {
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.12 - --verify-strict CLI flag
+// =====================================================================
+
+TEST_CASE("parse_args: --verify-strict plumbed when combined with --verify --replay") {
+    Argv arg(std::array<const char*, 7>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify",
+        "--verify-strict"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK(r.value().verify_strict == true);
+}
+
+TEST_CASE("parse_args: --verify-strict defaults to false") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK(r.value().verify_strict == false);
+}
+
+TEST_CASE("parse_args: --verify-strict without --verify is rejected") {
+    Argv arg(std::array<const char*, 6>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify-strict"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify-strict") != std::string::npos);
+    CHECK(r.error().find("--verify")        != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: --verify-strict on matching source succeeds with empty mismatches") {
+    // strict mode is a main()-level policy; run() still succeeds
+    // when there are no mismatches. The test confirms verify_strict
+    // didn't accidentally change run() semantics.
+    TempDir td("leviathan_runner_m212_strict_match");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    (void) build_source_save(source_path, {cmd});
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.verify        = true;
+    opts.verify_strict = true;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().verify_mismatches.empty());
+}
+
+TEST_CASE("run: --verify-strict on tweaked source still succeeds at run() but reports mismatches") {
+    // run() always succeeds when simulation+replay completes;
+    // strict mode is a main()-level exit-code decision. The test
+    // confirms run() does NOT downgrade to failure on mismatches.
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m212_strict_diff");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    auto source = build_source_save(source_path, {cmd});
+    source.countries[0].legal_tax_burden = 0.42;
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.verify        = true;
+    opts.verify_strict = true;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());  // run() still succeeds; main() decides exit code
+    CHECK_FALSE(r.value().verify_mismatches.empty());
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR

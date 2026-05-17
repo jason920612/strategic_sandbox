@@ -51,6 +51,7 @@ struct RunnerOptions {
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
+    bool                                 verify_strict = false; // M2.12: --verify-strict; requires --verify; informational in run(), main() exits non-zero on mismatches
     bool                                 show_help   = false;
 };
 

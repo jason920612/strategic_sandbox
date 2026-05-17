@@ -145,6 +145,14 @@ std::string usage_text() {
         "                      Requires --replay. Informational: any\n"
         "                      mismatches are reported but do not fail\n"
         "                      the run (exit code stays 0).\n"
+        "  --verify-strict     Make the process exit with EXIT_FAILURE\n"
+        "                      when --verify detects any mismatches\n"
+        "                      (M2.12). Requires --verify. run() still\n"
+        "                      succeeds at the library level — the\n"
+        "                      exit-code policy is owned by main(); the\n"
+        "                      full mismatch list is still printed to\n"
+        "                      stdout before the non-zero exit so CI\n"
+        "                      logs capture everything.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -239,6 +247,8 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             ++i;
         } else if (a == "--verify") {
             opts.verify = true;
+        } else if (a == "--verify-strict") {
+            opts.verify_strict = true;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -254,6 +264,13 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
         return core::Result<RunnerOptions>::failure(
             "--verify requires --replay (--verify is a no-op without"
             " a source save to compare the replayed state against)");
+    }
+    // M2.12: --verify-strict only makes sense alongside --verify.
+    if (opts.verify_strict && !opts.verify) {
+        return core::Result<RunnerOptions>::failure(
+            "--verify-strict requires --verify (strict mode is a"
+            " policy on top of the verify step; without --verify"
+            " there are no mismatches to gate on)");
     }
     return core::Result<RunnerOptions>::success(std::move(opts));
 }

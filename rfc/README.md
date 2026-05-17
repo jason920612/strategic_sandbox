@@ -423,6 +423,22 @@ M0 / M1 中落地，部分仍是未來工作：
   （`--verify-strict` 留給 M2.13 候選）、CLI tolerance 旋鈕、
   `--verify` 在 `--replay` 之外使用、mismatch list 截斷、新
   state.logs 條目、M1 system 行為變更。
+  **M2.12（Replay strict mode）** 在 runner 新增 `--verify-strict`
+  boolean flag（須與 `--verify` 並用），把 M2.11 的「informational」
+  verify 升級為「CI-gateable」。`main()` 在印完所有 mismatch
+  bullets 之後，若 `opts.verify_strict && !verify_mismatches.empty()`
+  就回傳 `EXIT_FAILURE`。**架構決策**：`run()` 語意不變——
+  simulation + replay 完成時 run() 仍回傳 success；strict 是
+  `main()`-level 的 exit-code 政策。tradeoff 是 main() 多一行
+  policy logic；benefit 是 library / CLI 分離乾淨，其他 consumer
+  （tests / 未來 embedders）可以套用自己的政策。`parse_args` 在
+  `--verify-strict` 缺 `--verify` 時直接 reject 並把兩個 flag 名稱
+  寫進錯誤訊息。Flag-chain：`--verify-strict → --verify →
+  --replay`。對應 RFC-090 §M2 replay family 的最後一塊：自動化
+  build / replay 回歸 gate。**M2.12 不做** save schema 變更（仍
+  v9）、`--verify-tolerance` CLI knob（M2.13 候選）、structured
+  diff 輸出、mismatch 數量門檻（strict 是二元，任何 mismatch 都
+  失敗）、`run()` 行為變更、新 state.logs 條目、M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
