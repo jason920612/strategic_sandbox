@@ -58,6 +58,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-11-replay-verify.md`](m2-11-replay-verify.md) | M2.11 | **Replay verify CLI.** New `--verify` boolean runner flag (requires `--replay`) wires M2.10 `compare_states` into the M2.8 replay flow. After `end_tick` succeeds, the runner calls `compare_states(replayed_state, loaded_source)` and populates `RunOutcome::verify_mismatches`. `main()` prints `Verify mismatches: N` plus one bullet per mismatch (`  - <field_path> : <detail>`). **Informational only** — exit code stays 0 regardless of mismatch count; artefacts (save / JSONL / CSV) are still written so the user can forensically inspect. Reuses the already-loaded source save (no extra disk I/O). `parse_args` rejects `--verify` without `--replay` with both flag names in the error. **No save-format bump (still v9), no strict fail-on-mismatch mode (`--verify-strict` is a future candidate), no CLI tolerance knob, no `--verify` outside `--replay`, no mismatch-list truncation, no M1 system change.** |
 | [`m2-12-verify-strict.md`](m2-12-verify-strict.md) | M2.12 | **Replay strict mode.** New `--verify-strict` boolean runner flag (requires `--verify`) makes `main()` exit `EXIT_FAILURE` when M2.11 detects any mismatches. The full mismatch list still prints to stdout before the non-zero exit so CI logs capture every divergence. **Architectural decision**: `run()` semantics unchanged — it still returns success when the simulation+replay completes; strict mode is a `main()`-level exit-code policy. Tradeoff is one extra line of policy in `main()`; benefit is library/CLI separation stays clean and other consumers (tests, future embedders) can apply their own policy. `parse_args` rejects `--verify-strict` without `--verify` with both flag names in the error. Flag-chain: `--verify-strict` → `--verify` → `--replay`. **No save-format bump (still v9), no `--verify-tolerance` CLI knob (M2.13 candidate), no structured-diff output format, no mismatch-count threshold (strict is binary: any mismatch fails), no `run()` behaviour change, no M1 system change.** |
 | [`m2-13-verify-tolerance.md`](m2-13-verify-tolerance.md) | M2.13 | **Verify tolerance CLI.** New `--verify-tolerance FLOAT` runner flag (requires `--verify`) overrides M2.10's default `1e-9` `CompareOptions::double_tolerance` when calling `compare_states`. Parses via a new exception-free `parse_nonneg_double` helper that rejects empty input, trailing garbage (`"1.5x"`), non-finite values (`NaN`/`Inf`), and negatives at parse time with the flag name + bad value in the error. Plumbed into `run()`'s replay branch by building a `diagnostics::CompareOptions` with the override applied only when set. `main()` prints `Verify tolerance: <value>` when active so CI logs show which tolerance produced the mismatch count. **Completes the M2 replay-CLI family** (`--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`). **No save-format bump (still v9), no library behaviour change beyond passing the override through, no relative tolerance, no per-field tolerance, no new gameplay.** |
+| [`m2-14-replay-target-date.md`](m2-14-replay-target-date.md) | M2.14 | **Replay target-date CLI.** New `--target-date YYYY-MM-DD` runner flag (requires `--replay`) scopes the M2.8 replay flow to a specific calendar day. Two effects in one flag: **log truncation** (entries with `applied_on > target_date` are skipped before `replay_with_time` runs, monotonic-non-decreasing guarantee from M2.7 makes this a single forward scan) + **post-replay extension** (`step_one_day` loop until `current_date == target_date`, so M1.10 monthly pipeline fires naturally on every month boundary crossed). Parsed via `core::GameDate::parse`; scenario-start precondition validated in `run()` before any tick, putting bad target_date under the M2.9 pre-`end_tick` no-artefact contract. `RunnerOptions` gains `std::optional<core::GameDate> target_date`; `main()` prints `Target date: <value>` in the replay block. `replay_with_time` and `step_one_day` semantics are unchanged — M2.14 is glue. New dated-log test helper `build_source_with_dated_log` hand-splices `AppliedPlayerCommand` entries at chosen dates so truncation can be exercised without going through `apply_pending`. **No save-format bump (still v9), no `--target-date` outside `--replay`, no mid-day target, no special interaction with `--verify`, no new gameplay, no new `state.logs` entry, no M1 system change.** |
 
 ## Reading order
 
@@ -71,35 +72,35 @@ If you're new to the codebase:
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
    → M1.11 → M1.12 → M1.13 → M1.14 → M1.15 → M1.16 →
    `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 →
-   M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11 → M2.12 → M2.13). They
+   M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11 → M2.12 → M2.13 →
+   M2.14). They
    build on each other and each one tries to call out the rules
    a future contributor must not silently break.
 
 ## What's next
 
-**M2 has begun.** M2.1–M2.13 shipped (M2.9 was originally skipped
-during the M2.10 → M2.13 sprint and backfilled after; the M2 replay
-flow is now complete *with* documented failure-path artefact
-semantics). The M2 replay-CLI family (`--replay` / `--verify` /
-`--verify-strict` / `--verify-tolerance`) is feature-complete.
+**M2 has begun.** M2.1–M2.14 shipped (M2.9 was originally skipped
+during the M2.10 → M2.13 sprint and backfilled after). The M2
+replay-CLI family (`--replay` / `--verify` / `--verify-strict` /
+`--verify-tolerance` / `--target-date`) is feature-complete with
+documented pre-`end_tick` failure-path artefact semantics.
 Suggested next M2 sub-milestones:
 
-- **M2.14 — More command kinds.** Continue growing
-  `PlayerCommandKind` (`ChangeTaxBurden`, `ToggleMartialLaw`, …).
-  Each new kind adds its own dispatch arm and per-kind JSON shape,
-  same pattern M2.5 set. Save-format-neutral additive enum.
 - **M2.15 — Relative-tolerance support.** Upgrade M2.10
   `CompareOptions` to support relative tolerance alongside
   absolute. Useful for large-magnitude fields (e.g. cumulative
   GDP after long simulations) where absolute tolerance is awkward.
   Save-format-neutral.
+- **M2.16 — `GovernmentAuthorityState`.** First M2 gameplay
+  extension: add an authority sub-struct to `CountryState` per
+  RFC-020 / RFC-080 §6. Save schema bumps v9 → v10.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
 land later as targeted follow-ups when the player loop needs them.
 
 Per the M-pacing rule, the next sub-milestone is **not** started
-until M2.9 is merged.
+until M2.14 is merged.
 
 ## When to add a new file
 

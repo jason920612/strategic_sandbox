@@ -53,6 +53,7 @@ struct RunnerOptions {
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
     bool                                 verify_strict = false; // M2.12: --verify-strict; requires --verify; informational in run(), main() exits non-zero on mismatches
     std::optional<double>                verify_tolerance;     // M2.13: --verify-tolerance N; requires --verify; overrides CompareOptions::double_tolerance (default 1e-9)
+    std::optional<core::GameDate>        target_date;          // M2.14: --target-date YYYY-MM-DD; requires --replay; stop replay at this date and advance the time system to it
     bool                                 show_help   = false;
 };
 
@@ -131,10 +132,15 @@ struct RunOutcome {
 // `end_tick` is called write no output artefacts. This includes:
 //   * `save_system::load` on the source save (missing/corrupt),
 //   * the empty-`state.countries` replay precondition,
+//   * the M2.14 `--target-date` precondition (target_date is before
+//     the scenario start date),
 //   * `begin_tick` rejection (bad `--player`, double-begin, etc.),
 //   * `commands::replay_with_time` failure (out-of-order log,
 //     unknown policy id_code, malformed budget command, monthly
-//     pipeline failure while advancing).
+//     pipeline failure while advancing),
+//   * the M2.14 post-replay `step_one_day` loop that advances toward
+//     `--target-date` (a monthly-pipeline failure during that
+//     advance returns before `end_tick`).
 //
 // These paths return before `end_tick`, and `end_tick` is the only
 // function on the runner side that writes save.json / events.jsonl

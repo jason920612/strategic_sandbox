@@ -193,6 +193,16 @@ std::string usage_text() {
         "                      cumulative drift the tight default would\n"
         "                      false-positive on. N must be a finite\n"
         "                      non-negative double. Requires --verify.\n"
+        "  --target-date YYYY-MM-DD\n"
+        "                      Stop the replay at this date (M2.14).\n"
+        "                      Log entries with applied_on > target are\n"
+        "                      skipped; after replay, the time system\n"
+        "                      is advanced day-by-day until\n"
+        "                      current_date == target so the resulting\n"
+        "                      save reflects exactly that calendar day.\n"
+        "                      Must be a valid Gregorian date and must\n"
+        "                      not be before the scenario start date.\n"
+        "                      Requires --replay.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -296,6 +306,17 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!t) return core::Result<RunnerOptions>::failure(std::move(t.error()));
             opts.verify_tolerance = t.value();
             ++i;
+        } else if (a == "--target-date") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            auto d = core::GameDate::parse(v.value());
+            if (!d) {
+                return core::Result<RunnerOptions>::failure(
+                    std::string(a) + ": '" + std::string(v.value()) +
+                    "' is not a valid Gregorian date (" + std::move(d.error()) + ")");
+            }
+            opts.target_date = d.value();
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -325,6 +346,13 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             "--verify-tolerance requires --verify (the tolerance"
             " is consumed by compare_states inside the verify step;"
             " without --verify there is nothing to tune)");
+    }
+    // M2.14: --target-date only meaningful inside --replay.
+    if (opts.target_date.has_value() && !opts.replay_path.has_value()) {
+        return core::Result<RunnerOptions>::failure(
+            "--target-date requires --replay (the target date"
+            " scopes the replay window; without --replay there is"
+            " no log to truncate and no replay loop to extend)");
     }
     return core::Result<RunnerOptions>::success(std::move(opts));
 }
@@ -386,6 +414,19 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
                 " are NOT reused)");
         }
 
+        // M2.14: validate --target-date against the scenario start
+        // BEFORE any artefact-producing work. `state.current_date`
+        // at this point is the scenario start date because no tick
+        // has run yet.
+        if (opts.target_date.has_value() &&
+            opts.target_date.value() < state.current_date) {
+            return core::Result<RunOutcome>::failure(
+                "--target-date " + opts.target_date.value().to_string() +
+                " is before the scenario start date " +
+                state.current_date.to_string() +
+                " (target must be on or after the scenario start)");
+        }
+
         // Load the save being replayed.
         auto loaded_r = ss::load(opts.replay_path.value());
         if (!loaded_r) {
@@ -408,11 +449,46 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         if (!begin_r) {
             return core::Result<RunOutcome>::failure(std::move(begin_r.error()));
         }
-        auto replay_r =
-            cmd::replay_with_time(state, opts, ctrl, loaded.applied_commands);
+
+        // M2.14: when --target-date is set, replay only entries with
+        // applied_on <= target_date. The log is monotonic non-
+        // decreasing (M2.7 contract) so a single forward pass is
+        // sufficient — once an entry is past the target, every
+        // subsequent entry is too.
+        const auto* log_ptr = &loaded.applied_commands;
+        std::vector<core::AppliedPlayerCommand> truncated;
+        if (opts.target_date.has_value()) {
+            const auto td = opts.target_date.value();
+            for (const auto& e : loaded.applied_commands) {
+                if (e.applied_on > td) break;
+                truncated.push_back(e);
+            }
+            log_ptr = &truncated;
+        }
+
+        auto replay_r = cmd::replay_with_time(state, opts, ctrl, *log_ptr);
         if (!replay_r) {
             return core::Result<RunOutcome>::failure(std::move(replay_r.error()));
         }
+
+        // M2.14: after replay, advance the time system day-by-day
+        // until current_date == target_date. The natural M1.10 monthly
+        // pipeline boundary handling falls out of `step_one_day`.
+        // This loop is a no-op when target_date <= the last replayed
+        // entry's applied_on (or when --target-date isn't set).
+        if (opts.target_date.has_value()) {
+            const auto td = opts.target_date.value();
+            while (state.current_date < td) {
+                auto step_r = step_one_day(state, opts, ctrl);
+                if (!step_r) {
+                    return core::Result<RunOutcome>::failure(
+                        "--target-date " + td.to_string() +
+                        ": step_one_day failed advancing toward target: " +
+                        std::move(step_r.error()));
+                }
+            }
+        }
+
         auto end_r = end_tick(state, opts, ctrl);
         if (!end_r) {
             return core::Result<RunOutcome>::failure(std::move(end_r.error()));

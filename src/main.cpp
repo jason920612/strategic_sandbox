@@ -72,6 +72,10 @@ int main(int argc, char** argv) {
         std::cout
               << "Replay source       : " << opts.replay_path.value().string() << "\n"
               << "Commands replayed   : " << outcome.replay_commands_replayed << "\n";
+        if (opts.target_date.has_value()) {
+            std::cout
+              << "Target date         : " << opts.target_date.value().to_string() << "\n";
+        }
     }
     if (opts.verify) {
         std::cout
