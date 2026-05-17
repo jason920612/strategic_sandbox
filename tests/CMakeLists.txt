@@ -49,6 +49,7 @@ add_executable(leviathan_tests
     systems/save_system_test.cpp
     systems/scenario_loader_test.cpp
     systems/stability_system_test.cpp
+    systems/svg_export_test.cpp
     systems/time_system_test.cpp
     integration/m0_end_to_end_test.cpp
     integration/m1_end_to_end_test.cpp

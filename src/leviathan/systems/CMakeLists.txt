@@ -45,6 +45,7 @@ add_library(leviathan_systems STATIC
     save_system.cpp
     scenario_loader.cpp
     stability_system.cpp
+    svg_export.cpp
     time_system.cpp
 )
 

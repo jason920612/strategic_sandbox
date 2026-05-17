@@ -267,6 +267,12 @@ TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all thr
     // Bureaucracy groups every monthly tick.
     CHECK(read_file(td_a.path / "interest_group_country_feedback.csv") ==
           read_file(td_b.path / "interest_group_country_feedback.csv"));
+    // M4.2: provinces.svg is the ninth unconditional artefact;
+    // renders deterministic <circle> markers from state.provinces.
+    // M4.1 fixtures put 3 nodes in the canonical scenario, so the
+    // file carries real data (not the header-only path).
+    CHECK(read_file(td_a.path / "provinces.svg") ==
+          read_file(td_b.path / "provinces.svg"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
 }

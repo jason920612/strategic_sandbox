@@ -330,6 +330,9 @@ TEST_CASE("M2 end-to-end: same script + same setup produces byte-identical 8 art
           read_file(td_b.path / "interest_group_country_feedback.csv"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    // M4.2: ninth artefact — provinces.svg.
+    CHECK(read_file(td_a.path / "provinces.svg") ==
+          read_file(td_b.path / "provinces.svg"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

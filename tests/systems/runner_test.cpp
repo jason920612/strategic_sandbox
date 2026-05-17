@@ -2850,6 +2850,98 @@ TEST_CASE("run: M3.6 trace CSV writing does NOT change save / log / state CSVs")
 }
 
 // =====================================================================
+// M4.2 - provinces.svg is the 9th unconditional artefact
+// =====================================================================
+
+TEST_CASE("run: provinces.svg is written by end_tick (unconditional, empty-state header-only)") {
+    // No scenario, so state.provinces is empty. The artefact still
+    // exists; the contract is "the file always exists".
+    TempDir td("leviathan_runner_m42_empty_provinces");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    REQUIRE(fs::exists(td.path / "provinces.svg"));
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find("<svg ")    != std::string::npos);
+    CHECK(svg.find("</svg>")   != std::string::npos);
+    CHECK(svg.find("<circle")  == std::string::npos);
+}
+
+TEST_CASE("run: provinces.svg defaults to <output_dir>/provinces.svg") {
+    TempDir td("leviathan_runner_m42_default_path");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    // provinces_svg_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().provinces_svg_path == td.path / "provinces.svg");
+    CHECK(fs::exists(r.value().provinces_svg_path));
+}
+
+TEST_CASE("run: provinces_svg_path override is honoured") {
+    TempDir td("leviathan_runner_m42_path_override");
+    rn::RunnerOptions opts;
+    opts.config_path        = kCanonicalConfig;
+    opts.days               = 1;
+    opts.output_dir         = td.path;
+    opts.provinces_svg_path = td.path / "custom" / "map.svg";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().provinces_svg_path == td.path / "custom" / "map.svg");
+    CHECK(fs::exists(td.path / "custom" / "map.svg"));
+    // Default path is NOT written when the override is set.
+    CHECK_FALSE(fs::exists(td.path / "provinces.svg"));
+}
+
+TEST_CASE("run: canonical scenario renders all three M4.1 nodes into provinces.svg") {
+    // M4.1 fixtures put berlin / paris / tokyo in the canonical
+    // 1930_minimal manifest. The SVG render exposes id_code and
+    // owner via data-* attributes, so the test pins both shape and
+    // ownership without parsing presentation values.
+    TempDir td("leviathan_runner_m42_canonical_svg");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find("data-id=\"berlin\"") != std::string::npos);
+    CHECK(svg.find("data-id=\"paris\"")  != std::string::npos);
+    CHECK(svg.find("data-id=\"tokyo\"")  != std::string::npos);
+    // owner indices: berlin=0 (GER), paris=1 (FRA), tokyo=2 (JPN).
+    CHECK(svg.find("data-owner=\"0\"") != std::string::npos);
+    CHECK(svg.find("data-owner=\"1\"") != std::string::npos);
+    CHECK(svg.find("data-owner=\"2\"") != std::string::npos);
+}
+
+TEST_CASE("run: provinces.svg preserves byte-identical determinism on same seed") {
+    TempDir td_a("leviathan_runner_m42_det_a");
+    TempDir td_b("leviathan_runner_m42_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 31;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xBEEF};
+        o.scenario_path = kCanonicalScenario;
+        return o;
+    };
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "provinces.svg") ==
+          read_file(td_b.path / "provinces.svg"));
+}
+
+// =====================================================================
 // M3.8 - canonical scenarios author Bureaucracy interest groups
 // =====================================================================
 
