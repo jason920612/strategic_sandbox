@@ -104,7 +104,23 @@ namespace leviathan::systems::save_system {
 //                `state.countries` + three ratio fields in [0, 1].
 //                scenario_loader still treats the block as optional
 //                in raw scenario JSON.
-inline constexpr std::uint32_t kSaveFormatVersion   = 11;
+//   v12 (M4.1) - `GameState::provinces` flipped from a reserved-
+//                empty stub (M0 `ProvinceState{id, owner}`) to a
+//                first-class typed `ProvinceNode` array (id_code,
+//                name, owner, x, y). A v11 save's `provinces`
+//                entries (if any) lacked id_code / name / x / y;
+//                silently defaulting on reload would either drop
+//                the map nodes entirely or fabricate blank
+//                identifiers and (0, 0) coordinates. We bump
+//                strictly. At the save-file level the `provinces`
+//                array is REQUIRED (empty array allowed); every
+//                entry is validated: non-empty id_code + name,
+//                owner that resolves to a valid index into
+//                `state.countries`, and finite x / y in [0, 1].
+//                Duplicate id_code rejected. scenario_loader still
+//                treats the manifest's `provinces` block as
+//                optional in raw scenario JSON.
+inline constexpr std::uint32_t kSaveFormatVersion   = 12;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

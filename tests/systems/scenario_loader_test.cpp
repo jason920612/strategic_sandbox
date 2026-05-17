@@ -379,6 +379,23 @@ TEST_CASE("load_into_state: canonical data/scenarios/1930_minimal.json loads cle
     CHECK(state.interest_groups[2].kind           ==
           leviathan::core::InterestGroupKind::Bureaucracy);
     CHECK(state.interest_groups[2].country.value() == 2);   // JPN
+
+    // M4.1: canonical scenario now authors one ProvinceNode per
+    // canonical country via the shared `provinces/1930_core_nodes.json`
+    // file. Pin the 3-node shape so a future manifest edit can't
+    // silently drift, and pin GER's coordinates so the on-disk
+    // fixture is locked in by tests.
+    CHECK(r.value().provinces_loaded == 3);
+    REQUIRE(state.provinces.size()   == 3u);
+    CHECK(state.provinces[0].id_code       == "berlin");
+    CHECK(state.provinces[0].name          == "Berlin");
+    CHECK(state.provinces[0].owner.value() == 0);   // GER
+    CHECK(state.provinces[0].x             == doctest::Approx(0.52));
+    CHECK(state.provinces[0].y             == doctest::Approx(0.44));
+    CHECK(state.provinces[1].id_code       == "paris");
+    CHECK(state.provinces[1].owner.value() == 1);   // FRA
+    CHECK(state.provinces[2].id_code       == "tokyo");
+    CHECK(state.provinces[2].owner.value() == 2);   // JPN
 }
 #endif
 
@@ -787,4 +804,169 @@ TEST_CASE("load_into_state: interest_groups unknown kind rejected") {
     REQUIRE(r.failed());
     CHECK(r.error().find("interest_groups[0]") != std::string::npos);
     CHECK(r.error().find("FloatingMasons")     != std::string::npos);
+}
+
+// =====================================================================
+// M4.1 - provinces in the scenario manifest
+// =====================================================================
+
+TEST_CASE("parse_manifest: provinces absent parses as empty") {
+    const auto r = sl::parse_manifest(
+        R"({ "scenario": { "countries": [], "factions": [], "policies": [] } })");
+    REQUIRE(r.ok());
+    CHECK(r.value().provinces.empty());
+}
+
+TEST_CASE("parse_manifest: provinces not an array rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "provinces": "bogus" }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("provinces") != std::string::npos);
+}
+
+TEST_CASE("parse_manifest: provinces non-string entry rejected") {
+    const auto r = sl::parse_manifest(R"({
+  "scenario": { "countries": [], "factions": [], "policies": [],
+                 "provinces": [ 42 ] }
+})");
+    REQUIRE(r.failed());
+    CHECK(r.error().find("provinces[0]") != std::string::npos);
+}
+
+TEST_CASE("load_into_state: provinces happy path") {
+    TempDir td("scen_loader_m41_provinces_happy");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    write_file(td.path / "data" / "provinces" / "core.json", R"({
+  "provinces": [
+    { "id": "berlin", "name": "Berlin",
+      "owner": "GER", "x": 0.5, "y": 0.4 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "s.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/ger.json" ],
+    "factions":  [],
+    "policies":  [],
+    "provinces": [ "provinces/core.json" ]
+  }
+})");
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.ok());
+    CHECK(r.value().provinces_loaded == 1);
+    REQUIRE(state.provinces.size() == 1u);
+    CHECK(state.provinces[0].id_code        == "berlin");
+    CHECK(state.provinces[0].name           == "Berlin");
+    CHECK(state.provinces[0].owner.value()  == 0);   // GER index
+    CHECK(state.provinces[0].x              == doctest::Approx(0.5));
+    CHECK(state.provinces[0].y              == doctest::Approx(0.4));
+}
+
+TEST_CASE("load_into_state: provinces unknown owner rejected") {
+    TempDir td("scen_loader_m41_provinces_unknown_owner");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    write_file(td.path / "data" / "provinces" / "core.json", R"({
+  "provinces": [
+    { "id": "x", "name": "X", "owner": "XYZ",
+      "x": 0.5, "y": 0.4 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "s.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/ger.json" ],
+    "factions":  [],
+    "policies":  [],
+    "provinces": [ "provinces/core.json" ]
+  }
+})");
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("provinces[0]") != std::string::npos);
+    CHECK(r.error().find("XYZ")          != std::string::npos);
+}
+
+TEST_CASE("load_into_state: provinces x/y out of range rejected") {
+    TempDir td("scen_loader_m41_provinces_xy_oor");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    write_file(td.path / "data" / "provinces" / "core.json", R"({
+  "provinces": [
+    { "id": "x", "name": "X", "owner": "GER",
+      "x": 1.5, "y": 0.4 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "s.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/ger.json" ],
+    "factions":  [],
+    "policies":  [],
+    "provinces": [ "provinces/core.json" ]
+  }
+})");
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("provinces[0]") != std::string::npos);
+    CHECK(r.error().find("x")            != std::string::npos);
+}
+
+TEST_CASE("load_into_state: duplicate province id across files rejected") {
+    TempDir td("scen_loader_m41_provinces_dup_across");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    write_file(td.path / "data" / "provinces" / "a.json", R"({
+  "provinces": [
+    { "id": "dup", "name": "A", "owner": "GER",
+      "x": 0.1, "y": 0.1 }
+  ]
+})");
+    write_file(td.path / "data" / "provinces" / "b.json", R"({
+  "provinces": [
+    { "id": "dup", "name": "B", "owner": "GER",
+      "x": 0.2, "y": 0.2 }
+  ]
+})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "s.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/ger.json" ],
+    "factions":  [],
+    "policies":  [],
+    "provinces": [ "provinces/a.json", "provinces/b.json" ]
+  }
+})");
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("duplicate") != std::string::npos);
+    CHECK(r.error().find("dup")       != std::string::npos);
+}
+
+TEST_CASE("load_into_state: province file missing provinces array rejected") {
+    TempDir td("scen_loader_m41_provinces_missing_array");
+    write_file(td.path / "data" / "countries" / "ger.json",
+               country_json("GER", "Germany"));
+    write_file(td.path / "data" / "provinces" / "core.json",
+               R"({ "not_provinces": [] })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "s.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/ger.json" ],
+    "factions":  [],
+    "policies":  [],
+    "provinces": [ "provinces/core.json" ]
+  }
+})");
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("provinces") != std::string::npos);
 }

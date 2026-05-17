@@ -22,6 +22,9 @@
       "policies/press_censorship.json",
       "policies/press_freedom.json"
     ],
+    "provinces": [
+      "provinces/1930_core_nodes.json"
+    ],
     "interest_groups": [
       {
         "id_code":    "ger_bureaucracy",

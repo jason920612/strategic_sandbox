@@ -564,6 +564,28 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
         }
     }
 
+    // ---- provinces (M4.1) ------------------------------------------
+    if (a.provinces.size() != b.provinces.size()) {
+        push_mismatch(out, "provinces.size()",
+                      std::to_string(a.provinces.size()) + " != " +
+                      std::to_string(b.provinces.size()));
+    } else {
+        for (std::size_t i = 0; i < a.provinces.size(); ++i) {
+            const auto& pa = a.provinces[i];
+            const auto& pb = b.provinces[i];
+            const std::string prefix =
+                "provinces[" + std::to_string(i) + "]";
+
+            check_string(out, prefix + ".id_code", pa.id_code, pb.id_code);
+            check_string(out, prefix + ".name",    pa.name,    pb.name);
+            check_int(out, prefix + ".owner",
+                      static_cast<long long>(pa.owner.value()),
+                      static_cast<long long>(pb.owner.value()));
+            check_double(out, prefix + ".x", pa.x, pb.x, tol);
+            check_double(out, prefix + ".y", pa.y, pb.y, tol);
+        }
+    }
+
     return out;
 }
 

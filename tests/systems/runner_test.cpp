@@ -815,8 +815,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v11 - M3.1 added root-level interest_groups.
-    CHECK(save.find("\"save_version\": 11") != std::string::npos);
+    // Save schema is now v12 - M4.1 fleshed out root-level provinces.
+    CHECK(save.find("\"save_version\": 12") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1059,7 +1059,7 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v11 (M3.1 bumped from v10 for interest_groups)") {
+TEST_CASE("run: save schema is now v12 (M4.1 bumped from v11 for provinces)") {
     TempDir td("leviathan_runner_m31_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -1069,7 +1069,7 @@ TEST_CASE("run: save schema is now v11 (M3.1 bumped from v10 for interest_groups
     const std::string save = read_file(td.path / "save.json");
     // Pin the unchanged version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 11") != std::string::npos);
+    CHECK(save.find("\"save_version\": 12") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------

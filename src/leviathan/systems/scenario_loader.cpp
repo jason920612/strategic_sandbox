@@ -34,6 +34,108 @@ core::Result<std::string> read_whole_file(const std::filesystem::path& path) {
     return core::Result<std::string>::success(ss.str());
 }
 
+// M4.1: parse one province file. Each file is a JSON object with
+// a top-level `provinces` array of `{id, name, owner, x, y}`
+// records. Cross-references to loaded countries (owner_id_code →
+// CountryId) happen in `load_into_state` once all countries are
+// known, so this helper only validates JSON shape + per-field
+// range. The caller passes the file's `source_label` so error
+// messages name the offending province file rather than the
+// manifest.
+core::Result<std::vector<ManifestProvince>>
+parse_province_file(std::string_view json_text,
+                    std::string_view source_label) {
+    json root = json::parse(json_text, /*cb=*/nullptr,
+                            /*allow_exceptions=*/false,
+                            /*ignore_comments=*/false);
+    if (root.is_discarded()) {
+        return core::Result<std::vector<ManifestProvince>>::failure(
+            fmt_err(source_label,
+                    "JSON parse error (malformed document)"));
+    }
+    if (!root.is_object()) {
+        return core::Result<std::vector<ManifestProvince>>::failure(
+            fmt_err(source_label,
+                    "top-level JSON value is not an object"));
+    }
+    if (!root.contains("provinces") || !root.at("provinces").is_array()) {
+        return core::Result<std::vector<ManifestProvince>>::failure(
+            fmt_err(source_label,
+                    "'provinces' missing or not an array"));
+    }
+    const json& arr = root.at("provinces");
+    std::vector<ManifestProvince> out;
+    out.reserve(arr.size());
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        const std::string ctx =
+            "'provinces[" + std::to_string(i) + "]'";
+        if (!arr[i].is_object()) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                fmt_err(source_label, ctx + " is not an object"));
+        }
+        const json& e = arr[i];
+
+        auto need_string = [&](const char* key,
+                               std::string& dst) -> core::Result<bool> {
+            if (!e.contains(key) || !e.at(key).is_string()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key +
+                            " missing or not a string"));
+            }
+            dst = e.at(key).get<std::string>();
+            if (dst.empty()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key + " must be non-empty"));
+            }
+            return core::Result<bool>::success(true);
+        };
+        auto need_ratio = [&](const char* key,
+                              double& dst) -> core::Result<bool> {
+            if (!e.contains(key) || !e.at(key).is_number()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key +
+                            " missing or not a number"));
+            }
+            const double v = e.at(key).get<double>();
+            if (!(v >= 0.0 && v <= 1.0)) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key +
+                            " out of range (expected [0, 1])"));
+            }
+            dst = v;
+            return core::Result<bool>::success(true);
+        };
+
+        ManifestProvince p;
+        if (auto r = need_string("id",    p.id_code);       !r) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_string("name",  p.name);          !r) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_string("owner", p.owner_id_code); !r) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_ratio("x", p.x); !r) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_ratio("y", p.y); !r) {
+            return core::Result<std::vector<ManifestProvince>>::failure(
+                std::move(r.error()));
+        }
+        out.push_back(std::move(p));
+    }
+    return core::Result<std::vector<ManifestProvince>>::success(std::move(out));
+}
+
 core::Result<std::vector<std::filesystem::path>>
 require_path_array(const json& root, std::string_view path,
                    std::string_view source) {
@@ -233,6 +335,30 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
                 }
             }
             m.interest_groups.push_back(std::move(g));
+        }
+    }
+
+    // ---- M4.1: optional provinces array (of file paths) -----------
+    // Missing key allowed (M1.11 / M2 / pre-M4 manifests stay
+    // valid). Present-but-wrong-type rejected. Each entry must be a
+    // string path; the actual province file is loaded later by
+    // `load_into_state`.
+    if (s.contains("provinces")) {
+        const json& arr = s.at("provinces");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.provinces' is not an array"));
+        }
+        m.provinces.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            if (!arr[i].is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            "'scenario.provinces[" + std::to_string(i) +
+                            "]' is not a string"));
+            }
+            m.provinces.emplace_back(arr[i].get<std::string>());
         }
     }
 
@@ -436,6 +562,63 @@ core::Result<ScenarioLoadOutcome> load_into_state(
             g.radicalism = entry.radicalism;
             state.interest_groups.push_back(std::move(g));
         }
+    }
+
+    // ---- 7. M4.1 provinces ----------------------------------------
+    // Each path in `manifest.provinces` points at a province file
+    // resolved against `base_dir`. The file is parsed via
+    // `parse_province_file`, then each entry's `owner_id_code` is
+    // resolved against `country_by_id_code` and pushed to
+    // `state.provinces`. Cross-file uniqueness of `id_code` is
+    // enforced as we go.
+    {
+        std::unordered_map<std::string, std::size_t> province_index;
+        for (std::size_t fi = 0; fi < manifest.provinces.size(); ++fi) {
+            const auto province_path = base_dir / manifest.provinces[fi];
+            auto text_r = read_whole_file(province_path);
+            if (!text_r) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    std::move(text_r.error()));
+            }
+            auto entries_r =
+                parse_province_file(text_r.value(),
+                                    province_path.string());
+            if (!entries_r) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    std::move(entries_r.error()));
+            }
+            const auto entries = std::move(entries_r).value();
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto& entry = entries[i];
+
+                auto owner_it = country_by_id_code.find(entry.owner_id_code);
+                if (owner_it == country_by_id_code.end()) {
+                    return core::Result<ScenarioLoadOutcome>::failure(
+                        province_path.string() +
+                        ": provinces[" + std::to_string(i) +
+                        "] references unknown country id_code '" +
+                        entry.owner_id_code + "'");
+                }
+                if (province_index.count(entry.id_code) != 0) {
+                    return core::Result<ScenarioLoadOutcome>::failure(
+                        province_path.string() +
+                        ": provinces[" + std::to_string(i) +
+                        "].id '" + entry.id_code +
+                        "' is a duplicate across the scenario's"
+                        " province files");
+                }
+
+                core::ProvinceNode p;
+                p.id_code = entry.id_code;
+                p.name    = entry.name;
+                p.owner   = owner_it->second;
+                p.x       = entry.x;
+                p.y       = entry.y;
+                province_index.emplace(p.id_code, state.provinces.size());
+                state.provinces.push_back(std::move(p));
+            }
+        }
+        outcome.provinces_loaded = static_cast<int>(state.provinces.size());
     }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);

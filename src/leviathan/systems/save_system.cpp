@@ -750,10 +750,20 @@ std::string serialize(const core::GameState& state) {
     }
     root["countries"] = std::move(countries);
 
-    // factions are populated as of M1.2; provinces / policies / events
-    // remain reserved-empty until their shapes are pinned in later
-    // M1 sub-milestones.
-    root["provinces"] = json::array();
+    // M4.1 provinces block (save v12). The M0 reserved-empty stub
+    // is gone — each entry is now a typed ProvinceNode serialised
+    // with id_code / name / owner (raw CountryId::value()) / x / y.
+    json provinces = json::array();
+    for (const auto& p : state.provinces) {
+        json entry = json::object();
+        entry["id_code"] = p.id_code;
+        entry["name"]    = p.name;
+        entry["owner"]   = p.owner.value();
+        entry["x"]       = p.x;
+        entry["y"]       = p.y;
+        provinces.push_back(std::move(entry));
+    }
+    root["provinces"] = std::move(provinces);
 
     json factions = json::array();
     for (const auto& f : state.factions) {
@@ -1222,7 +1232,105 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         state.interest_groups.push_back(std::move(g));
     }
 
-    // provinces, policies, events: keys reserved, contents not yet
+    // M4.1 provinces block. Required as of save format v12. Empty
+    // array is valid; missing key is rejected so a v11 save's
+    // reserved-empty `provinces` stub (or any old binary that
+    // simply omits the field) fails loudly rather than silently
+    // dropping any map nodes the user authored. Each entry is
+    // fully validated: id_code + name non-empty strings, owner a
+    // non-negative integer indexing into state.countries (no
+    // unowned nodes in v12), and x / y finite in [0, 1].
+    if (!root.contains("provinces")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'provinces'"));
+    }
+    const auto& pv_arr = root.at("provinces");
+    if (!pv_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'provinces' has wrong type (expected JSON array)"));
+    }
+    state.provinces.reserve(pv_arr.size());
+    for (std::size_t i = 0; i < pv_arr.size(); ++i) {
+        const std::string pv_ctx =
+            std::string(source_label) + ": provinces[" +
+            std::to_string(i) + "]";
+        const auto& entry = pv_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                pv_ctx + ": expected JSON object");
+        }
+        auto id_code_r = require_string(entry, "id_code", pv_ctx);
+        if (!id_code_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(id_code_r.error()));
+        }
+        if (id_code_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                pv_ctx + ": 'id_code' must be non-empty");
+        }
+        auto name_r = require_string(entry, "name", pv_ctx);
+        if (!name_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(name_r.error()));
+        }
+        if (name_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                pv_ctx + ": 'name' must be non-empty");
+        }
+        auto owner_r = require_u64(entry, "owner", pv_ctx);
+        if (!owner_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(owner_r.error()));
+        }
+        using under = core::CountryId::underlying_type;
+        constexpr auto kIntMax =
+            static_cast<std::uint64_t>(
+                std::numeric_limits<under>::max());
+        if (owner_r.value() > kIntMax) {
+            return core::Result<core::GameState>::failure(
+                pv_ctx + ": 'owner' is out of range for CountryId");
+        }
+        const auto owner_int = static_cast<under>(owner_r.value());
+        if (owner_int < 0 ||
+            static_cast<std::size_t>(owner_int) >=
+                state.countries.size()) {
+            return core::Result<core::GameState>::failure(
+                pv_ctx + ": 'owner' " + std::to_string(owner_int) +
+                " is not a valid index into state.countries");
+        }
+        auto x_r = require_ratio(entry, "x", pv_ctx);
+        if (!x_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(x_r.error()));
+        }
+        auto y_r = require_ratio(entry, "y", pv_ctx);
+        if (!y_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(y_r.error()));
+        }
+
+        // Duplicate id_code rejected at the save layer — the
+        // strictest gate, mirrors the M3.1 interest_groups rule.
+        for (const auto& existing : state.provinces) {
+            if (existing.id_code == id_code_r.value()) {
+                return core::Result<core::GameState>::failure(
+                    pv_ctx + ": duplicate 'id_code' '" +
+                    id_code_r.value() + "'");
+            }
+        }
+
+        core::ProvinceNode p;
+        p.id_code = std::move(id_code_r).value();
+        p.name    = std::move(name_r).value();
+        p.owner   = core::CountryId{owner_int};
+        p.x       = x_r.value();
+        p.y       = y_r.value();
+        state.provinces.push_back(std::move(p));
+    }
+
+    // policies, events: keys reserved, contents not yet
     // schema-pinned. Tolerate present-but-empty arrays.
     return core::Result<core::GameState>::success(std::move(state));
 }

@@ -40,7 +40,12 @@ struct GameState {
     CountryId   player_country = CountryId::invalid();
 
     std::vector<CountryState>    countries;
-    std::vector<ProvinceState>   provinces;
+    // M4.1: SVG-map node data layer. Each entry is a typed
+    // `ProvinceNode` (id_code + name + owner + normalised x/y).
+    // Empty unless a scenario manifest's optional `provinces`
+    // block was loaded. No system reads the field yet — M4.1 is
+    // data only; the future SVG exporter / UI consumes it.
+    std::vector<ProvinceNode>    provinces;
     std::vector<FactionState>    factions;
     std::vector<PolicyData>      policies;
     std::vector<EventDefinition> events;

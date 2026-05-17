@@ -108,6 +108,20 @@ struct ManifestInterestGroup {
     double radicalism = 0.0;
 };
 
+// One map-node entry parsed from a province file (M4.1). Each
+// province file at `<base>/provinces/<name>.json` carries a
+// `provinces` array of objects with this shape. The
+// `owner_id_code` is resolved against loaded countries inside
+// `load_into_state` and the result populates
+// `core::ProvinceNode::owner`.
+struct ManifestProvince {
+    std::string id_code;
+    std::string name;
+    std::string owner_id_code;  // matches a loaded CountryState::id_code
+    double x = 0.0;             // normalised map x in [0, 1]
+    double y = 0.0;             // normalised map y in [0, 1]
+};
+
 // Parsed manifest. Paths are stored verbatim from JSON; resolving
 // them against a base directory is the caller's job (or use
 // `load_into_state`, which does it).
@@ -123,6 +137,12 @@ struct ScenarioManifest {
     // authored before M3.1 (no `interest_groups` field) are accepted
     // unchanged. Present-but-malformed blocks are rejected.
     std::vector<ManifestInterestGroup> interest_groups;
+    // M4.1: optional. Array of relative file paths, each pointing
+    // to a province file with the shape
+    // `{ "provinces": [ {id, name, owner, x, y}, ... ] }`. Missing
+    // key in JSON => empty vector (older manifests stay valid).
+    // Present-but-malformed at any layer is rejected loudly.
+    std::vector<std::filesystem::path> provinces;
 };
 
 // Summary returned from a successful `load_into_state`.
@@ -133,6 +153,11 @@ struct ScenarioLoadOutcome {
     // M1.13: count of `starting_policies` entries that were applied
     // successfully (each entry = one apply_policy_effects call).
     int starting_policies_applied = 0;
+    // M4.1: count of `ProvinceNode` entries appended to
+    // `state.provinces` across every province file referenced by
+    // the manifest. Zero when the manifest's `provinces` block is
+    // absent or every referenced file holds an empty array.
+    int provinces_loaded         = 0;
 };
 
 // Parse a scenario manifest from raw JSON text.

@@ -153,9 +153,31 @@ struct CountryState {
     std::vector<ActivePolicy> active_policies;
 };
 
-struct ProvinceState {
-    ProvinceId id;
-    CountryId  owner;
+// Map-node entry for the M4 SVG-map skeleton (M4.1).
+//
+// M4.1 fleshes out what used to be the M0 `ProvinceState` stub
+// (`id` + `owner` only, never read by any system) into the
+// minimum shape required by a future SVG exporter / HTML viewer
+// / clickable map: a stable string identifier, a human-readable
+// label, the owning country, and a 2-D position in normalised
+// `[0, 1]` map space.
+//
+// Normalised coordinates were chosen so the data layer can land
+// before any projection / pixel-size / SVG-path decision; a
+// future renderer multiplies through by the canvas dimensions.
+//
+// Deliberately deferred until a future M4.x sub-milestone:
+// population, terrain, resources, neighbour adjacency, ports,
+// fronts, raw SVG paths, colours, controller-vs-owner split,
+// claims, victory points. M4.1 ships nodes, not behaviour.
+struct ProvinceNode {
+    std::string id_code;
+    std::string name;
+
+    CountryId   owner = CountryId::invalid();
+
+    double      x = 0.0;   // normalised map x in [0, 1]
+    double      y = 0.0;   // normalised map y in [0, 1]
 };
 
 struct FactionState {
