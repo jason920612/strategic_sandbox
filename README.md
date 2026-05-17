@@ -6,44 +6,63 @@
 
 ## Status
 
-- Phase: **Milestone 2 — player-operation prototype (in progress).**
-  M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.21 — Command script driver
-  helper.** Adds a single library-only convenience function
-  `commands::apply_command_script(state, vector<PlayerCommand>)`
-  on top of M2.20's `try_apply_pending` surface. The helper
-  takes a one-shot script (a `std::vector<PlayerCommand>`),
-  builds a local `CommandQueue`, and dispatches through
-  `try_apply_pending` — so callers (future REPL / agent driver /
-  scripted tests) can get structured rejection without
-  three-line boilerplate every call site. Outcome shape reuses
-  M2.20's `ApplyWithReportOutcome`. Routing is inherited from
-  `try_apply_pending`: full drain ⇒ success with
-  `rejection == nullopt`; order-execution rejection ⇒ success
-  with rejection populated; non-execution failure
-  (precondition / NaN delta / unknown policy / unknown category)
-  ⇒ `Result::failure`. Input `script` vector is not mutated.
-  **No runner / RunOutcome / `main()` / CLI / replay / save
-  schema change.** Library-only by design; runner-level wiring
-  is deferred to a future PR when a script-input entry point
-  exists.
-- Previously shipped: **M2.20 — Command rejection reporting**
-  (new `RejectionRecord` + `ApplyWithReportOutcome` +
-  `try_apply_pending`; `apply_pending` unchanged). **M2.19 —
-  AdjustBudget execution gate**. **M2.18 — EnactPolicy
-  execution gate**. **M2.17 — OrderExecutionSystem skeleton**.
-  **M2.16 — GovernmentAuthorityState** (save schema bumped v9
-  → v10).
-- Next sub-milestone candidate: **M2.22 — Wire script driver
-  into runner / CLI.** With the library helper in place, plumb
-  it through a CLI entry point (e.g. `--script PATH` loading a
-  JSON command list) and surface structured rejection in
-  `RunOutcome` / stdout. Save-neutral. The exact shape (a new
-  flag vs. extending `--replay` vs. a separate sub-command)
-  remains to be decided.
-- M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
-  M0 exit report, `docs/milestone-1-result.md` for the M1 exit
-  report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
+- Phase: **Milestone 2 — player-operation prototype (closed).**
+  Both M1 single-country internal-politics prototype and M2
+  player-operation prototype have shipped. See
+  `docs/milestone-2-result.md` for the M2 exit report.
+- Latest shipped sub-milestone: **M2.22 — M2 exit / integration
+  tests.** Closes M2. Ships three end-to-end integration tests
+  in `tests/integration/m2_end_to_end_test.cpp` pinning the
+  M2 player-operation surface at the seam to M3+:
+  (1) command script + replay + verify equivalence — drives
+  `apply_command_script` on a source state, replays the resulting
+  `applied_commands` log via `replay_with_time` into a target
+  state, and asserts `diagnostics::compare_states` reports zero
+  mismatches across every gameplay-relevant field;
+  (2) order-execution gate atomicity across kinds — a mixed
+  script (military AdjustBudget + EnactPolicy + welfare
+  AdjustBudget) against a low-bureaucratic-compliance country
+  with high military loyalty lands only the military entry,
+  rejects the EnactPolicy at the gate, and leaves the welfare
+  AdjustBudget unreached, with state / queue / applied_commands
+  all consistent with per-command atomicity;
+  (3) 5-artefact byte-identical determinism with M2 commands —
+  M1.17's determinism contract (save.json + events.jsonl +
+  summary.csv + countries.csv + factions.csv) extended through
+  a 31-day run that applies commands at day 0 via
+  `apply_command_script`. New `docs/milestone-2-result.md`
+  exit report lists every sub-milestone, the architectural
+  invariants future milestones must preserve, and the deferred
+  items (Delayed / Distorted outcomes, scheduler, RNG-based
+  resistance, attempted-command log, CLI script flag,
+  runner-level rejection surface, expanded authority fields,
+  authority drift, faction reactions, etc.) that consciously
+  did not ship in M2. **M2 closes here.** Save format stays
+  v10; no library behaviour change; no new gameplay; no save
+  schema change. **Future player-operation work moves to M3+
+  or to separate future milestones.**
+- Previously shipped (M2 highlights): **M2.21** command script
+  driver helper. **M2.20** command rejection reporting
+  (`RejectionRecord` + `try_apply_pending`). **M2.18 / M2.19**
+  EnactPolicy + AdjustBudget execution gates. **M2.17**
+  OrderExecutionSystem skeleton. **M2.16**
+  `GovernmentAuthorityState` (save schema v9 → v10). **M2.14**
+  Replay target-date CLI. **M2.9** Replay CLI error-path
+  hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
+  M2.12** `--replay` / `--verify` / `--verify-strict` CLI
+  family.
+- Next phase: **M3 or targeted post-M2 follow-ups.** Natural
+  candidates (per `docs/milestone-2-result.md` §4): promote
+  `ExecutionStatus::Delayed` from reserved-name to a real
+  outcome with a pending-execution queue; surface rejection at
+  the runner / CLI level; add a CLI `--script PATH` entry point
+  driving `apply_command_script`; authority drift system;
+  faction reactions to player commands; multi-country
+  interaction. None committed.
+- M0 closed. M1 closed. M2 closed. See
+  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
+  and `docs/milestone-2-result.md` for the exit reports, and
+  `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -63,11 +82,12 @@ country JSON files, ticks 365 days, saves, loads back, and verifies
 the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
-RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
-RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
-M2.16 + M2.17 + M2.18 + M2.19 + M2.20 + M2.21 merged. Thirty-seven
-sub-milestones shipped:
+RFC-090 §M1) is complete; **Milestone 2** (player-operation
+prototype, RFC-090 §M2) is also complete with M2.1 + M2.2 +
+M2.3 + M2.4 + M2.5 + M2.6 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11
++ M2.12 + M2.13 + M2.14 + M2.16 + M2.17 + M2.18 + M2.19 +
+M2.20 + M2.21 + M2.22 merged. Thirty-eight sub-milestones
+shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -214,6 +234,24 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.22 M2 exit / integration tests — closes M2. New
+`tests/integration/m2_end_to_end_test.cpp` ships 3 end-to-end
+tests pinning the player-operation surface: command script +
+replay + `compare_states` equivalence, order-execution gate
+atomicity across `EnactPolicy` and `AdjustBudget`, and 5-artefact
+byte-identical determinism with M2 commands applied at day 0
+through `apply_command_script`. New
+`docs/milestone-2-result.md` exit report lists M2.1–M2.21
+ledger, the architectural invariants every M3+ milestone must
+preserve, and the explicitly-deferred items (Delayed /
+Distorted outcomes, scheduler, RNG-based resistance, attempted-
+command log, CLI script flag, runner-level rejection surface,
+expanded authority fields, authority drift, faction reactions,
+multi-country interaction, weighted formulas, …). README +
+docs README + rfc README + memory all marked M2 closed. No new
+gameplay, no save format change (still v10), no runner / CLI /
+replay primitive / DataLoader / M1 system change, no new
+`PlayerCommandKind`, no new CSV column. **M2 closes here.**
 **M2.21 Command script driver helper — adds the library-only
 free function
 `commands::apply_command_script(state, vector<PlayerCommand>)`
@@ -588,7 +626,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.21 there are **624 doctest cases**. M0 contributed 179;
+As of M2.22 there are **627 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -598,6 +636,22 @@ added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
 M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
+M2.21 added 8; M2.22 adds 3 end-to-end integration tests in
+`m2_end_to_end_test.cpp` closing M2:
+(1) command script + replay reproduces source via
+`compare_states` (zero mismatches across every gameplay-
+relevant field after replay_with_time on the source's
+applied_commands);
+(2) gate atomicity across `EnactPolicy` and `AdjustBudget`
+(low bureaucratic_compliance + high military_loyalty: military
+adjustment lands, EnactPolicy rejected, trailing welfare
+AdjustBudget unreached; state / queue / applied_commands all
+consistent with per-command atomicity);
+(3) 5-artefact byte-identical determinism with M2 commands
+(same script + same setup produces matching save.json /
+events.jsonl / summary.csv / countries.csv / factions.csv
+across two independent temp dirs, extending M1.17's
+determinism contract through the command path). Previously
 M2.21 adds 8 covering the new
 `commands::apply_command_script` helper: empty script success;
 full success applies both `EnactPolicy("raise_taxes")` and

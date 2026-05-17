@@ -209,7 +209,15 @@ M0 / M1 中落地，部分仍是未來工作：
   `Milestone 0.10` label 改成 milestone-neutral 字串。**M1.17 不做**
   save schema 變更（仍 v7）、新 system / flag / CSV、policy
   expiration / revert、AI、events、M2 work。**M1 在此收尾。**
-- **M2（進行中）** — 玩家操作原型。**M2.1（Player country
+- **M2（已完成）** — 玩家操作原型。M2.22 為 close-out PR，
+  整體狀態見 `../docs/milestone-2-result.md`。未來 player-operation
+  相關工作（CLI script flag / runner-level rejection surface /
+  Delayed / Distorted / scheduler / RNG-based resistance /
+  attempted-command log / 擴充 authority 欄位 / authority drift /
+  faction reactions / multi-country interaction / weighted
+  formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
+  M2 本身不再新增 sub-milestone。
+  **M2.1（Player country
   selection）** 為 `core::GameState` 新增 `player_country` 欄位
   (`CountryId`，預設 `CountryId::invalid()` = -1)，並在 runner
   新增 `--player COUNTRY_IDCODE` 旗標。Resolution 在
@@ -456,6 +464,35 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.22（M2 exit / integration tests）** 為 M2 close-out PR：
+  新 `tests/integration/m2_end_to_end_test.cpp` 提供 3 個
+  end-to-end 測試 pin 住 M2 player-operation surface 與 M3+
+  的接縫——
+  (1) command script + replay + verify equivalence：`apply_command_script`
+      在 source 跑兩條命令、`replay_with_time` 在 target replay 同一份
+      log、`diagnostics::compare_states` 確認所有 gameplay 欄位 0
+      mismatch；
+  (2) order-execution gate atomicity across kinds：低
+      bureaucratic_compliance + 高 military_loyalty 下，mixed
+      script 中 AdjustBudget(military) 通過、EnactPolicy 被擋、
+      trailing AdjustBudget(welfare) 未跑，state / queue /
+      applied_commands 全部和 per-command atomicity 一致；
+  (3) 5-artefact byte-identical determinism with M2 commands：
+      M1.17 5-artefact determinism contract 延伸到 31 天運行 +
+      day-0 `apply_command_script`。
+  新 `../docs/milestone-2-result.md` exit report 整理 M2.1–
+  M2.21 ledger、列出 deferred items（CLI script flag / runner-
+  level rejection surface / Delayed / Distorted / scheduler /
+  RNG-based resistance / attempted-command log / 擴充 authority
+  欄位 / authority drift / faction reactions / multi-country /
+  weighted formulas / atomic end_tick writes / relative
+  tolerance）、給 M3+ 的推薦項目，以及 M2 加入 M1 之上的架構
+  invariants。三個 README + memory 都改成「M2 closed」。**M2 在此
+  收尾**。**M2.22 不做** 新 gameplay、save format 變更（仍
+  v10）、新 CLI flag、runner / main / replay primitive 變更、新
+  PlayerCommandKind、新 CSV 欄位、threshold / formula 調整、
+  scheduler / RNG / Delayed / Distorted、AI / events / UI、
+  attempted-command log、DataLoader / M1 system 變更。
   **M2.21（Command script driver helper）** 在 M2.20 `try_apply_pending`
   surface 之上新增 library-only convenience function
   `commands::apply_command_script(state, vector<PlayerCommand>)`。
