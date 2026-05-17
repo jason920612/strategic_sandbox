@@ -14,7 +14,46 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.3 — SVG owner-color
+- Latest shipped sub-milestone: **M4.4 — SVG labels
+  skeleton.** Adds one `<text>` label per `<circle>` in
+  `provinces.svg`. Each label is positioned at `(cx, cy +
+  kLabelYOffset)` with `text-anchor="middle"`, content set
+  to the XML-text-escaped `ProvinceNode::name`. New public
+  constant `kLabelYOffset = 22.0` on
+  `leviathan::systems::svg_export`. New `xml_text_escape`
+  helper in the anonymous namespace escapes only `& < >`
+  per the XML 1.0 §2.4 text-content rules; the M4.2
+  `xml_attr_escape` (which also handles `" '`) continues to
+  cover `data-id` unchanged. `<circle>` and `<text>` are
+  interleaved per node so each node's two elements stay
+  grouped in the byte stream. No font-family / font-size /
+  fill on `<text>` — the SVG consumer's default applies
+  (M4.4 ships minimum labels; typography is a future
+  presentation sub-milestone). Empty `name` still emits an
+  empty-bodied `<text>` so the renderer is total under
+  hand-built states (the save / scenario layers reject empty
+  names in production paths). Every other SVG byte —
+  viewBox, circle attributes, owner-driven palette,
+  data-id (XML-escaped) / data-owner identity, insertion
+  order, fixed-precision coords, LF terminators,
+  header-only-on-empty — is byte-identical with M4.3.
+  Artefact set unchanged (still 9). Save format unchanged
+  (still v12). M1.17 / M2.22 / M3.7 byte-identical
+  determinism contracts still pass by construction (same
+  state → same labels → same bytes). 8 new doctest cases
+  (7 svg_export + 1 runner; 792 total). **M4 in progress.**
+  **No HTML viewer, no clickable UI, no event handlers, no
+  hover state / tooltips, no legend / colour key, no
+  font-family / font-size / fill on `<text>`, no label
+  collision detection, no per-province label override, no
+  rich text / multi-line labels, no ownership dynamics, no
+  neighbour / adjacency edges, no terrain / resources /
+  population overlays, no events, no AI, no command
+  integration, no new `PlayerCommandKind`, no runner CLI
+  flag, no new artefact (still 9), no save schema bump
+  (still v12), no new state field, no new gameplay, no
+  atomic `end_tick` writes.**
+- Previously shipped: **M4.3 — SVG owner-color
   skeleton.** Replaces M4.2's hardcoded `fill="black"` with
   a deterministic per-owner palette lookup. New public
   symbols on `leviathan::systems::svg_export`:
@@ -414,19 +453,19 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.3): **M4.4** — open.
-  M4.1 shipped the `ProvinceNode` data layer, M4.2 shipped
-  the first SVG renderer, M4.3 added the owner-keyed palette;
+- Next sub-milestone candidate (post-M4.4): **M4.5** — open.
+  M4.1 shipped the data layer, M4.2 the first SVG renderer,
+  M4.3 the owner-keyed palette, M4.4 the per-node labels;
   natural next steps include (a) an HTML viewer wrapped
   around the SVG, (b) a clickable map / country-panel
-  surface, (c) labels / a legend mapping owner indices to
-  country id_codes, (d) richer node fields (neighbour
-  adjacency, terrain, population) once a renderer needs them.
-  None committed; reviewer chooses.
+  surface, (c) a legend mapping owner indices to country
+  id_codes, (d) richer node fields (neighbour adjacency,
+  terrain, population) once a renderer needs them. None
+  committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
-  shipped. **M4 in progress** with M4.1 + M4.2 + M4.3
-  shipped. See `docs/milestone-0-result.md`,
+  shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
+  M4.4 shipped. See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
   and `docs/milestone-3-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -455,7 +494,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 shipped. Fifty sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 shipped. Fifty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -602,6 +641,37 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.4 SVG labels skeleton — adds one `<text>` per `<circle>`
+in `provinces.svg`. Each label positioned at `(cx, cy +
+kLabelYOffset)` with `text-anchor="middle"`, content set to
+the XML-text-escaped `ProvinceNode::name`. New public
+constant `kLabelYOffset = 22.0`; new `xml_text_escape` helper
+(escapes `& < >` per XML 1.0 §2.4 text-content rules; sibling
+to the M4.2 `xml_attr_escape` which also handles `" '` for
+attribute contexts). `<circle>` and `<text>` interleaved per
+node (one of each, in `state.provinces` order). No
+`font-family` / `font-size` / `fill` on `<text>` — SVG
+consumer default applies; typography deferred. Empty `name`
+still emits an empty-bodied `<text>` so renderer is total
+under hand-built states. Every other SVG byte (viewBox,
+circle attributes, owner-driven palette, `data-id`
+(XML-escaped) / `data-owner` identity, insertion order,
+fixed-precision coords, LF terminators, header-only-on-empty)
+byte-identical with M4.3. **Artefact set unchanged (still 9);
+save format unchanged (still v12)**; M1.17 / M2.22 / M3.7
+byte-identical determinism contracts still pass by
+construction. 8 new doctest cases (7 svg_export + 1 runner;
+792 total). **M4 in progress.** **No HTML viewer, no
+clickable UI, no event handlers, no hover state / tooltips,
+no legend / colour key, no font-family / font-size / fill on
+`<text>`, no label collision detection, no per-province
+label override, no rich text / multi-line labels, no
+ownership dynamics, no neighbour / adjacency edges, no
+terrain / resources / population overlays, no events, no AI,
+no command integration, no new `PlayerCommandKind`, no
+runner CLI flag, no new artefact (still 9), no save schema
+bump (still v12), no new state field, no new gameplay, no
+atomic `end_tick` writes.**;
 **M4.3 SVG owner-color skeleton — replaces M4.2's hardcoded
 `fill="black"` with a deterministic per-owner palette
 lookup. New public symbols on

@@ -266,3 +266,98 @@ TEST_CASE("render_provinces: invalid owner falls back to the defensive fill") {
     // And the invalid owner index still appears in data-owner.
     CHECK(svg_text.find("data-owner=\"-1\"") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------
+// M4.4 - <text> labels per node
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_provinces: empty state emits no <text> elements") {
+    GameState state;
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("<text") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: one node emits one <text> with the node's name") {
+    GameState state;
+    state.provinces.push_back(node("berlin", 0, 0.52, 0.44, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find(">Berlin</text>") != std::string::npos);
+    // text-anchor centres the label on the node horizontally.
+    CHECK(svg_text.find("text-anchor=\"middle\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: <text> is positioned at (cx, cy + kLabelYOffset)") {
+    GameState state;
+    // x=0.50 / y=0.40 → cx=500.00 / cy=400.00 → ty=422.00.
+    state.provinces.push_back(node("a", 0, 0.50, 0.40, "A"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("x=\"500.00\" y=\"422.00\"") != std::string::npos);
+    // Sanity: kLabelYOffset is 22 exactly (no surprise rounding).
+    CHECK(svg::kLabelYOffset == doctest::Approx(22.0));
+}
+
+TEST_CASE("render_provinces: <circle> immediately precedes its matching <text>") {
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.10, 0.10, "Alpha"));
+    state.provinces.push_back(node("b", 0, 0.20, 0.20, "Beta"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Find the absolute order of each marker in the string.
+    const auto circle_a = svg_text.find("data-id=\"a\"");
+    const auto text_a   = svg_text.find(">Alpha</text>");
+    const auto circle_b = svg_text.find("data-id=\"b\"");
+    const auto text_b   = svg_text.find(">Beta</text>");
+    REQUIRE(circle_a != std::string::npos);
+    REQUIRE(text_a   != std::string::npos);
+    REQUIRE(circle_b != std::string::npos);
+    REQUIRE(text_b   != std::string::npos);
+
+    // Interleaved per node, in vector order:
+    //   circle_a < text_a < circle_b < text_b
+    CHECK(circle_a < text_a);
+    CHECK(text_a   < circle_b);
+    CHECK(circle_b < text_b);
+}
+
+TEST_CASE("render_provinces: <text> content escapes & < > but leaves \" and ' literal") {
+    // XML text-content rules: only & < > require escaping;
+    // " and ' are legal as literals inside text content.
+    GameState state;
+    state.provinces.push_back(node("x", 0, 0.5, 0.5, "A&B<C>D\"E'F"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // The escaped form appears.
+    CHECK(svg_text.find(">A&amp;B&lt;C&gt;D\"E'F</text>")
+          != std::string::npos);
+    // The raw unescaped form does NOT appear inside a text body —
+    // an unescaped `<` would otherwise look like a start tag.
+    CHECK(svg_text.find(">A&B<C>D\"E'F</text>") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: empty name still emits a (visually empty) <text> element") {
+    // ProvinceNode::name is rejected as empty by the save /
+    // scenario layers, but a hand-built state in a unit test can
+    // construct one. The renderer stays total: one <text> per
+    // node, with empty body.
+    GameState state;
+    ProvinceNode p;
+    p.id_code = "ghost";
+    p.name    = "";  // empty on purpose
+    p.owner   = CountryId{0};
+    p.x       = 0.5;
+    p.y       = 0.5;
+    state.provinces.push_back(p);
+    const std::string svg_text = svg::render_provinces(state);
+
+    // The empty <text> body appears as "><...></text>" form.
+    CHECK(svg_text.find("text-anchor=\"middle\"></text>") !=
+          std::string::npos);
+}
+
+TEST_CASE("render_provinces: label rendering is deterministic across repeat calls") {
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.10, 0.10, "Alpha"));
+    state.provinces.push_back(node("b", 1, 0.20, 0.20, "Beta&Gamma"));
+    state.provinces.push_back(node("c", 2, 0.30, 0.30, "Carat<>"));
+    CHECK(svg::render_provinces(state) == svg::render_provinces(state));
+}

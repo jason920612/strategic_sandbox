@@ -2958,6 +2958,30 @@ TEST_CASE("run: canonical scenario uses M4.3 per-owner palette in provinces.svg"
     CHECK(svg.find("fill=\"black\"") == std::string::npos);
 }
 
+TEST_CASE("run: canonical scenario emits M4.4 <text> labels in provinces.svg") {
+    // M4.4 adds one <text> per ProvinceNode using the
+    // XML-text-escaped name. The canonical 1930_minimal fixture
+    // names the three nodes "Berlin" / "Paris" / "Tokyo" — none
+    // contain XML special characters, so the labels appear
+    // verbatim in the output.
+    TempDir td("leviathan_runner_m44_canonical_labels");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find(">Berlin</text>") != std::string::npos);
+    CHECK(svg.find(">Paris</text>")  != std::string::npos);
+    CHECK(svg.find(">Tokyo</text>")  != std::string::npos);
+    // text-anchor pinned so a future presentation change
+    // doesn't silently break centred labels.
+    CHECK(svg.find("text-anchor=\"middle\"") != std::string::npos);
+}
+
 TEST_CASE("run: provinces.svg preserves byte-identical determinism on same seed") {
     TempDir td_a("leviathan_runner_m42_det_a");
     TempDir td_b("leviathan_runner_m42_det_b");

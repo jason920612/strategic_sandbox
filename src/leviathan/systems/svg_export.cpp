@@ -47,6 +47,30 @@ std::string xml_attr_escape(std::string_view s) {
     return out;
 }
 
+// XML text-content escaping. M4.4 emits `<text>` elements
+// whose body is the XML-escaped `ProvinceNode::name`. Per the
+// XML 1.0 spec §2.4, text content only requires `&`, `<`, and
+// (technically only when followed by `>`) `>` to be escaped;
+// `"` and `'` are legal as literals inside text content. We
+// keep the helper separate from `xml_attr_escape` so the
+// escape sets are explicit at each call site — the attribute
+// helper is a superset and would also work, but the strict
+// text-content helper produces shorter output and matches
+// standard XML library conventions.
+std::string xml_text_escape(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        switch (ch) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;";  break;
+            case '>': out += "&gt;";  break;
+            default:  out += ch;      break;
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 std::string_view color_for_owner(core::CountryId owner) {
@@ -75,12 +99,19 @@ std::string render_provinces(const core::GameState& state) {
            " viewBox=\"0 0 1000 1000\""
            " width=\"1000\" height=\"1000\">\n";
 
-    // One <circle> per node, in vector order. Fill is selected
-    // by owner via `color_for_owner` (M4.3); every other circle
-    // attribute is exactly what M4.2 emitted.
+    // One <circle> + one <text> per node, in vector order.
+    // Fill is selected by owner via `color_for_owner` (M4.3);
+    // the <text> (M4.4) is anchored at (cx, cy + kLabelYOffset)
+    // with `text-anchor="middle"` and the XML-text-escaped
+    // `ProvinceNode::name` as content. The pair is interleaved
+    // (circle then text per node) so each node's elements stay
+    // grouped in the byte stream.
     for (const auto& p : state.provinces) {
-        const std::string cx = fmt_coord(p.x * kSvgCoordScale);
-        const std::string cy = fmt_coord(p.y * kSvgCoordScale);
+        const double cx_val = p.x * kSvgCoordScale;
+        const double cy_val = p.y * kSvgCoordScale;
+        const std::string cx = fmt_coord(cx_val);
+        const std::string cy = fmt_coord(cy_val);
+        const std::string ty = fmt_coord(cy_val + kLabelYOffset);
         const std::string_view fill = color_for_owner(p.owner);
         out << "  <circle"
                " cx=\"" << cx << "\""
@@ -90,6 +121,11 @@ std::string render_provinces(const core::GameState& state) {
                " data-id=\"" << xml_attr_escape(p.id_code) << "\""
                " data-owner=\"" << p.owner.value() << "\""
                "/>\n";
+        out << "  <text"
+               " x=\"" << cx << "\""
+               " y=\"" << ty << "\""
+               " text-anchor=\"middle\""
+               ">" << xml_text_escape(p.name) << "</text>\n";
     }
 
     out << "</svg>\n";

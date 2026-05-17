@@ -217,8 +217,39 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.3（SVG
-  owner-color skeleton）** 把 M4.2 寫死的 `fill="black"` 換成
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.4（SVG
+  labels skeleton）** 在 `provinces.svg` 為每個 `<circle>`
+  加上一個 `<text>` label。Label 位置為
+  `(cx, cy + kLabelYOffset)`（新公開常數，22.0），
+  `text-anchor="middle"`，內容為 XML-text-escape 過的
+  `ProvinceNode::name`。新 helper `xml_text_escape`（依
+  XML 1.0 §2.4 text-content 規則只 escape `& < >`，跟 M4.2
+  針對 attribute context 也 escape `" '` 的
+  `xml_attr_escape` 並排）。每個 node 的 `<circle>` 和
+  `<text>` 在 byte stream 裡相鄰（per-node interleaved，依
+  `state.provinces` 順序）。`<text>` 不指定 `font-family` /
+  `font-size` / `fill` ── SVG consumer default 即可，
+  typography 留給未來 presentation sub-milestone。空 `name`
+  仍會輸出空 body 的 `<text>`，讓 renderer 對 hand-built
+  state total（save / scenario layer 本來就拒絕空 name）。
+  其他 SVG byte（viewBox、circle 屬性、owner-driven palette、
+  `data-id` (XML-escape) / `data-owner` identity、insertion
+  order、fixed-precision coord、LF terminator、empty-state
+  header-only）與 M4.3 byte 相同。**Artefact 數量不變（仍 9）；
+  save 格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 因 same state → same
+  label → same byte 自然繼續成立。8 個新 doctest cases
+  （7 svg_export + 1 runner；共 792）。**M4 in progress.**
+  **M4.4 不做** HTML viewer / clickable UI / event handler /
+  hover / tooltip / legend / `font-family` / `font-size` /
+  `<text>` fill / label collision detection / per-province
+  label override / rich text / 多行 label / ownership
+  dynamics / 鄰接 edge / terrain / events / AI / command
+  integration / 新 `PlayerCommandKind` / runner CLI flag /
+  新 artefact / save schema bump / 新 state field / 新
+  gameplay / atomic `end_tick`。
+  **M4.3（SVG owner-color skeleton）** 把 M4.2 寫死的
+  `fill="black"` 換成
   deterministic 的 per-owner palette lookup。新公開符號
   在 `leviathan::systems::svg_export`：`kOwnerPalette`
   （10 個 hex-RGB string 的 `constexpr std::array<string_view,
