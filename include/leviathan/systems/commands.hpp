@@ -23,6 +23,8 @@
 #ifndef LEVIATHAN_SYSTEMS_COMMANDS_HPP
 #define LEVIATHAN_SYSTEMS_COMMANDS_HPP
 
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "leviathan/core/game_state.hpp"
@@ -63,6 +65,110 @@ struct ApplyOutcome {
 // the queue.
 core::Result<ApplyOutcome> apply_pending(core::GameState& state,
                                          CommandQueue& q);
+
+// ===========================================================================
+// M2.20 - structured rejection reporting.
+//
+// `apply_pending` returns `Result::failure` when an order-execution
+// gate rejects a command (M2.18 EnactPolicy, M2.19 AdjustBudget).
+// That keeps the M2.3 / M2.4 mid-list-failure semantics intact but
+// only delivers the rejection details as a free-form error string.
+// `try_apply_pending` is the narrow alternative for callers that
+// want to inspect a rejection programmatically:
+//
+//   * Successful drain ⇒ `Result::success` with
+//     `rejection == std::nullopt`, identical to the existing
+//     `apply_pending` happy path.
+//   * Order-execution rejection ⇒ `Result::success` with
+//     `rejection` populated. `state`, the queue, and
+//     `applied_commands` follow the same atomicity rule as
+//     `apply_pending`: rejected command stays at the queue head,
+//     no mutation, no log entry.
+//   * Non-execution failure (precondition violation, NaN
+//     `budget_delta`, unknown policy id_code, unknown
+//     budget_category) ⇒ `Result::failure`, same shape as
+//     `apply_pending` so this helper never silently swallows
+//     real validation errors.
+//
+// `apply_pending` is untouched: existing callers (including
+// `commands::replay_with_time` and every M2.18 / M2.19 test) keep
+// seeing `Result::failure` on rejection. Future PRs that want
+// per-command audit can adopt `try_apply_pending` opt-in.
+// ===========================================================================
+
+// Structured snapshot of an order-execution gate rejection.
+// Mirrors the inputs the gate read so callers can format their
+// own message, compare against expectations in tests, or surface
+// the gate decision in a UI / log without parsing the error
+// string `apply_pending` produces.
+struct RejectionRecord {
+    // Kind of the rejected player command (EnactPolicy /
+    // AdjustBudget). Identifies which of the two id-bearing
+    // fields below is meaningful.
+    core::PlayerCommandKind kind{};
+
+    // For `EnactPolicy` rejections: the policy_id_code of the
+    // rejected command. Empty otherwise.
+    std::string policy_id_code;
+
+    // For `AdjustBudget` rejections: the budget_category of the
+    // rejected command. Empty otherwise.
+    std::string budget_category;
+
+    // The authority input the gate evaluated. M2.18 EnactPolicy
+    // gates always read `bureaucratic_compliance`; M2.19
+    // AdjustBudget reads `military_loyalty` for the `"military"`
+    // category and `bureaucratic_compliance` for every other
+    // category. This field carries the selected value as observed
+    // at evaluation time.
+    double compliance = 0.0;
+
+    // The threshold the gate compared `compliance` against. For
+    // M2.18 / M2.19 this is `kEnactPolicyComplianceThreshold` or
+    // `kAdjustBudgetComplianceThreshold` respectively; both
+    // currently 0.3 but the record records whatever was active.
+    double threshold = 0.0;
+
+    // `1.0 - compliance`. Surfaced for diagnostics so a UI / log
+    // can present the rejection in terms of resistance instead of
+    // compliance without recomputing.
+    double resistance = 0.0;
+};
+
+// Outcome shape for `try_apply_pending`. Wraps the existing
+// `ApplyOutcome` (so `commands_applied` retains the same meaning
+// as in `apply_pending`) and adds an optional `RejectionRecord`
+// describing where the drain stopped if it stopped at a gate.
+//
+// Invariants on a successful return:
+//   * `rejection == std::nullopt` ⇒ the queue drained fully,
+//     `apply.commands_applied == initial pending.size()`.
+//   * `rejection.has_value()` ⇒ the drain stopped at the head
+//     command; `apply.commands_applied` counts the strictly
+//     prior successful commands. The queue still contains the
+//     rejected command at the head plus any commands behind it.
+struct ApplyWithReportOutcome {
+    ApplyOutcome                   apply;
+    std::optional<RejectionRecord> rejection;
+};
+
+// Drain `q.pending` like `apply_pending` does — same per-command
+// atomicity, same precondition shape, same effect on `state` and
+// `state.applied_commands` — but surface order-execution
+// rejections as a `Result::success` carrying an
+// `ApplyWithReportOutcome` whose `rejection` field is populated.
+//
+// Failure shape:
+//   * Precondition (`state.player_country` invalid / out of
+//     range) violated.
+//   * Non-execution per-command failure (`AdjustBudget` with
+//     non-finite delta or unknown category; `EnactPolicy` with
+//     unknown id_code or a policy effect that fails to resolve).
+//
+// In every other case the helper returns `Result::success`,
+// possibly with a rejection.
+core::Result<ApplyWithReportOutcome> try_apply_pending(
+    core::GameState& state, CommandQueue& q);
 
 // ===========================================================================
 // M2.6: replay an applied-command log into a target state.

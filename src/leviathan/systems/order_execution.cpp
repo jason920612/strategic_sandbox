@@ -34,9 +34,12 @@ core::Result<OrderExecutionOutcome> evaluate(
     outcome.inputs.media_control =
         country.government_authority.media_control;
 
-    // M2.18: per-command-kind gate. Only EnactPolicy is evaluated
-    // in this PR; AdjustBudget (and any future kind not listed
-    // below) keeps the default Accepted + resistance 0.0.
+    // M2.18 / M2.19: per-command-kind gate. EnactPolicy gates on
+    // `bureaucratic_compliance`; AdjustBudget gates on a category-
+    // selected input (`military_loyalty` for the `"military"`
+    // category, `bureaucratic_compliance` for every other
+    // category). Any future kind not listed below keeps the M2.17
+    // default (Accepted + resistance 0.0).
     switch (command.kind) {
         case core::PlayerCommandKind::EnactPolicy: {
             const double compliance =

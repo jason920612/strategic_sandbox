@@ -456,6 +456,32 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.20（Command rejection reporting）** 把 M2.18 / M2.19 的
+  order-execution rejection 做成 **可程式化讀取的結構化結果**，
+  完全不動 `apply_pending` 既有 semantics。新增 POD
+  `commands::RejectionRecord { kind, policy_id_code,
+  budget_category, compliance, threshold, resistance }`；新增
+  wrapper `commands::ApplyWithReportOutcome { apply, rejection }`；
+  新增 free function `commands::try_apply_pending(state, queue)`，
+  與 `apply_pending` 同樣的 precondition 與 mid-list-failure
+  atomicity，但把 order-execution rejection 從 `Result::failure`
+  改成 `Result::success` 攜帶 `rejection` record；non-execution
+  錯誤（precondition / NaN delta / unknown policy / unknown
+  category）仍維持 `Result::failure`，所以真正的 validation
+  錯誤不會被吞掉。實作上抽出 anonymous-namespace 的 `dispatch_one`
+  helper 給兩個函式共用，`apply_pending` 的 legacy rejection error
+  string 透過 `format_rejection_message` 保持 byte-identical，
+  M2.18 / M2.19 既有 test 完全不變。Drive-by：把 `order_execution.cpp`
+  裡 PR #46 reviewer flagged 的「Only EnactPolicy is evaluated in
+  this PR」過時註解改成同時提 M2.18 EnactPolicy 與 M2.19
+  AdjustBudget arm。對應 RFC-020 §2 命令阻力的「讓 UI / forensics
+  能讀懂為什麼某條命令被擋下」需求，是未來 UI / REPL / CI driver
+  的入口 seam。**M2.20 不做** save format 變更（仍 v10）、
+  `apply_pending` signature / 行為變更、persistent attempted-
+  command log、新 `state.logs` 條目、`RunOutcome` 拒絕計數 /
+  list（M2.21 候選）、DataLoader / replay primitive / runner /
+  CLI / M1 system 變更、新 `PlayerCommandKind`、新 CSV 欄位、
+  AI / events / UI / scheduler、threshold / formula 調整。
   **M2.19（AdjustBudget execution gate）** 延伸 M2.18 的命令拒絕
   shape 到 `AdjustBudget`，加入一個 category-aware 的單欄位切換：
   `command.budget_category == "military"` 時 gate 看
