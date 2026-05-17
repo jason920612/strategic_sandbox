@@ -42,12 +42,155 @@ double* budget_field_ptr(core::CountryState& c, const std::string& cat) {
     return nullptr;
 }
 
+// ---- M2.20 internal per-command dispatch ---------------------------------
+//
+// `dispatch_one` is the shared per-command implementation used by
+// both `apply_pending` (legacy M2.3 / M2.18 / M2.19 surface — rejection
+// surfaces as `Result::failure`) and `try_apply_pending` (M2.20 surface
+// — rejection surfaces as `Result::success` with a `RejectionRecord`).
+// The function returns:
+//   * `Result::failure` for genuine errors (unknown policy id_code,
+//     unknown budget category, non-finite delta, policy-effect
+//     resolution failure). Callers propagate the failure unchanged
+//     so non-execution validation never gets silently swallowed.
+//   * `Result::success` with `applied = true` and `rejection ==
+//     std::nullopt` once the per-kind validation has run cleanly and
+//     state mutation has happened. The caller's loop pops the queue
+//     head and appends the applied_commands log entry.
+//   * `Result::success` with `applied = false` and `rejection`
+//     populated when the M2.18 / M2.19 order-execution gate
+//     rejects. State is untouched in this branch.
+struct DispatchOutcome {
+    bool applied = false;
+    std::optional<RejectionRecord> rejection;
+};
+
+core::Result<DispatchOutcome> dispatch_one(core::GameState& state,
+                                           const core::PlayerCommand& cmd,
+                                           const std::string& ctx) {
+    namespace pol = leviathan::systems::policy;
+    namespace oe  = leviathan::systems::order_execution;
+
+    switch (cmd.kind) {
+        case core::PlayerCommandKind::EnactPolicy: {
+            auto eval_r = oe::evaluate(state, cmd);
+            if (!eval_r) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": EnactPolicy '" + cmd.policy_id_code +
+                    "': order_execution::evaluate failed: " +
+                    std::move(eval_r.error()));
+            }
+            if (eval_r.value().status == oe::ExecutionStatus::Rejected) {
+                RejectionRecord rj;
+                rj.kind            = cmd.kind;
+                rj.policy_id_code  = cmd.policy_id_code;
+                rj.compliance      = eval_r.value().inputs.bureaucratic_compliance;
+                rj.threshold       = oe::kEnactPolicyComplianceThreshold;
+                rj.resistance      = eval_r.value().resistance;
+                DispatchOutcome out;
+                out.applied   = false;
+                out.rejection = std::move(rj);
+                return core::Result<DispatchOutcome>::success(std::move(out));
+            }
+
+            const core::PolicyData* p =
+                find_policy_by_id_code(state, cmd.policy_id_code);
+            if (p == nullptr) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": EnactPolicy unknown policy id_code '" +
+                    cmd.policy_id_code + "'");
+            }
+            auto r = pol::apply_policy_effects(state,
+                                               state.player_country,
+                                               *p);
+            if (!r) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": EnactPolicy '" + cmd.policy_id_code +
+                    "': " + std::move(r.error()));
+            }
+            DispatchOutcome out;
+            out.applied = true;
+            return core::Result<DispatchOutcome>::success(std::move(out));
+        }
+        case core::PlayerCommandKind::AdjustBudget: {
+            auto eval_r = oe::evaluate(state, cmd);
+            if (!eval_r) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": AdjustBudget '" + cmd.budget_category +
+                    "': order_execution::evaluate failed: " +
+                    std::move(eval_r.error()));
+            }
+            if (eval_r.value().status == oe::ExecutionStatus::Rejected) {
+                const double selected =
+                    (cmd.budget_category == "military")
+                        ? eval_r.value().inputs.military_loyalty
+                        : eval_r.value().inputs.bureaucratic_compliance;
+                RejectionRecord rj;
+                rj.kind            = cmd.kind;
+                rj.budget_category = cmd.budget_category;
+                rj.compliance      = selected;
+                rj.threshold       = oe::kAdjustBudgetComplianceThreshold;
+                rj.resistance      = eval_r.value().resistance;
+                DispatchOutcome out;
+                out.applied   = false;
+                out.rejection = std::move(rj);
+                return core::Result<DispatchOutcome>::success(std::move(out));
+            }
+
+            if (!std::isfinite(cmd.budget_delta)) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": AdjustBudget budget_delta is not finite");
+            }
+            auto& country =
+                state.countries[static_cast<std::size_t>(
+                    state.player_country.value())];
+            double* field =
+                budget_field_ptr(country, cmd.budget_category);
+            if (field == nullptr) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": AdjustBudget unknown budget_category '" +
+                    cmd.budget_category +
+                    "' (expected administration|military|education|"
+                    "welfare|intelligence|infrastructure|industry)");
+            }
+            // Apply with the same [0, 1] clamp policy M1.5 uses for
+            // ratio fields.
+            *field = std::clamp(*field + cmd.budget_delta, 0.0, 1.0);
+            DispatchOutcome out;
+            out.applied = true;
+            return core::Result<DispatchOutcome>::success(std::move(out));
+        }
+    }
+    // Unreachable — every `PlayerCommandKind` variant returns above.
+    return core::Result<DispatchOutcome>::failure(
+        ctx + ": dispatch_one reached unreachable code (unknown kind)");
+}
+
+// Format the M2.18 / M2.19 rejection error message from a
+// RejectionRecord. Kept in one place so `apply_pending` and any
+// future caller that wants the legacy string surface produce
+// byte-identical messages.
+std::string format_rejection_message(const std::string& ctx,
+                                     const RejectionRecord& rj) {
+    std::ostringstream os;
+    if (rj.kind == core::PlayerCommandKind::EnactPolicy) {
+        os << ctx << ": EnactPolicy '" << rj.policy_id_code
+           << "' rejected by order_execution gate"
+           << " (bureaucratic_compliance=" << rj.compliance
+           << " < threshold=" << rj.threshold << ")";
+    } else {
+        os << ctx << ": AdjustBudget category '" << rj.budget_category
+           << "' rejected by order_execution gate"
+           << " (compliance=" << rj.compliance
+           << " < threshold=" << rj.threshold << ")";
+    }
+    return os.str();
+}
+
 }  // namespace
 
 core::Result<ApplyOutcome> apply_pending(core::GameState& state,
                                          CommandQueue& q) {
-    namespace pol = leviathan::systems::policy;
-
     // ---- Precondition: a valid player_country is mandatory. -----
     if (!state.player_country.valid() ||
         state.player_country.value() < 0 ||
@@ -68,110 +211,18 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
             "commands::apply_pending[" +
             std::to_string(outcome.commands_applied) + "]";
 
-        switch (cmd.kind) {
-            case core::PlayerCommandKind::EnactPolicy: {
-                // M2.18: order-execution gate. Evaluate BEFORE the
-                // policy lookup so a rejected command can never
-                // touch state.policies / faction state.
-                namespace oe = leviathan::systems::order_execution;
-                auto eval_r = oe::evaluate(state, cmd);
-                if (!eval_r) {
-                    // Precondition failure inside evaluate. This
-                    // should not happen here because apply_pending
-                    // already validated player_country at the top,
-                    // but surface the message faithfully if it does.
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": EnactPolicy '" + cmd.policy_id_code +
-                        "': order_execution::evaluate failed: " +
-                        std::move(eval_r.error()));
-                }
-                if (eval_r.value().status ==
-                        oe::ExecutionStatus::Rejected) {
-                    std::ostringstream os;
-                    os << ctx << ": EnactPolicy '"
-                       << cmd.policy_id_code
-                       << "' rejected by order_execution gate"
-                       << " (bureaucratic_compliance="
-                       << eval_r.value().inputs.bureaucratic_compliance
-                       << " < threshold="
-                       << oe::kEnactPolicyComplianceThreshold
-                       << ")";
-                    return core::Result<ApplyOutcome>::failure(os.str());
-                }
-
-                const core::PolicyData* p =
-                    find_policy_by_id_code(state, cmd.policy_id_code);
-                if (p == nullptr) {
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": EnactPolicy unknown policy id_code '" +
-                        cmd.policy_id_code + "'");
-                }
-                auto r = pol::apply_policy_effects(state,
-                                                   state.player_country,
-                                                   *p);
-                if (!r) {
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": EnactPolicy '" + cmd.policy_id_code +
-                        "': " + std::move(r.error()));
-                }
-                break;
-            }
-            case core::PlayerCommandKind::AdjustBudget: {
-                // M2.19: order-execution gate. Evaluate BEFORE the
-                // existing finite-delta + category-whitelist checks
-                // so a rejected command never touches the budget
-                // pointer. Mirrors the M2.18 EnactPolicy wiring
-                // shape.
-                namespace oe = leviathan::systems::order_execution;
-                auto eval_r = oe::evaluate(state, cmd);
-                if (!eval_r) {
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": AdjustBudget '" + cmd.budget_category +
-                        "': order_execution::evaluate failed: " +
-                        std::move(eval_r.error()));
-                }
-                if (eval_r.value().status ==
-                        oe::ExecutionStatus::Rejected) {
-                    const double selected =
-                        (cmd.budget_category == "military")
-                            ? eval_r.value().inputs.military_loyalty
-                            : eval_r.value().inputs.bureaucratic_compliance;
-                    std::ostringstream os;
-                    os << ctx
-                       << ": AdjustBudget category '"
-                       << cmd.budget_category
-                       << "' rejected by order_execution gate"
-                       << " (compliance=" << selected
-                       << " < threshold="
-                       << oe::kAdjustBudgetComplianceThreshold
-                       << ")";
-                    return core::Result<ApplyOutcome>::failure(os.str());
-                }
-
-                // Pre-flight: finite delta. The DataLoader doesn't go
-                // through this path, so a hand-rolled NaN/Inf would
-                // otherwise corrupt the budget silently.
-                if (!std::isfinite(cmd.budget_delta)) {
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": AdjustBudget budget_delta is not finite");
-                }
-                auto& country =
-                    state.countries[static_cast<std::size_t>(
-                        state.player_country.value())];
-                double* field =
-                    budget_field_ptr(country, cmd.budget_category);
-                if (field == nullptr) {
-                    return core::Result<ApplyOutcome>::failure(
-                        ctx + ": AdjustBudget unknown budget_category '" +
-                        cmd.budget_category +
-                        "' (expected administration|military|education|"
-                        "welfare|intelligence|infrastructure|industry)");
-                }
-                // Apply with the same [0, 1] clamp policy M1.5 uses for
-                // ratio fields.
-                *field = std::clamp(*field + cmd.budget_delta, 0.0, 1.0);
-                break;
-            }
+        auto r = dispatch_one(state, cmd, ctx);
+        if (!r) {
+            return core::Result<ApplyOutcome>::failure(std::move(r.error()));
+        }
+        if (r.value().rejection.has_value()) {
+            // M2.18 / M2.19 surface preserved byte-identical:
+            // rejection is reported as Result::failure with the
+            // legacy message format. M2.20 `try_apply_pending`
+            // is the alternative if a caller wants the structured
+            // record instead.
+            return core::Result<ApplyOutcome>::failure(
+                format_rejection_message(ctx, r.value().rejection.value()));
         }
 
         q.pending.erase(q.pending.begin());
@@ -187,6 +238,62 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
     }
 
     return core::Result<ApplyOutcome>::success(std::move(outcome));
+}
+
+// ===========================================================================
+// M2.20 - try_apply_pending: structured rejection surface
+// ===========================================================================
+
+core::Result<ApplyWithReportOutcome> try_apply_pending(
+        core::GameState& state, CommandQueue& q) {
+    // Same precondition as `apply_pending`. Non-execution errors
+    // remain `Result::failure` so callers can keep relying on the
+    // failure path to mean "something is genuinely broken, not
+    // just politically resisted".
+    if (!state.player_country.valid() ||
+        state.player_country.value() < 0 ||
+        static_cast<std::size_t>(state.player_country.value()) >=
+            state.countries.size()) {
+        return core::Result<ApplyWithReportOutcome>::failure(
+            "commands::try_apply_pending: state.player_country is not"
+            " a valid index into state.countries (call run() with"
+            " --player COUNTRY_IDCODE before submitting commands)");
+    }
+
+    ApplyWithReportOutcome result;
+
+    while (!q.pending.empty()) {
+        const core::PlayerCommand cmd = q.pending.front();
+        const std::string ctx =
+            "commands::try_apply_pending[" +
+            std::to_string(result.apply.commands_applied) + "]";
+
+        auto r = dispatch_one(state, cmd, ctx);
+        if (!r) {
+            // Genuine validation / system error. Propagate
+            // unchanged so a typo'd policy id_code or a NaN
+            // budget delta still surfaces as a hard failure.
+            return core::Result<ApplyWithReportOutcome>::failure(
+                std::move(r.error()));
+        }
+        if (r.value().rejection.has_value()) {
+            // Execution gate stopped the drain. Surface the
+            // record as a `Result::success` outcome so the
+            // caller can inspect it programmatically. The
+            // rejected command stays at the head of the queue,
+            // exactly like `apply_pending` leaves it.
+            result.rejection = std::move(r.value().rejection);
+            return core::Result<ApplyWithReportOutcome>::success(
+                std::move(result));
+        }
+
+        q.pending.erase(q.pending.begin());
+        ++result.apply.commands_applied;
+        state.applied_commands.push_back(
+            core::AppliedPlayerCommand{state.current_date, cmd});
+    }
+
+    return core::Result<ApplyWithReportOutcome>::success(std::move(result));
 }
 
 // ===========================================================================

@@ -1059,6 +1059,212 @@ TEST_CASE("M2.19 apply_pending: AdjustBudget(military) accepted by high military
           PlayerCommandKind::AdjustBudget);
 }
 
+// =====================================================================
+// M2.20 - try_apply_pending: structured rejection surface
+// =====================================================================
+
+TEST_CASE("M2.20 try_apply_pending: full drain returns success with empty rejection") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    CHECK(r.value().apply.commands_applied == 1);
+    CHECK_FALSE(r.value().rejection.has_value());
+    CHECK(q.pending.empty());
+    REQUIRE(s.applied_commands.size() == 1u);
+}
+
+TEST_CASE("M2.20 try_apply_pending: EnactPolicy rejection surfaces a structured record") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+    const double tax_before = s.countries[0].legal_tax_burden;
+
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+    CHECK(rj.kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(rj.policy_id_code  == "raise_taxes");
+    CHECK(rj.budget_category == "");
+    CHECK(rj.compliance      == doctest::Approx(0.1));
+    CHECK(rj.threshold       == doctest::Approx(0.3));
+    CHECK(rj.resistance      == doctest::Approx(0.9));
+    CHECK(r.value().apply.commands_applied == 0);
+
+    // Atomicity preserved: state unchanged, queue head intact,
+    // applied_commands empty.
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(tax_before));
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(q.pending[0].policy_id_code == "raise_taxes");
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.20 try_apply_pending: AdjustBudget(military) rejection records military_loyalty as compliance") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.military_loyalty = 0.05;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.04;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+    CHECK(rj.kind            == PlayerCommandKind::AdjustBudget);
+    CHECK(rj.policy_id_code  == "");
+    CHECK(rj.budget_category == "military");
+    CHECK(rj.compliance      == doctest::Approx(0.05));   // military_loyalty
+    CHECK(rj.threshold       == doctest::Approx(0.3));
+    CHECK(rj.resistance      == doctest::Approx(0.95));
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.20 try_apply_pending: AdjustBudget(welfare) rejection records bureaucratic_compliance") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.2;
+    s.countries[0].government_authority.military_loyalty        = 0.95;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "welfare";
+    adjust.budget_delta    = 0.05;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+    CHECK(rj.budget_category == "welfare");
+    // Selected input is bureaucratic_compliance, NOT the (high)
+    // military_loyalty.
+    CHECK(rj.compliance == doctest::Approx(0.2));
+}
+
+TEST_CASE("M2.20 try_apply_pending: unknown policy id_code still returns failure") {
+    GameState s = ger_state_with_player_selected();
+
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "no_such_policy"});
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unknown policy id_code") != std::string::npos);
+    // Failure path: queue still has the offending command.
+    REQUIRE(q.pending.size() == 1u);
+}
+
+TEST_CASE("M2.20 try_apply_pending: unknown budget_category still returns failure") {
+    GameState s = ger_state_with_player_selected();
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "spaceforce";   // not a real category.
+    adjust.budget_delta    = 0.05;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unknown budget_category") != std::string::npos);
+}
+
+TEST_CASE("M2.20 try_apply_pending: non-finite budget_delta still returns failure") {
+    GameState s = ger_state_with_player_selected();
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = std::numeric_limits<double>::quiet_NaN();
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M2.20 try_apply_pending: invalid player_country returns failure naming the helper") {
+    GameState s;   // no countries, no player.
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("try_apply_pending") != std::string::npos);
+    CHECK(r.error().find("player_country")    != std::string::npos);
+}
+
+TEST_CASE("M2.20 try_apply_pending: mid-list rejection preserves prior successful commands") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    s.countries[0].government_authority.military_loyalty        = 0.9;
+
+    cmd::CommandQueue q;
+    // 1. AdjustBudget(military) — military_loyalty 0.9 ⇒ accepted.
+    PlayerCommand mil_adjust;
+    mil_adjust.kind            = PlayerCommandKind::AdjustBudget;
+    mil_adjust.budget_category = "military";
+    mil_adjust.budget_delta    = 0.03;
+    q.pending.push_back(mil_adjust);
+    // 2. EnactPolicy — bureaucratic 0.05 ⇒ rejected at the gate.
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+    // 3. AdjustBudget(welfare) — would also reject but never reached.
+    PlayerCommand wel_adjust;
+    wel_adjust.kind            = PlayerCommandKind::AdjustBudget;
+    wel_adjust.budget_category = "welfare";
+    wel_adjust.budget_delta    = 0.04;
+    q.pending.push_back(wel_adjust);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    CHECK(r.value().rejection.value().kind ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(r.value().rejection.value().policy_id_code == "raise_taxes");
+    CHECK(r.value().apply.commands_applied == 1);
+
+    // Prior AdjustBudget(military) landed.
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::AdjustBudget);
+
+    // Rejected EnactPolicy stays at head; trailing AdjustBudget still queued.
+    REQUIRE(q.pending.size() == 2u);
+    CHECK(q.pending[0].kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(q.pending[0].policy_id_code  == "raise_taxes");
+    CHECK(q.pending[1].budget_category == "welfare");
+}
+
+TEST_CASE("M2.20 apply_pending: rejection still returns Result::failure (backward compat)") {
+    // The structured surface lives behind `try_apply_pending`;
+    // the legacy `apply_pending` must keep failing on rejection
+    // so existing callers (M2.18 / M2.19 tests, replay_with_time)
+    // see no behaviour change.
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("order_execution") != std::string::npos);
+    CHECK(r.error().find("rejected")        != std::string::npos);
+    CHECK(r.error().find("raise_taxes")     != std::string::npos);
+}
+
 TEST_CASE("M2.19 apply_pending: rejected AdjustBudget stops a mid-list queue") {
     // Mirrors the M2.18 mid-list test: prior command applies +
     // logs, rejected command stays at head, trailing command

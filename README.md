@@ -8,38 +8,44 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.19 — AdjustBudget execution
-  gate.** Extends M2.18's command-rejection shape to
-  `AdjustBudget` with a single category-aware twist: the
-  `"military"` budget category gates on `military_loyalty`, every
-  other category still gates on `bureaucratic_compliance`. New
-  constant `kAdjustBudgetComplianceThreshold = 0.3` (same value
-  as `EnactPolicy` to keep canonical default-0.5 scenarios
-  Accepted). The `AdjustBudget` arm in `evaluate()` selects the
-  authority input by `command.budget_category`, computes
-  `resistance = 1.0 - selected`, and returns `Accepted` when
-  `selected >= 0.3` else `Rejected`. `commands::apply_pending`
-  gains a pre-flight gate block structurally identical to the
-  M2.18 `EnactPolicy` one; rejected `AdjustBudget` commands
-  short-circuit before the existing finite-delta + category-
-  whitelist checks with an error naming `order_execution`,
-  `rejected`, `AdjustBudget`, the offending `budget_category`,
-  the selected compliance value, and the threshold. Per-command
-  atomicity preserved: rejected command stays at queue head, no
-  state mutation, no `applied_commands` append. **No save format
-  change** (still v10); no `Delayed` / `Distorted` outcomes; no
-  per-category routing beyond the `military` branch; no weighted
-  multi-input formula; no scheduler; no RNG; no `state.logs`
-  entry on rejection.
-- Previously shipped: **M2.18 — EnactPolicy execution gate**.
-  **M2.17 — OrderExecutionSystem skeleton**. **M2.16 —
+- Latest shipped sub-milestone: **M2.20 — Command rejection
+  reporting.** Makes the M2.18 / M2.19 order-execution rejection
+  observable as structured data without changing `apply_pending`
+  semantics. New POD `commands::RejectionRecord` carries `kind`,
+  `policy_id_code` (for `EnactPolicy`), `budget_category` (for
+  `AdjustBudget`), the selected `compliance` value, `threshold`,
+  and `resistance = 1.0 - compliance`. New wrapper
+  `commands::ApplyWithReportOutcome { apply, rejection }`. New
+  free function `commands::try_apply_pending(state, queue)`
+  drains the queue exactly like `apply_pending` does — same
+  precondition, same per-command atomicity — but surfaces an
+  order-execution rejection as `Result::success` carrying a
+  populated `rejection` rather than as `Result::failure`.
+  Non-execution errors (precondition violation, NaN `budget_delta`,
+  unknown policy id_code, unknown budget_category) still return
+  `Result::failure` so genuine validation never gets swallowed.
+  Internal refactor extracts a `dispatch_one` helper in
+  `commands.cpp` (anonymous namespace) shared by both functions;
+  `apply_pending`'s legacy rejection error string is preserved
+  byte-identical via a `format_rejection_message` helper. **No
+  changes to `apply_pending` signature or behaviour**; all M2.18
+  / M2.19 tests pass unchanged. No save format change (still
+  v10); no new state field; no persistent attempted-command log;
+  no `state.logs` entry; no `RunOutcome` rejection surface (that
+  is a future PR); no CLI / replay / runner / DataLoader / M1
+  system change. Drive-by: refreshed a stale M2.18-only comment
+  in `order_execution.cpp` flagged in the PR #46 review.
+- Previously shipped: **M2.19 — AdjustBudget execution gate**.
+  **M2.18 — EnactPolicy execution gate**. **M2.17 —
+  OrderExecutionSystem skeleton**. **M2.16 —
   GovernmentAuthorityState** (save schema bumped v9 → v10).
-- Next sub-milestone candidate: **M2.20 — Surface rejected
-  commands in the run summary / RunOutcome.** First step toward
-  letting a CI driver see "how many commands were rejected"
-  without parsing stderr. Save-neutral; likely adds a
-  `commands_rejected` counter on `ApplyOutcome` and / or a list
-  on `RunOutcome` for replay-end forensics.
+- Next sub-milestone candidate: **M2.21 — Runner / RunOutcome
+  rejection surface.** Now that `RejectionRecord` exists, give a
+  CI driver a programmatic way to see "how many commands were
+  rejected during this run / replay" without parsing the failure
+  error. Save-neutral; likely a `last_rejection` and / or
+  rejection-count field on `RunOutcome` and a stdout summary
+  line in `main()`.
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -65,8 +71,8 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
-M2.16 + M2.17 + M2.18 + M2.19 merged. Thirty-five sub-milestones
-shipped:
+M2.16 + M2.17 + M2.18 + M2.19 + M2.20 merged. Thirty-six
+sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -213,6 +219,29 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.20 Command rejection reporting — makes M2.18 / M2.19
+order-execution rejections observable as structured data without
+changing `apply_pending` semantics. New POD
+`commands::RejectionRecord { kind, policy_id_code,
+budget_category, compliance, threshold, resistance }`. New
+wrapper `commands::ApplyWithReportOutcome { apply, rejection }`.
+New free function `commands::try_apply_pending(state, queue)`
+drains the queue exactly like `apply_pending` (same precondition,
+same atomicity) but surfaces an order-execution rejection as
+`Result::success` carrying the populated record. Non-execution
+errors (precondition / NaN delta / unknown policy / unknown
+category) still return `Result::failure`. Internal refactor
+extracts `dispatch_one` in `commands.cpp`'s anonymous namespace
+shared by both functions; `apply_pending`'s legacy rejection
+error string is byte-identical via a `format_rejection_message`
+helper. M2.18 / M2.19 tests pass unchanged. Drive-by:
+refreshed stale `order_execution.cpp` comment that still said
+"only EnactPolicy is evaluated in this PR" before M2.19 added
+the AdjustBudget arm. No save format change (still v10); no
+`apply_pending` signature change; no persistent attempted-
+command log; no `state.logs` entry; no `RunOutcome` rejection
+surface (M2.21 candidate); no DataLoader / replay primitive /
+runner / CLI / M1 system change;
 **M2.19 AdjustBudget execution gate — extends M2.18's
 command-rejection shape to `AdjustBudget` with a category-aware
 single-input gate. New constant
@@ -550,7 +579,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.19 there are **606 doctest cases**. M0 contributed 179;
+As of M2.20 there are **616 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -559,7 +588,24 @@ end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
-M2.17 added 10; M2.18 added 10; M2.19 adds 11 covering the new
+M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 adds 10
+covering the new `try_apply_pending` structured-rejection
+surface: full drain returns success + nullopt rejection; EnactPolicy
+rejection populates `RejectionRecord{kind, policy_id_code,
+compliance=0.1, threshold=0.3, resistance=0.9}` with full
+atomicity asserted (tax burden / queue head / applied_commands
+all unchanged); AdjustBudget(military) rejection records
+`military_loyalty` as `compliance` (not bureaucratic);
+AdjustBudget(welfare) rejection records `bureaucratic_compliance`
+even with high military_loyalty (selected-input contract);
+unknown policy / unknown budget_category / non-finite delta all
+still return `Result::failure`; invalid `player_country` returns
+failure that names `try_apply_pending`; mid-list rejection
+preserves a prior successful `AdjustBudget(military)` and leaves
+the rejected `EnactPolicy` at the queue head with the trailing
+command still behind it; `apply_pending` rejection still returns
+`Result::failure` (backward-compat regression). Previously M2.19
+adds 11 covering the new
 category-aware AdjustBudget gate: 7 in `order_execution_test.cpp`
 (military category at threshold 0.3 accepts with resistance 0.7;
 0.299 rejects; military category ignores high bureaucratic
