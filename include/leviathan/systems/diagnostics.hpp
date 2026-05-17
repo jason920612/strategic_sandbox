@@ -167,8 +167,10 @@ void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row);
 //     legal_tax_burden / fiscal_capacity / administrative_efficiency /
 //     central_control / corruption / stability / legitimacy /
 //     military_power / threat_perception / last_gdp_growth_rate),
-//     the budget block (7 categories), and active_policies entries
-//     (policy_id_code + expires_on).
+//     the budget block (7 categories), the government_authority
+//     block (M2.16: bureaucratic_compliance, military_loyalty,
+//     intelligence_capability, media_control), and active_policies
+//     entries (policy_id_code + expires_on).
 //   * factions[*]: identity strings (id_code, country_id_code, type),
 //     every numeric field (support / influence / radicalism /
 //     loyalty / resources), and preferred_policies element count.

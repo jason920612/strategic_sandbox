@@ -79,7 +79,19 @@ namespace leviathan::systems::save_system {
 //                queue appends on every successful enactment). A v8
 //                save would silently drop the replay log on reload,
 //                so we bump rather than tolerate the missing array.
-inline constexpr std::uint32_t kSaveFormatVersion   = 9;
+//   v10 (M2.16) - CountryState gained a nested
+//                `government_authority` block (M2.16
+//                GovernmentAuthorityState — bureaucratic_compliance,
+//                military_loyalty, intelligence_capability,
+//                media_control; all [0, 1] doubles). A v9 save lacks
+//                the block; silently defaulting on reload would make
+//                a v9 save reload as "every country has neutral 0.5
+//                authority" regardless of what the user originally
+//                authored. We bump strictly. At the save-file level
+//                the block is REQUIRED with all four sub-keys present
+//                and finite in [0, 1]; DataLoader still treats the
+//                block as optional in raw country JSON.
+inline constexpr std::uint32_t kSaveFormatVersion   = 10;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

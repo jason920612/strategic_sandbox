@@ -815,8 +815,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v9 - M2.4 added GameState.applied_commands.
-    CHECK(save.find("\"save_version\": 9") != std::string::npos);
+    // Save schema is now v10 - M2.16 added CountryState.government_authority.
+    CHECK(save.find("\"save_version\": 10") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1059,8 +1059,8 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v9 (M2.4 bumped from v8 for applied_commands)") {
-    TempDir td("leviathan_runner_m204_save_version");
+TEST_CASE("run: save schema is now v10 (M2.16 bumped from v9 for government_authority)") {
+    TempDir td("leviathan_runner_m216_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
     opts.days        = 31;
@@ -1069,7 +1069,7 @@ TEST_CASE("run: save schema is now v9 (M2.4 bumped from v8 for applied_commands)
     const std::string save = read_file(td.path / "save.json");
     // Pin the unchanged version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 9") != std::string::npos);
+    CHECK(save.find("\"save_version\": 10") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------

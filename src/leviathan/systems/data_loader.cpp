@@ -296,6 +296,56 @@ core::Result<core::CountryState> parse_country(
         return core::Result<core::CountryState>::failure(std::move(r.error()));
     }
 
+    // ---- M2.16 government_authority block ---------------------------
+    // OPTIONAL in country JSON: when the block is missing every
+    // sub-field keeps its `GovernmentAuthorityState` default of 0.5,
+    // so existing country fixtures load unchanged. When the block IS
+    // present it must be a JSON object containing all four sub-fields
+    // as finite [0, 1] ratios — partial blocks are rejected so a
+    // typo in the key name doesn't silently fall back to 0.5.
+    //
+    // SaveSystem treats the block as REQUIRED at the save layer
+    // (v10): a save written from a valid in-memory state always
+    // round-trips this block in full. The DataLoader leniency only
+    // applies to authored country fixtures.
+    const json* authority_node = navigate(root, "government_authority");
+    if (authority_node != nullptr) {
+        if (!authority_node->is_object()) {
+            return core::Result<core::CountryState>::failure(
+                fmt_err(source_label,
+                        "'government_authority' has wrong type"
+                        " (expected JSON object)"));
+        }
+        const std::string auth_ctx =
+            std::string(source_label) + ": government_authority";
+        auto read_auth = [&](const char* key, double& dst) -> core::Result<bool> {
+            auto r = require_ratio(*authority_node, key, auth_ctx);
+            if (!r) return core::Result<bool>::failure(std::move(r.error()));
+            dst = r.value();
+            return core::Result<bool>::success(true);
+        };
+        if (auto r = read_auth("bureaucratic_compliance",
+                               country.government_authority.bureaucratic_compliance);
+            !r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        if (auto r = read_auth("military_loyalty",
+                               country.government_authority.military_loyalty);
+            !r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        if (auto r = read_auth("intelligence_capability",
+                               country.government_authority.intelligence_capability);
+            !r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        if (auto r = read_auth("media_control",
+                               country.government_authority.media_control);
+            !r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+    }
+
     return core::Result<core::CountryState>::success(std::move(country));
 }
 

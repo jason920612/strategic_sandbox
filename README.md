@@ -8,32 +8,37 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.14 — Replay target-date CLI.**
-  New `--target-date YYYY-MM-DD` runner flag (requires `--replay`)
-  scopes the M2.8 replay flow to a specific calendar day: entries
-  with `applied_on > target_date` are skipped, and after replay
-  finishes the time system is advanced day-by-day until
-  `current_date == target_date` so the resulting save reflects
-  exactly that day. The M1.10 monthly pipeline fires naturally on
-  every month boundary the extension crosses. Parsed via
-  `core::GameDate::parse` (rejects malformed dates at parse time);
-  scenario-start precondition (target_date must be on or after the
-  scenario start date) checked in `run()` before any tick, so a
-  bad target falls under the M2.9 pre-`end_tick` no-artefact
-  contract. `main()` prints `Target date: <value>` in replay
-  summary when set. No library behaviour change to
-  `replay_with_time` or `step_one_day`; M2.14 is glue. **No save
-  format bump** (still v9); CLI-only.
-- Previously shipped: **M2.9 — Replay CLI error-path hardening**
-  (doc + 3 regression tests cementing the pre-`end_tick` no-artefact
-  contract for `--replay`-mode failures). **M2.13 — Verify
-  tolerance CLI** (`--verify-tolerance FLOAT` overrides M2.10's
-  default `1e-9`).
-- Next sub-milestone candidates: **M2.15** (relative-tolerance
-  support in `CompareOptions` — upgrade M2.10's absolute-only
-  comparison to handle large-magnitude fields better; save-neutral)
-  or **M2.16** (`GovernmentAuthorityState` in `CountryState` —
-  first M2 gameplay extension, save schema bump v9 → v10).
+- Latest shipped sub-milestone: **M2.16 — GovernmentAuthorityState.**
+  First M2 gameplay-state extension. New
+  `core::GovernmentAuthorityState` POD with four `[0, 1]` ratio
+  fields defaulting to `0.5`: `bureaucratic_compliance`,
+  `military_loyalty`, `intelligence_capability`, `media_control`
+  — a stripped subset of RFC-020 §3「國家掌控力」chosen for their
+  proximity to future command-execution-resistance / information-
+  accuracy gameplay. Added to `CountryState` as the new
+  `government_authority` field. **Save format bumped v9 → v10**;
+  the block is REQUIRED at the save layer (`require_ratio` per
+  sub-field). DataLoader keeps it OPTIONAL in country JSON —
+  missing block defaults to all `0.5`, present block validated.
+  `diagnostics::compare_states` walks the four sub-fields with the
+  same tolerance machinery as the budget block; field paths mirror
+  the save JSON (`countries[0].government_authority.*`). **Data
+  only**: zero M1 systems read or write the new fields; existing
+  M1 monthly pipeline and M2 command path behave byte-identically.
+  Deferred from RFC-020 §3 with explicit documentation: distinct
+  `local_control`, `legal_mandate`, `leader_prestige`,
+  `party_organization` — each waits for a future PR with a real
+  gameplay consumer.
+- Previously shipped: **M2.14 — Replay target-date CLI**
+  (`--target-date YYYY-MM-DD` truncates the log + advances the
+  time system to the target day). **M2.9 — Replay CLI error-path
+  hardening** (doc + 3 regression tests cementing the
+  pre-`end_tick` no-artefact contract). **M2.13 — Verify tolerance
+  CLI**.
+- Next sub-milestone candidates: **M2.17** (first consumer of
+  `government_authority` — e.g. command-execution resistance
+  gating policy enactment, save-neutral system work) or **M2.15**
+  (relative-tolerance support in `CompareOptions` — save-neutral).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -58,8 +63,8 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 merged.
-Thirty-one sub-milestones shipped:
++ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 + M2.16
+merged. Thirty-two sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -206,6 +211,26 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.16 GovernmentAuthorityState — first M2 gameplay-state
+extension. New `core::GovernmentAuthorityState` POD with four
+`[0, 1]` ratio fields defaulting to `0.5`
+(`bureaucratic_compliance`, `military_loyalty`,
+`intelligence_capability`, `media_control`) added to
+`CountryState` as the `government_authority` field. **Save format
+bumped v9 → v10**: block REQUIRED at save layer (`require_ratio`
+per sub-field); DataLoader keeps it OPTIONAL in country JSON
+(missing → defaults; present → validated). `diagnostics::compare_states`
+extended to walk the four sub-fields under the
+`countries[N].government_authority.*` JSON path. Drive-by: every
+`"save_version": 9` JSON literal in tests bumped to `10`; every
+existing v10 hand-built country JSON gained the new block.
+**Data-only** — zero M1 systems read or write the new fields; M1
+monthly pipeline and M2 command path are byte-identical. Deferred
+from RFC-020 §3 with explicit documentation: `local_control`,
+`legal_mandate`, `leader_prestige`, `party_organization`. **No
+new gameplay logic, no new policy effect target, no new
+`PlayerCommandKind`, no new CSV column, no scenario fixture
+changes, no `state.logs` entry.**
 **M2.9 Replay CLI error-path hardening — doc + tests PR with no
 library behaviour change. Cements the **pre-`end_tick`** contract:
 a `--replay` failure that occurs before `end_tick` is reached
@@ -465,7 +490,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.14 there are **562 doctest cases**. M0 contributed 179;
+As of M2.16 there are **575 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -473,7 +498,18 @@ M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
-M2.13 added 8; M2.9 added 3; M2.14 adds 9 covering `--target-date`:
+M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 adds 13 across
+the v10 save-format bump and the new
+`GovernmentAuthorityState` plumbing: 1 game_state baseline (default
+0.5 across all four sub-fields), 5 data_loader (missing block →
+defaults; present → loaded; wrong-type rejected; missing sub-field
+rejected; out-of-range rejected), 6 save_system (serialize emits
+the block; round-trip preserves arbitrary values; v9 save rejected
+loudly; v10 country missing block rejected; v10 block missing
+sub-key rejected; v10 out-of-range value rejected), and 1
+diagnostics compare_states test pinning the per-sub-field paths
+under `countries[0].government_authority.*`. Previously M2.14
+added 9 covering `--target-date`:
 5 parse cases (plumbed; default nullopt; missing value rejected;
 malformed date `"1930-13-01"` rejected with flag name + value in
 error; without `--replay` rejected with both flag names in error)
