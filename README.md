@@ -11,9 +11,37 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.1 — InterestGroupState /
-  political actors skeleton.** Opens M3 with a stripped-down
-  data layer for political interest groups. New
+- Latest shipped sub-milestone: **M3.2 —
+  InterestGroupReactionSystem skeleton.** First M3 system to
+  **mutate** the M3.1 data layer. New module
+  `leviathan::systems::interest_group` with constant
+  `kInterestGroupReactionRate = 0.05`, `ReactionOutcome { int
+  groups_updated }`, and `react(state)` free function. The
+  reaction is a linear-toward-equilibrium drift driven by a
+  single input (`country.stability`):
+  `loyalty += (country.stability - loyalty) * 0.05` and
+  `radicalism += ((1.0 - country.stability) - radicalism) * 0.05`,
+  both clamped to `[0, 1]`. `influence`, `kind`, `country`,
+  `id_code`, and `name` are untouched. `react` is pure (no logs,
+  no RNG, no time advancement, no country / faction / policy
+  mutation, no event emission) and preflight-validates every
+  `group.country` against `state.countries` so a single bad
+  entry leaves all other groups byte-identical (atomicity
+  across the list). Wired into the monthly pipeline as the
+  FINAL step of `tick_all_countries`, after every per-country
+  `faction::react → stability::tick → economy::tick` finishes;
+  the global step reads each country's post-tick stability.
+  `MonthlyOutcome` gains `int interest_groups_updated` matching
+  `ReactionOutcome::groups_updated`. **No save schema bump**
+  (still v11); existing M1 / M2 callers that don't author
+  interest groups see byte-identical pipeline behaviour. No
+  events / AI / UI / command integration / country aggregate
+  effects / influence drift / per-kind formulas / RNG / strikes
+  / protests / coups / cross-border behaviour. 13 new doctest
+  cases.
+- Previously shipped: **M3.1 — InterestGroupState / political
+  actors skeleton.** Opens M3 with a stripped-down data layer
+  for political interest groups. New
   `core::InterestGroupKind` enum (10 variants: `Bureaucracy`,
   `Military`, `Workers`, `Farmers`, `Religious`, `Media`,
   `Students`, `LocalElites`, `Business`, `Technocrats`). New
@@ -85,13 +113,15 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.1): **M3.2 — first
-  interest-group reaction step.** Likely a monthly tick that
-  drifts `loyalty` / `radicalism` toward inputs from
-  `government_authority` + `corruption` + `stability`. Pure
-  read of the M3.1 data layer; save-neutral. Not committed.
-- M0 closed. M1 closed. M2 closed. M3 in progress (M3.1
-  shipped). See `docs/milestone-0-result.md`,
+- Next sub-milestone candidate (post-M3.2): **M3.3** — likely
+  one of (a) interest-group reverse influence on `country.stability`
+  / `legitimacy` (the other direction of the reaction loop),
+  (b) a second reaction input layered onto M3.2's single
+  driver (e.g. `government_authority.bureaucratic_compliance`
+  or `corruption`), or (c) interest-group integration into the
+  M2.18 / M2.19 command-execution gate. None committed.
+- M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
+  M3.2 shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -117,8 +147,8 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
-reaction layer, RFC-090 §M3) opens with M3.1.
-Thirty-nine sub-milestones shipped:
+reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
+shipped. Forty sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -265,6 +295,28 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.2 InterestGroupReactionSystem skeleton — first M3 system
+that mutates the M3.1 data layer. New module
+`leviathan::systems::interest_group` with
+`kInterestGroupReactionRate = 0.05`, `ReactionOutcome { int
+groups_updated }`, and `react(state)`. Reaction is a linear-
+toward-equilibrium drift on two fields driven by a single
+input (`country.stability`): `loyalty += (country.stability -
+loyalty) * 0.05` and `radicalism += ((1.0 - country.stability)
+- radicalism) * 0.05`, both clamped to `[0, 1]`. `influence`,
+`kind`, `country`, `id_code`, `name` untouched. `react` is
+pure (no logs / RNG / time / country / faction / policy
+mutation / events) and preflight-validates every
+`group.country` before mutating any group (atomicity). Wired
+into the monthly pipeline as the FINAL step of
+`tick_all_countries` (after every per-country faction →
+stability → economy). `MonthlyOutcome` gains `int
+interest_groups_updated`. No save schema bump (still v11);
+existing M1/M2 callers without interest groups see byte-
+identical pipeline behaviour. 13 new doctest cases. No
+events / AI / UI / command integration / country aggregate
+effects / influence drift / per-kind formulas / RNG / strikes
+/ protests / coups / cross-border;
 **M3.1 InterestGroupState / political actors skeleton — opens
 M3. New `core::InterestGroupKind` enum (10 variants:
 Bureaucracy / Military / Workers / Farmers / Religious / Media
@@ -681,7 +733,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M3.1 there are **647 doctest cases**. M0 contributed 179;
+As of M3.2 there are **660 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -692,7 +744,16 @@ added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
 M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
 M2.21 added 8; M2.22 added 3 end-to-end integration tests;
-M3.1 adds 20 across the v10 → v11 save-format bump and the new
+M3.1 added 20 across the v10 → v11 save-format bump; M3.2 adds
+13 across the new `interest_group_system` module: 11 unit tests
+covering empty / high-stability / low-stability drift /
+multi-country routing / influence + identity fields untouched /
+clamp safety / preflight-atomicity-on-invalid-country / sentinel
+country handling, plus 2 monthly-pipeline integration tests
+pinning that `tick_all_countries` runs the new react step after
+the per-country tick and that empty `interest_groups` flows
+unchanged. M3.1 adds 20 across the v10 → v11 save-format bump
+and the new
 `InterestGroupState` plumbing: 2 game_state baselines (empty
 default vector + default POD defaults 0.5/0.5/0.0), 9 save_system
 (serialize emits empty array; round-trip preserves arbitrary

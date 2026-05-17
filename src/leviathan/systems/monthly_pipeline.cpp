@@ -50,6 +50,19 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
         ++out.countries_processed;
     }
 
+    // M3.2: after every per-country tick has settled, drift each
+    // interest group toward its country's post-tick stability.
+    // The step is global (one call processes every group across
+    // every country) and runs LAST so it reads the freshly
+    // updated stability values.
+    auto ig = interest_group::react(state);
+    if (!ig.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: interest_group::react"
+            " failed: " + ig.error());
+    }
+    out.interest_groups_updated = ig.value().groups_updated;
+
     return core::Result<MonthlyOutcome>::success(std::move(out));
 }
 

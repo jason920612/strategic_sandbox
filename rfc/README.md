@@ -217,7 +217,34 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.1（InterestGroupState
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.2（InterestGroupReactionSystem
+  skeleton）** 是 M3 第一個讓 interest_groups 真正 *mutate* 的
+  system。新模組 `leviathan::systems::interest_group` 含常數
+  `kInterestGroupReactionRate = 0.05`、`ReactionOutcome { int
+  groups_updated }` 與 `react(state)` free function。Reaction 是
+  linear-toward-equilibrium drift，driver 是 `country.stability`
+  單一輸入：`loyalty += (country.stability - loyalty) * 0.05`、
+  `radicalism += ((1 - country.stability) - radicalism) * 0.05`，
+  兩者都 clamp 到 `[0, 1]`。`influence` / `kind` / `country` /
+  `id_code` / `name` 完全不動。`react` 是 pure（不寫 logs、不動
+  RNG、不推進日期、不動 country/faction/policy 狀態、不 emit
+  events），preflight 驗證每個 `group.country` index 進
+  `state.countries`，**任何 entry 無效就整批不 mutate**（atomicity
+  across the list）。接進 monthly pipeline，作為
+  `tick_all_countries` 的**最後一步**在所有 per-country
+  faction/stability/economy tick 完成後才跑一次，讀的是 post-tick
+  stability。`MonthlyOutcome` 新增 `int interest_groups_updated`。
+  **No save schema bump（仍 v11）**；既有 M1/M2 沒 author
+  interest_groups 的 caller 完全沒有行為變更。對應 RFC-020 §5
+  長期 faction / interest-group 反應機制的第一片落地。**M3.2 不做**
+  influence drift、per-kind formula、weighted formula、第二個
+  driver（corruption / authority / legitimacy）、country aggregate
+  effect（interest groups 不回推 country state，留給 M3.3+）、
+  events / state.logs entry / AI / UI / CLI / scheduler、
+  command-gate integration、新 PlayerCommandKind、新 CSV 欄位、
+  RNG / 機率行為、strikes / protests / coups / civil war /
+  cross-border 行為、M1 / M2 system 變更。
+  **M3.1（InterestGroupState
   / political actors skeleton）** 為 M3 開頭，先建立 political
   actor 的資料層：新 `core::InterestGroupKind` enum（10 個 variant：
   Bureaucracy / Military / Workers / Farmers / Religious / Media /

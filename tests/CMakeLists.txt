@@ -39,6 +39,7 @@ add_executable(leviathan_tests
     systems/diagnostics_test.cpp
     systems/economy_system_test.cpp
     systems/faction_system_test.cpp
+    systems/interest_group_system_test.cpp
     systems/logging_system_test.cpp
     systems/monthly_pipeline_test.cpp
     systems/order_execution_test.cpp
