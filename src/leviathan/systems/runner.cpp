@@ -12,6 +12,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/log_entry.hpp"
 #include "leviathan/core/simulation_config.hpp"
+#include "leviathan/systems/commands.hpp"
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/diagnostics.hpp"
 #include "leviathan/systems/logging_system.hpp"
@@ -130,6 +131,14 @@ std::string usage_text() {
         "                      loudly if the id_code does not match any\n"
         "                      loaded country. Without this flag the run\n"
         "                      is headless (player_country = invalid).\n"
+        "  --replay PATH       Replay the command log of the save at PATH\n"
+        "                      onto a fresh scenario (M2.8). Requires\n"
+        "                      --scenario. If --player is not also set,\n"
+        "                      inherits player_country from the loaded\n"
+        "                      save. The runner advances day-by-day so\n"
+        "                      the M1.10 monthly pipeline fires naturally\n"
+        "                      between commands; the resulting save is\n"
+        "                      written to the normal output paths.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -217,6 +226,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.player_id_code = std::string(v.value());
             ++i;
+        } else if (a == "--replay") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.replay_path = std::filesystem::path(std::string(v.value()));
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -266,6 +280,61 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         if (!load_r) {
             return core::Result<RunOutcome>::failure(std::move(load_r.error()));
         }
+    }
+
+    // ---- Optional replay mode (M2.8) --------------------------------------
+    // `--replay PATH` loads a save, then replays its applied_commands log
+    // onto the fresh scenario state via M2.7 replay_with_time. The user
+    // diffs the resulting save against the source themselves (the CLI
+    // does NOT auto-compare).
+    if (opts.replay_path.has_value()) {
+        namespace ss  = leviathan::systems::save_system;
+        namespace cmd = leviathan::systems::commands;
+
+        // Replay requires a scenario-loaded baseline state. Reject
+        // loudly rather than silently replay onto an empty world.
+        if (state.countries.empty()) {
+            return core::Result<RunOutcome>::failure(
+                "--replay " + opts.replay_path.value().string() +
+                ": --scenario is required to provide the fresh state"
+                " baseline for replay (the replayed save's countries"
+                " are NOT reused)");
+        }
+
+        // Load the save being replayed.
+        auto loaded_r = ss::load(opts.replay_path.value());
+        if (!loaded_r) {
+            return core::Result<RunOutcome>::failure(
+                "--replay: " + std::move(loaded_r.error()));
+        }
+        const auto loaded = std::move(loaded_r).value();
+
+        // Auto-inherit player_country from the loaded save when the
+        // user didn't pass --player. Matches the most common replay
+        // usage (replay a save without re-specifying the player).
+        // begin_tick leaves state.player_country alone when
+        // opts.player_id_code is unset, so this assignment survives.
+        if (!opts.player_id_code.has_value()) {
+            state.player_country = loaded.player_country;
+        }
+
+        TickController ctrl;
+        auto begin_r = begin_tick(state, opts, ctrl);
+        if (!begin_r) {
+            return core::Result<RunOutcome>::failure(std::move(begin_r.error()));
+        }
+        auto replay_r =
+            cmd::replay_with_time(state, opts, ctrl, loaded.applied_commands);
+        if (!replay_r) {
+            return core::Result<RunOutcome>::failure(std::move(replay_r.error()));
+        }
+        auto end_r = end_tick(state, opts, ctrl);
+        if (!end_r) {
+            return core::Result<RunOutcome>::failure(std::move(end_r.error()));
+        }
+        auto outcome = std::move(end_r).value();
+        outcome.replay_commands_replayed = replay_r.value().commands_replayed;
+        return core::Result<RunOutcome>::success(std::move(outcome));
     }
 
     return run_state(state, opts);

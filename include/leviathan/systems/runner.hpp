@@ -49,6 +49,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> countries_csv_path;  // unset = no per-country CSV (M1.14)
     std::optional<std::filesystem::path> factions_csv_path;   // unset = no per-faction CSV (M1.16)
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
+    std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 show_help   = false;
 };
 
@@ -92,6 +93,13 @@ struct RunOutcome {
     // M1.14 country variant; mirrors the same snapshot cadence.
     std::optional<std::filesystem::path> factions_csv_path;
     std::size_t            factions_csv_rows    = 0;
+    // M2.8: count of commands replayed from the loaded save when
+    // `--replay PATH` is set. Zero when --replay was not used. The
+    // outcome's `days_advanced` / `monthly_ticks` fields are
+    // populated by the underlying TickController as usual, so a
+    // replay run reports the same shape as a normal run plus this
+    // extra counter.
+    int                    replay_commands_replayed = 0;
 };
 
 // Execute one simulation run.
