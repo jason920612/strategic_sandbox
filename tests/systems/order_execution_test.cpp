@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <string>
+
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
@@ -155,12 +157,13 @@ TEST_CASE("evaluate: leaves the state byte-identical") {
 }
 
 TEST_CASE("evaluate: EnactPolicy and AdjustBudget snapshot the same inputs but compute different resistance") {
-    // With M2.18 the EnactPolicy branch fills in resistance from
-    // bureaucratic_compliance, while AdjustBudget keeps resistance
-    // at 0.0 (no gate evaluated yet). Both still see the same
-    // inputs snapshot and — at the seeded country's 0.62
-    // compliance, well above the 0.3 threshold — both still
-    // resolve to Accepted.
+    // M2.18 wired the EnactPolicy gate on bureaucratic_compliance;
+    // M2.19 wired the AdjustBudget gate on military_loyalty for
+    // the "military" category. Both arms now fill resistance, but
+    // from different inputs: EnactPolicy from bureaucratic
+    // compliance (0.62), AdjustBudget(military) from military
+    // loyalty (0.84). At the seeded values both clear the 0.3
+    // threshold so status is Accepted in both cases.
     GameState state;
     state.countries.push_back(seeded_country());
     state.player_country = CountryId{0};
@@ -183,10 +186,10 @@ TEST_CASE("evaluate: EnactPolicy and AdjustBudget snapshot the same inputs but c
     CHECK(enact.value().inputs.media_control ==
           doctest::Approx(adjust.value().inputs.media_control));
 
-    // Resistance differs: EnactPolicy fills it; AdjustBudget leaves
-    // it at the default 0.0.
+    // Resistance differs: EnactPolicy reads bureaucratic
+    // compliance; AdjustBudget(military) reads military loyalty.
     CHECK(enact.value().resistance  == doctest::Approx(1.0 - 0.62));
-    CHECK(adjust.value().resistance == doctest::Approx(0.0));
+    CHECK(adjust.value().resistance == doctest::Approx(1.0 - 0.84));
 }
 
 TEST_CASE("evaluate: repeated calls are deterministic") {
@@ -271,13 +274,17 @@ TEST_CASE("evaluate EnactPolicy: default 0.5 compliance still accepts") {
     CHECK(r.value().status == oe::ExecutionStatus::Accepted);
 }
 
-TEST_CASE("evaluate AdjustBudget: bypasses the gate even at very low compliance") {
-    auto s = state_with_compliance(0.01);  // would reject EnactPolicy.
+TEST_CASE("evaluate AdjustBudget(military): low bureaucratic_compliance is irrelevant if military_loyalty is high") {
+    // state_with_compliance() only lowers bureaucratic_compliance;
+    // military_loyalty stays at the seeded 0.84. M2.19 routes the
+    // "military" category through military_loyalty, so the
+    // command should still Accept and resistance reflects military
+    // loyalty rather than the (low) bureaucratic compliance.
+    auto s = state_with_compliance(0.01);
     const auto r = oe::evaluate(s, adjust_military_budget());
     REQUIRE(r.ok());
     CHECK(r.value().status == oe::ExecutionStatus::Accepted);
-    // No gate evaluated -> resistance stays at the default 0.0.
-    CHECK(r.value().resistance == doctest::Approx(0.0));
+    CHECK(r.value().resistance == doctest::Approx(1.0 - 0.84));
 }
 
 TEST_CASE("evaluate EnactPolicy: rejected path is non-mutating") {
@@ -289,6 +296,107 @@ TEST_CASE("evaluate EnactPolicy: rejected path is non-mutating") {
     // The country and root-level state stay byte-identical.
     CHECK(after.countries[0].government_authority.bureaucratic_compliance ==
           before.countries[0].government_authority.bureaucratic_compliance);
+    CHECK(after.logs.size()             == before.logs.size());
+    CHECK(after.applied_commands.size() == before.applied_commands.size());
+}
+
+// ---------------------------------------------------------------------
+// M2.19 - AdjustBudget category-aware gate
+// ---------------------------------------------------------------------
+
+namespace {
+
+GameState state_with_authority(double bureaucratic, double military) {
+    GameState s;
+    CountryState c = seeded_country();
+    c.government_authority.bureaucratic_compliance = bureaucratic;
+    c.government_authority.military_loyalty        = military;
+    s.countries.push_back(c);
+    s.player_country = CountryId{0};
+    return s;
+}
+
+PlayerCommand adjust_with_category(const std::string& category) {
+    PlayerCommand cmd;
+    cmd.kind            = PlayerCommandKind::AdjustBudget;
+    cmd.budget_category = category;
+    cmd.budget_delta    = 0.02;
+    return cmd;
+}
+
+}  // namespace
+
+TEST_CASE("evaluate AdjustBudget(military): loyalty at threshold (0.3) accepts") {
+    auto s = state_with_authority(/*bureau=*/0.5, /*military=*/0.3);
+    const auto r = oe::evaluate(s, adjust_with_category("military"));
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Accepted);
+    CHECK(r.value().resistance == doctest::Approx(0.7));
+}
+
+TEST_CASE("evaluate AdjustBudget(military): loyalty just below threshold (0.299) rejects") {
+    auto s = state_with_authority(/*bureau=*/0.5, /*military=*/0.299);
+    const auto r = oe::evaluate(s, adjust_with_category("military"));
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+    CHECK(r.value().resistance == doctest::Approx(1.0 - 0.299));
+}
+
+TEST_CASE("evaluate AdjustBudget(military): ignores high bureaucratic_compliance when military_loyalty is low") {
+    // Even with perfect bureaucratic compliance, military category
+    // depends solely on military_loyalty.
+    auto s = state_with_authority(/*bureau=*/1.0, /*military=*/0.1);
+    const auto r = oe::evaluate(s, adjust_with_category("military"));
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+    CHECK(r.value().resistance == doctest::Approx(1.0 - 0.1));
+}
+
+TEST_CASE("evaluate AdjustBudget(non-military): uses bureaucratic_compliance regardless of military_loyalty") {
+    // High military_loyalty must not rescue a non-military
+    // category whose bureaucratic compliance is below threshold.
+    auto s = state_with_authority(/*bureau=*/0.2, /*military=*/0.9);
+    for (const char* category : {"administration", "education", "welfare",
+                                  "intelligence", "infrastructure", "industry"}) {
+        const auto r = oe::evaluate(s, adjust_with_category(category));
+        REQUIRE(r.ok());
+        CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+        CHECK(r.value().resistance == doctest::Approx(1.0 - 0.2));
+    }
+}
+
+TEST_CASE("evaluate AdjustBudget(non-military): high bureaucratic_compliance accepts even with low military_loyalty") {
+    auto s = state_with_authority(/*bureau=*/0.9, /*military=*/0.01);
+    const auto r = oe::evaluate(s, adjust_with_category("welfare"));
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Accepted);
+    CHECK(r.value().resistance == doctest::Approx(1.0 - 0.9));
+}
+
+TEST_CASE("evaluate AdjustBudget: default 0.5 authority across the board still accepts") {
+    // Canonical scenario / fixture defaults: every authority
+    // field 0.5. Both the "military" and a non-military category
+    // must Accept so existing apply_pending tests continue to
+    // succeed.
+    GameState s;
+    s.countries.push_back(CountryState{});  // every authority field 0.5 by default.
+    s.player_country = CountryId{0};
+    const auto m = oe::evaluate(s, adjust_with_category("military"));
+    const auto a = oe::evaluate(s, adjust_with_category("administration"));
+    REQUIRE(m.ok());
+    REQUIRE(a.ok());
+    CHECK(m.value().status == oe::ExecutionStatus::Accepted);
+    CHECK(a.value().status == oe::ExecutionStatus::Accepted);
+}
+
+TEST_CASE("evaluate AdjustBudget: rejected path is non-mutating") {
+    auto before = state_with_authority(/*bureau=*/0.1, /*military=*/0.1);
+    auto after  = before;
+    const auto r = oe::evaluate(after, adjust_with_category("military"));
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+    CHECK(after.countries[0].government_authority.military_loyalty ==
+          before.countries[0].government_authority.military_loyalty);
     CHECK(after.logs.size()             == before.logs.size());
     CHECK(after.applied_commands.size() == before.applied_commands.size());
 }

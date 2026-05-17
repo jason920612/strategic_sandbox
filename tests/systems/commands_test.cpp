@@ -958,10 +958,16 @@ TEST_CASE("M2.18 apply_pending: rejected EnactPolicy stops a mid-list queue") {
     CHECK(q.pending[1].policy_id_code  == "increase_education");
 }
 
-TEST_CASE("M2.18 apply_pending: AdjustBudget unaffected by low compliance") {
-    // AdjustBudget is explicitly excluded from the M2.18 gate.
+TEST_CASE("M2.19 apply_pending: AdjustBudget(military) low bureaucratic_compliance still applies if military_loyalty is high") {
+    // Pre-M2.19 the same test pinned AdjustBudget "bypassed" the
+    // gate. M2.19 routes the "military" category through
+    // military_loyalty; with the default 0.5 from
+    // germany_baseline() that path still Accepts even when
+    // bureaucratic_compliance is lowered.
     GameState s = ger_state_with_player_selected();
     s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    REQUIRE(s.countries[0].government_authority.military_loyalty ==
+            doctest::Approx(0.5));
     const double mil_before = s.countries[0].budget.military;
 
     cmd::CommandQueue q;
@@ -976,4 +982,120 @@ TEST_CASE("M2.18 apply_pending: AdjustBudget unaffected by low compliance") {
     CHECK(s.countries[0].budget.military ==
           doctest::Approx(mil_before + 0.03));
     REQUIRE(s.applied_commands.size() == 1u);
+}
+
+// =====================================================================
+// M2.19 - apply_pending honours the category-aware AdjustBudget gate
+// =====================================================================
+
+TEST_CASE("M2.19 apply_pending: AdjustBudget(military) rejected when military_loyalty < 0.3") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.military_loyalty = 0.1;
+    const double mil_before = s.countries[0].budget.military;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.05;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("order_execution") != std::string::npos);
+    CHECK(r.error().find("rejected")        != std::string::npos);
+    CHECK(r.error().find("AdjustBudget")    != std::string::npos);
+    CHECK(r.error().find("military")        != std::string::npos);
+
+    // No mutation, queue head intact, no applied_commands entry.
+    CHECK(s.countries[0].budget.military == doctest::Approx(mil_before));
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(q.pending[0].budget_category == "military");
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.19 apply_pending: AdjustBudget(welfare) rejected when bureaucratic_compliance < 0.3 even if military_loyalty high") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+    s.countries[0].government_authority.military_loyalty        = 0.95;
+    const double wel_before = s.countries[0].budget.welfare;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "welfare";
+    adjust.budget_delta    = 0.04;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("order_execution") != std::string::npos);
+    CHECK(r.error().find("welfare")         != std::string::npos);
+
+    CHECK(s.countries[0].budget.welfare == doctest::Approx(wel_before));
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.19 apply_pending: AdjustBudget(military) accepted by high military_loyalty even when bureaucratic_compliance is low") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    s.countries[0].government_authority.military_loyalty        = 0.8;
+    const double mil_before = s.countries[0].budget.military;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.02;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.ok());
+    CHECK(s.countries[0].budget.military ==
+          doctest::Approx(mil_before + 0.02));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::AdjustBudget);
+}
+
+TEST_CASE("M2.19 apply_pending: rejected AdjustBudget stops a mid-list queue") {
+    // Mirrors the M2.18 mid-list test: prior command applies +
+    // logs, rejected command stays at head, trailing command
+    // stays queued.
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    s.countries[0].government_authority.military_loyalty        = 0.9;
+
+    cmd::CommandQueue q;
+    // 1. AdjustBudget(military) — military_loyalty 0.9 ⇒ accepted.
+    PlayerCommand mil_adjust;
+    mil_adjust.kind            = PlayerCommandKind::AdjustBudget;
+    mil_adjust.budget_category = "military";
+    mil_adjust.budget_delta    = 0.03;
+    q.pending.push_back(mil_adjust);
+    // 2. AdjustBudget(welfare) — bureaucratic 0.05 ⇒ rejected.
+    PlayerCommand wel_adjust;
+    wel_adjust.kind            = PlayerCommandKind::AdjustBudget;
+    wel_adjust.budget_category = "welfare";
+    wel_adjust.budget_delta    = 0.04;
+    q.pending.push_back(wel_adjust);
+    // 3. EnactPolicy — would have been rejected too (compliance
+    // < 0.3) but the queue stops at the first rejection.
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("welfare") != std::string::npos);
+
+    // Military adjustment landed and logged.
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.budget_category == "military");
+
+    // Welfare rejection sits at the head; EnactPolicy still queued.
+    REQUIRE(q.pending.size() == 2u);
+    CHECK(q.pending[0].budget_category == "welfare");
+    CHECK(q.pending[1].kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(q.pending[1].policy_id_code  == "raise_taxes");
 }

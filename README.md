@@ -8,37 +8,38 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.18 — EnactPolicy execution
-  gate.** First M2 sub-milestone where a player command can be
-  **rejected**. `order_execution` grows two pieces: a new constant
-  `kEnactPolicyComplianceThreshold = 0.3` and a `Rejected` variant
-  on `ExecutionStatus`. `OrderExecutionOutcome` adds a
-  `resistance` field (`1.0 - bureaucratic_compliance` for
-  `EnactPolicy`; `0.0` for every other kind since no gate is
-  evaluated for them yet). `evaluate()` now branches on
-  `command.kind`: `EnactPolicy` compares the actor's
-  `bureaucratic_compliance` against the threshold and returns
-  `Accepted` when `>= 0.3`, `Rejected` otherwise; `AdjustBudget`
-  stays unconditionally `Accepted`. `commands::apply_pending` is
-  wired: before the M2.3 policy lookup for an `EnactPolicy`
-  command, it calls `evaluate` and short-circuits on `Rejected`
-  with a `Result::failure` whose error names `order_execution`,
-  `rejected`, and the policy id_code. The rejected command stays
-  at the head of the queue and is **not** appended to
-  `state.applied_commands` — mirrors M2.3 / M2.4 mid-list-failure
-  atomicity. Threshold 0.3 is chosen so canonical default-0.5
-  scenarios accept unchanged (no test regression). No save format
-  change (still v10); no `state.logs` entry on rejection; no
-  `AdjustBudget` gate; no `Delayed` / `Distorted` variants; no
-  scheduler; no RNG; no AI / events / UI.
-- Previously shipped: **M2.17 — OrderExecutionSystem skeleton**.
-  **M2.16 — GovernmentAuthorityState** (save schema bumped v9 →
-  v10). **M2.14 — Replay target-date CLI**.
-- Next sub-milestone candidate: **M2.19 — AdjustBudget execution
-  gate.** Apply the same shape to `AdjustBudget`. Likely picks
-  `bureaucratic_compliance` plus possibly `corruption` (already
-  on `CountryState`) as the formula inputs and ships a separate
-  `kAdjustBudgetComplianceThreshold`. Save-neutral.
+- Latest shipped sub-milestone: **M2.19 — AdjustBudget execution
+  gate.** Extends M2.18's command-rejection shape to
+  `AdjustBudget` with a single category-aware twist: the
+  `"military"` budget category gates on `military_loyalty`, every
+  other category still gates on `bureaucratic_compliance`. New
+  constant `kAdjustBudgetComplianceThreshold = 0.3` (same value
+  as `EnactPolicy` to keep canonical default-0.5 scenarios
+  Accepted). The `AdjustBudget` arm in `evaluate()` selects the
+  authority input by `command.budget_category`, computes
+  `resistance = 1.0 - selected`, and returns `Accepted` when
+  `selected >= 0.3` else `Rejected`. `commands::apply_pending`
+  gains a pre-flight gate block structurally identical to the
+  M2.18 `EnactPolicy` one; rejected `AdjustBudget` commands
+  short-circuit before the existing finite-delta + category-
+  whitelist checks with an error naming `order_execution`,
+  `rejected`, `AdjustBudget`, the offending `budget_category`,
+  the selected compliance value, and the threshold. Per-command
+  atomicity preserved: rejected command stays at queue head, no
+  state mutation, no `applied_commands` append. **No save format
+  change** (still v10); no `Delayed` / `Distorted` outcomes; no
+  per-category routing beyond the `military` branch; no weighted
+  multi-input formula; no scheduler; no RNG; no `state.logs`
+  entry on rejection.
+- Previously shipped: **M2.18 — EnactPolicy execution gate**.
+  **M2.17 — OrderExecutionSystem skeleton**. **M2.16 —
+  GovernmentAuthorityState** (save schema bumped v9 → v10).
+- Next sub-milestone candidate: **M2.20 — Surface rejected
+  commands in the run summary / RunOutcome.** First step toward
+  letting a CI driver see "how many commands were rejected"
+  without parsing stderr. Save-neutral; likely adds a
+  `commands_rejected` counter on `ApplyOutcome` and / or a list
+  on `RunOutcome` for replay-end forensics.
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -64,7 +65,8 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
-M2.16 + M2.17 + M2.18 merged. Thirty-four sub-milestones shipped:
+M2.16 + M2.17 + M2.18 + M2.19 merged. Thirty-five sub-milestones
+shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -211,6 +213,25 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.19 AdjustBudget execution gate — extends M2.18's
+command-rejection shape to `AdjustBudget` with a category-aware
+single-input gate. New constant
+`kAdjustBudgetComplianceThreshold = 0.3` (matches `EnactPolicy`).
+The `AdjustBudget` arm in `evaluate()` selects an authority input
+by `command.budget_category`: `"military"` ⇒ `military_loyalty`,
+every other category ⇒ `bureaucratic_compliance`. Then
+`resistance = 1.0 - selected` and `status = (selected >= 0.3) ?
+Accepted : Rejected`. `commands::apply_pending` gains a
+pre-flight gate block structurally identical to M2.18's; rejected
+`AdjustBudget` commands short-circuit with an error naming
+`order_execution`, `rejected`, `AdjustBudget`, the offending
+`budget_category`, selected compliance, and threshold. M2.3 / M2.4
+mid-list-failure atomicity preserved. **No save format change**
+(still v10); no `Delayed` / `Distorted` outcomes; no per-category
+routing beyond the `military` branch; no weighted formula; no
+scheduler; no RNG; no `state.logs` entry; no `RunOutcome`
+rejection counter (M2.20 candidate); no DataLoader / policy /
+replay primitive / runner / M1 system change;
 **M2.18 EnactPolicy execution gate — first M2 sub-milestone where
 a player command can be **rejected**. `order_execution` grows the
 constant `kEnactPolicyComplianceThreshold = 0.3`, a `Rejected`
@@ -529,7 +550,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.18 there are **595 doctest cases**. M0 contributed 179;
+As of M2.19 there are **606 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -538,7 +559,28 @@ end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
-M2.17 added 10; M2.18 adds 10 covering the new EnactPolicy gate:
+M2.17 added 10; M2.18 added 10; M2.19 adds 11 covering the new
+category-aware AdjustBudget gate: 7 in `order_execution_test.cpp`
+(military category at threshold 0.3 accepts with resistance 0.7;
+0.299 rejects; military category ignores high bureaucratic
+compliance when military_loyalty is low; non-military categories
+— iterates over administration/education/welfare/intelligence/
+infrastructure/industry — reject when bureaucratic_compliance <
+0.3 regardless of military_loyalty; non-military accepts at high
+bureaucratic_compliance with low military_loyalty; default 0.5
+authority accepts both military and non-military categories;
+rejected path is non-mutating) and 4 in `commands_test.cpp`
+(AdjustBudget(military) rejected when military_loyalty < 0.3 with
+full error contents; AdjustBudget(welfare) rejected when
+bureaucratic_compliance < 0.3 even with high military_loyalty;
+AdjustBudget(military) still accepted at military_loyalty 0.8
+when bureaucratic_compliance 0.05; mid-list rejection with prior
+AdjustBudget(military) applied and trailing EnactPolicy still
+queued). Drive-by: M2.18's "EnactPolicy and AdjustBudget identical
+inputs" assertion updated (adjust.resistance now reflects
+military_loyalty, not 0.0); M2.18's "AdjustBudget bypasses" /
+"unaffected" tests refreshed to reflect the M2.19 routing.
+Previously M2.18 added 10 covering the new EnactPolicy gate:
 6 in `order_execution_test.cpp` (compliance at threshold 0.3
 accepts with resistance 0.7; compliance 0.299 rejects;
 `resistance == 1.0 - compliance` across spot-check inputs;
