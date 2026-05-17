@@ -17,6 +17,7 @@
 #include "leviathan/systems/commands.hpp"
 #include "leviathan/systems/data_loader.hpp"
 #include "leviathan/systems/runner.hpp"
+#include "leviathan/systems/svg_export.hpp"
 #include "leviathan/systems/save_system.hpp"
 #include "leviathan/systems/scenario_loader.hpp"
 
@@ -2920,6 +2921,41 @@ TEST_CASE("run: canonical scenario renders all three M4.1 nodes into provinces.s
     CHECK(svg.find("data-owner=\"0\"") != std::string::npos);
     CHECK(svg.find("data-owner=\"1\"") != std::string::npos);
     CHECK(svg.find("data-owner=\"2\"") != std::string::npos);
+}
+
+TEST_CASE("run: canonical scenario uses M4.3 per-owner palette in provinces.svg") {
+    // M4.3 replaces M4.2's fixed black fill with a deterministic
+    // owner-keyed palette lookup. Canonical owners 0 / 1 / 2 map
+    // to palette entries 0 / 1 / 2 respectively; pin all three
+    // colours via the public `kOwnerPalette` constant so a future
+    // edit to the palette table fails this gate loudly.
+    TempDir td("leviathan_runner_m43_canonical_palette");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string svg = read_file(td.path / "provinces.svg");
+
+    namespace svgx = leviathan::systems::svg_export;
+    const std::string ger_fill =
+        std::string("fill=\"") +
+        std::string(svgx::kOwnerPalette[0]) + "\"";
+    const std::string fra_fill =
+        std::string("fill=\"") +
+        std::string(svgx::kOwnerPalette[1]) + "\"";
+    const std::string jpn_fill =
+        std::string("fill=\"") +
+        std::string(svgx::kOwnerPalette[2]) + "\"";
+
+    CHECK(svg.find(ger_fill) != std::string::npos);
+    CHECK(svg.find(fra_fill) != std::string::npos);
+    CHECK(svg.find(jpn_fill) != std::string::npos);
+    // The M4.2 black fill is gone.
+    CHECK(svg.find("fill=\"black\"") == std::string::npos);
 }
 
 TEST_CASE("run: provinces.svg preserves byte-identical determinism on same seed") {

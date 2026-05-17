@@ -14,7 +14,41 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.2 — SVG exporter
+- Latest shipped sub-milestone: **M4.3 — SVG owner-color
+  skeleton.** Replaces M4.2's hardcoded `fill="black"` with
+  a deterministic per-owner palette lookup. New public
+  symbols on `leviathan::systems::svg_export`:
+  `kOwnerPalette` (10-entry `constexpr std::array<string_view,
+  10>` of hex-RGB strings), `kOwnerPaletteSize`,
+  `kOwnerFallbackFill` (`#888888`), and
+  `color_for_owner(CountryId) → string_view`. The palette is
+  indexed by `owner.value() % kOwnerPaletteSize` (modulo
+  wraps; future-growth-by-appending preserves existing
+  owner→colour mappings); negative owner returns the
+  defensive fallback so the renderer is total under
+  hand-built states even though the save / scenario layer
+  rejects invalid owners. Canonical owners GER / FRA / JPN
+  map to entries 0 / 1 / 2 (steel blue / indian red /
+  goldenrod). Every other SVG attribute — viewBox, circle
+  radius, `data-id` (still XML-escaped per M4.2 review fix),
+  `data-owner`, insertion order, fixed-precision coords,
+  LF terminators, header-only-on-empty — is byte-identical
+  with M4.2. Artefact set unchanged (still 9; `provinces.svg`
+  remains the only SVG). Save format unchanged (still v12).
+  M1.17 / M2.22 / M3.7 byte-identical determinism contracts
+  still pass by construction (same state → same colours →
+  same bytes). 7 new doctest cases (6 svg_export + 1 runner;
+  784 total). **M4 in progress.** **No HTML viewer, no
+  clickable UI, no event handlers, no hover state / tooltips,
+  no labels / text elements, no legend / colour key, no
+  per-province colour override, no ownership dynamics, no
+  neighbour / adjacency edges, no terrain / resources /
+  population overlays, no events, no AI, no command
+  integration, no new `PlayerCommandKind`, no runner CLI
+  flag, no new artefact (still 9), no save schema bump
+  (still v12), no new state field, no new gameplay, no
+  atomic `end_tick` writes.**
+- Previously shipped: **M4.2 — SVG exporter
   skeleton.** First renderer that turns the M4.1
   `ProvinceNode` data layer into pixels. New
   `leviathan::systems::svg_export` module with two free
@@ -380,21 +414,22 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.2): **M4.3** — open.
-  M4.1 shipped the `ProvinceNode` data layer and M4.2
-  shipped the first SVG renderer; natural next steps include
-  (a) an HTML viewer wrapped around the SVG, (b) a clickable
-  map / country-panel surface, (c) per-country fill colours
-  driven by `owner` or another attribute, (d) richer node
-  fields (neighbour adjacency, terrain, name labels) once a
-  renderer needs them. None committed; reviewer chooses.
+- Next sub-milestone candidate (post-M4.3): **M4.4** — open.
+  M4.1 shipped the `ProvinceNode` data layer, M4.2 shipped
+  the first SVG renderer, M4.3 added the owner-keyed palette;
+  natural next steps include (a) an HTML viewer wrapped
+  around the SVG, (b) a clickable map / country-panel
+  surface, (c) labels / a legend mapping owner indices to
+  country id_codes, (d) richer node fields (neighbour
+  adjacency, terrain, population) once a renderer needs them.
+  None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
-  shipped. **M4 in progress** with M4.1 + M4.2 shipped. See
-  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
-  `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
-  for the exit reports, and `rfc/RFC-090-roadmap.md` for the
-  full milestone map.
+  shipped. **M4 in progress** with M4.1 + M4.2 + M4.3
+  shipped. See `docs/milestone-0-result.md`,
+  `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
+  and `docs/milestone-3-result.md` for the exit reports, and
+  `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -420,7 +455,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 shipped. Forty-nine sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 shipped. Fifty sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -567,6 +602,37 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.3 SVG owner-color skeleton — replaces M4.2's hardcoded
+`fill="black"` with a deterministic per-owner palette
+lookup. New public symbols on
+`leviathan::systems::svg_export`: `kOwnerPalette` (10-entry
+`constexpr std::array<string_view, 10>` of hex-RGB strings),
+`kOwnerPaletteSize`, `kOwnerFallbackFill` (`#888888`), and
+`color_for_owner(CountryId) → string_view`. Palette indexed
+by `owner.value() % kOwnerPaletteSize` (modulo wraps; future
+growth-by-appending preserves existing owner→colour mappings);
+negative owner returns the defensive fallback so the renderer
+is total under hand-built states even though the save /
+scenario layer rejects invalid owners. Canonical owners GER /
+FRA / JPN map to entries 0 / 1 / 2 (steel blue / indian red /
+goldenrod). Every other SVG attribute — viewBox, circle
+radius, `data-id` (still XML-escaped per M4.2 review fix),
+`data-owner`, insertion order, fixed-precision coords, LF
+terminators, header-only-on-empty — is byte-identical with
+M4.2. Artefact set unchanged (still 9). Save format unchanged
+(still v12). M1.17 / M2.22 / M3.7 byte-identical determinism
+contracts still pass by construction (same state → same
+colours → same bytes). 7 new doctest cases (6 svg_export +
+1 runner; 784 total). **M4 in progress.** **No HTML viewer,
+no clickable UI, no event handlers, no hover state /
+tooltips, no labels / text elements, no legend / colour
+key, no per-province colour override, no ownership dynamics,
+no neighbour / adjacency edges, no terrain / resources /
+population overlays, no events, no AI, no command
+integration, no new `PlayerCommandKind`, no runner CLI flag,
+no new artefact (still 9), no save schema bump (still v12),
+no new state field, no new gameplay, no atomic `end_tick`
+writes.**;
 **M4.2 SVG exporter skeleton — first renderer that turns the
 M4.1 `ProvinceNode` data layer into pixels. New
 `leviathan::systems::svg_export` module with two free
