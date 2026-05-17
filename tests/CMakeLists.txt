@@ -55,6 +55,7 @@ add_executable(leviathan_tests
     integration/m1_end_to_end_test.cpp
     integration/m2_end_to_end_test.cpp
     integration/m3_end_to_end_test.cpp
+    integration/m4_dom_contract_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE
