@@ -451,3 +451,189 @@ TEST_CASE("M2.5 apply_pending: mixed-kind queue applies both in insertion order"
     CHECK(s.applied_commands[1].command.kind ==
           PlayerCommandKind::AdjustBudget);
 }
+
+// =====================================================================
+// M2.6: replay applied-command log
+// =====================================================================
+
+TEST_CASE("M2.6 replay: empty log is a no-op success") {
+    GameState s = ger_state_with_player_selected();
+    REQUIRE(s.applied_commands.empty());
+
+    const std::vector<leviathan::core::AppliedPlayerCommand> log;
+    const auto r = cmd::replay(s, log);
+    REQUIRE(r.ok());
+    CHECK(r.value().commands_replayed == 0);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.6 replay: single EnactPolicy entry replays and re-logs") {
+    GameState s = ger_state_with_player_selected();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand entry;
+    entry.applied_on            = GameDate(1930, 2, 15);
+    entry.command.kind          = PlayerCommandKind::EnactPolicy;
+    entry.command.policy_id_code = "raise_taxes";
+    log.push_back(entry);
+
+    REQUIRE(cmd::replay(s, log).ok());
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].applied_on            == GameDate(1930, 2, 15));
+    CHECK(s.applied_commands[0].command.kind          ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+}
+
+TEST_CASE("M2.6 replay: single AdjustBudget entry replays and re-logs") {
+    GameState s = ger_state_with_player_selected();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand entry;
+    entry.applied_on              = GameDate(1930, 3, 1);
+    entry.command.kind            = PlayerCommandKind::AdjustBudget;
+    entry.command.budget_category = "military";
+    entry.command.budget_delta    = 0.05;
+    log.push_back(entry);
+
+    REQUIRE(cmd::replay(s, log).ok());
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.40));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].applied_on              == GameDate(1930, 3, 1));
+    CHECK(s.applied_commands[0].command.budget_category == "military");
+    CHECK(s.applied_commands[0].command.budget_delta    == doctest::Approx(0.05));
+}
+
+TEST_CASE("M2.6 replay: mixed-kind log replays in insertion order") {
+    GameState s = ger_state_with_player_selected();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand e1;
+    e1.applied_on            = GameDate(1930, 1, 10);
+    e1.command.kind          = PlayerCommandKind::EnactPolicy;
+    e1.command.policy_id_code = "raise_taxes";
+    log.push_back(e1);
+    leviathan::core::AppliedPlayerCommand e2;
+    e2.applied_on              = GameDate(1930, 2, 1);
+    e2.command.kind            = PlayerCommandKind::AdjustBudget;
+    e2.command.budget_category = "welfare";
+    e2.command.budget_delta    = 0.02;
+    log.push_back(e2);
+
+    REQUIRE(cmd::replay(s, log).ok());
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.12));
+    REQUIRE(s.applied_commands.size() == 2u);
+    CHECK(s.applied_commands[0].command.kind == PlayerCommandKind::EnactPolicy);
+    CHECK(s.applied_commands[1].command.kind == PlayerCommandKind::AdjustBudget);
+}
+
+TEST_CASE("M2.6 replay: replayed log mirrors source log byte-equivalent") {
+    // The core replay guarantee: same input log -> same output log.
+    // Build a source log by submitting through apply_pending, then
+    // replay it into a fresh state and compare entry-by-entry.
+    GameState source = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    source.current_date = GameDate(1930, 1, 5);
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+    REQUIRE(cmd::apply_pending(source, q).ok());
+    source.current_date = GameDate(1930, 4, 12);
+    q.pending.push_back(make_adjust_budget("infrastructure", 0.04));
+    REQUIRE(cmd::apply_pending(source, q).ok());
+
+    REQUIRE(source.applied_commands.size() == 2u);
+
+    GameState target = ger_state_with_player_selected();   // fresh
+    REQUIRE(cmd::replay(target, source.applied_commands).ok());
+    REQUIRE(target.applied_commands.size() == source.applied_commands.size());
+    for (std::size_t i = 0; i < source.applied_commands.size(); ++i) {
+        const auto& src = source.applied_commands[i];
+        const auto& tgt = target.applied_commands[i];
+        CHECK(tgt.applied_on   == src.applied_on);
+        CHECK(tgt.command.kind == src.command.kind);
+        CHECK(tgt.command.policy_id_code  == src.command.policy_id_code);
+        CHECK(tgt.command.budget_category == src.command.budget_category);
+        CHECK(tgt.command.budget_delta    == doctest::Approx(src.command.budget_delta));
+    }
+    // State effects also match (the commands mutated the same fields).
+    CHECK(target.countries[0].legal_tax_burden       ==
+          doctest::Approx(source.countries[0].legal_tax_burden));
+    CHECK(target.countries[0].budget.infrastructure  ==
+          doctest::Approx(source.countries[0].budget.infrastructure));
+}
+
+TEST_CASE("M2.6 replay: target.current_date is forced to the last entry's applied_on") {
+    // Prototype limit pinned: after replay, target.current_date is the
+    // LAST entry's applied_on, not whatever the source state's final
+    // current_date was. This is documented in the header.
+    GameState s = ger_state_with_player_selected();
+    s.current_date = GameDate(1930, 1, 1);
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand e1;
+    e1.applied_on = GameDate(1930, 6, 15);
+    e1.command.kind          = PlayerCommandKind::EnactPolicy;
+    e1.command.policy_id_code = "raise_taxes";
+    log.push_back(e1);
+
+    REQUIRE(cmd::replay(s, log).ok());
+    CHECK(s.current_date == GameDate(1930, 6, 15));
+}
+
+TEST_CASE("M2.6 replay: unknown policy_id_code stops with the entry index in the error") {
+    GameState s = ger_state_with_player_selected();
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand e1;
+    e1.applied_on = GameDate(1930, 2, 1);
+    e1.command.kind          = PlayerCommandKind::EnactPolicy;
+    e1.command.policy_id_code = "raise_taxes";
+    log.push_back(e1);
+    leviathan::core::AppliedPlayerCommand e2;
+    e2.applied_on = GameDate(1930, 3, 1);
+    e2.command.kind          = PlayerCommandKind::EnactPolicy;
+    e2.command.policy_id_code = "not_a_real_policy";
+    log.push_back(e2);
+
+    const auto r = cmd::replay(s, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("replay[1]")           != std::string::npos);
+    CHECK(r.error().find("not_a_real_policy")   != std::string::npos);
+    // First entry applied + logged; second left out.
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+}
+
+TEST_CASE("M2.6 replay: no player_country selected -> rejected before any replay") {
+    GameState s;
+    s.current_date = GameDate(1930, 1, 1);
+    s.countries.push_back(germany_baseline());
+    s.policies.push_back(raise_taxes_policy());
+    // player_country deliberately left at invalid().
+
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    leviathan::core::AppliedPlayerCommand e;
+    e.applied_on            = GameDate(1930, 1, 1);
+    e.command.kind          = PlayerCommandKind::EnactPolicy;
+    e.command.policy_id_code = "raise_taxes";
+    log.push_back(e);
+
+    const auto r = cmd::replay(s, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("player_country") != std::string::npos);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.6 replay: non-empty applied_commands rejects the precondition") {
+    GameState s = ger_state_with_player_selected();
+    leviathan::core::AppliedPlayerCommand prior;
+    prior.applied_on = GameDate(1930, 1, 1);
+    prior.command.kind          = PlayerCommandKind::EnactPolicy;
+    prior.command.policy_id_code = "raise_taxes";
+    s.applied_commands.push_back(prior);   // simulate "already-replayed"
+
+    std::vector<leviathan::core::AppliedPlayerCommand> log;
+    log.push_back(prior);
+
+    const auto r = cmd::replay(s, log);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("applied_commands must be") != std::string::npos);
+    // The pre-existing entry stays untouched.
+    REQUIRE(s.applied_commands.size() == 1u);
+}

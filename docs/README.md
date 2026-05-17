@@ -50,6 +50,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-3-command-queue.md`](m2-3-command-queue.md) | M2.3 | **Player command queue.** New `core::PlayerCommand{kind, policy_id_code}` data type (`PlayerCommandKind::EnactPolicy` is the only kind in M2.3). New `systems::commands::{CommandQueue, ApplyOutcome, apply_pending}` module. The queue is owned by an outer driver (not part of `GameState`, not part of `runner::TickController`). `apply_pending` requires `state.player_country` to index into `state.countries`, drains in insertion order, dispatches each `EnactPolicy` through `policy::apply_policy_effects` (reusing M1.5 atomicity, M1.15 active_policies tracking, M1.15 duration cap). Non-atomic across the list: first failure stops with the failed command at the head of the queue; previously-applied commands stay applied. **No save-format bump (still v8), no new CLI flag, no new logs, no auto-drain inside `step_one_day`, no other command kinds, no command log, no queue persistence, no M1 system change.** |
 | [`m2-4-command-log.md`](m2-4-command-log.md) | M2.4 | **Player command log.** New `core::AppliedPlayerCommand{applied_on, command}` type and new `GameState::applied_commands` vector. `systems::commands::apply_pending` appends one log entry per successful per-command dispatch (after the M1.5 / M1.15 state mutation lands), so per-command atomicity covers the log; failed commands stay in the queue and do NOT log. `applied_on` captures `state.current_date` at apply time. **Save format bumped v8 → v9** with `"applied_commands"` as a required root-level array of `{applied_on, command: {kind, policy_id_code}}` objects; v8 saves rejected loudly; missing array / malformed `applied_on` / unknown `kind` / missing `policy_id_code` / missing `command` sub-object all rejected with `applied_commands[N]` in the error. Foundation for future deterministic replay (RFC-050 §8). **No replay implementation yet, no log compaction, no log entries for failed commands, no new `PlayerCommandKind` variants, no new CLI flag, no new lifecycle log line, no auto-drain inside `step_one_day`, no M1 system change.** |
 | [`m2-5-adjust-budget.md`](m2-5-adjust-budget.md) | M2.5 | **AdjustBudget player command.** Adds `PlayerCommandKind::AdjustBudget` + two new payload fields on `PlayerCommand` (`budget_category`, `budget_delta`). `commands::apply_pending` gains a new switch arm: validates the 7-category whitelist + that `budget_delta` is finite, applies `budget.<category> += delta` and clamps to `[0, 1]` (same M1.5 ratio-clamp policy). Per-command atomicity + M2.4 log-on-success shared unchanged — failed `AdjustBudget` does not log; successful one logs with `budget_category` + `budget_delta` in the entry. `save_system` kind ↔ string mapping grows; per-kind JSON shape emits only the relevant payload (`EnactPolicy` keeps `policy_id_code`; `AdjustBudget` emits `budget_category` + `budget_delta`). **No save format bump (still v9)** — array shape unchanged, only the kind-string set grew; existing strict-required-fields-per-kind validator already gates old binaries. Drive-by: PR #32 reviewer nit — `player_command_kind_to_string` fallback now returns the `"UnknownPlayerCommandKind"` sentinel instead of a real kind string, so unhandled-enum bugs surface loudly. **No replay, no UI, no AI, no other command kinds, no new CLI flag, no automatic sum-to-1 budget enforcement, no M1 system change.** |
+| [`m2-6-replay-prototype.md`](m2-6-replay-prototype.md) | M2.6 | **Replay applied command log prototype.** New `systems::commands::replay(state, log)` free function + `ReplayOutcome` struct. For each entry: forces `state.current_date = entry.applied_on`, builds a 1-element `CommandQueue`, calls `apply_pending`. The 1-elem-per-entry approach inherits every M2.3 dispatch + M2.4 log-append + M1.5/M1.15 effect machinery guarantee without duplicating logic. **Preconditions**: `state.player_country` valid + `state.applied_commands` empty (replay would otherwise mix new entries with prior ones; callers replay onto a freshly-loaded scenario, not a reloaded save). **Atomicity across the log** mirrors M2.3 mid-list-failure: failed entry reported with `replay[N]: ...` in the error; prior entries stay applied + logged; later entries skipped. **Prototype limits pinned by tests**: no time-system advancement between commands; `current_date` ends at the last entry's `applied_on` (not the source's actual final date); scenario must be pre-loaded by caller. **No save-format bump (still v9), no new CLI flag, no new log line, no divergence detection, no M1 system change.** Foundation for a future full-replay sub-milestone that integrates with the M2.2 `step_one_day` primitive. |
 
 ## Reading order
 
@@ -62,32 +63,33 @@ If you're new to the codebase:
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
    → M1.11 → M1.12 → M1.13 → M1.14 → M1.15 → M1.16 →
-   `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5).
-   They build on each other and each one tries to call out the
-   rules a future contributor must not silently break.
+   `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 →
+   M2.6). They build on each other and each one tries to call out
+   the rules a future contributor must not silently break.
 
 ## What's next
 
 **M2 has begun.** M2.1 (player country selection), M2.2 (pause /
 resume / step primitives), M2.3 (player command queue), M2.4
-(player command log), and M2.5 (AdjustBudget command) shipped.
-Suggested next M2 sub-milestones:
+(player command log), M2.5 (AdjustBudget command), and M2.6
+(replay prototype) shipped. Suggested next M2 sub-milestones:
 
-- **M2.6 — Deterministic replay.** First consumer of the M2.4
-  log: re-issue every entry of a save's `applied_commands` against
-  a fresh-loaded scenario and verify final state convergence.
-  Save-format-neutral.
 - **M2.7 — More command kinds.** Continue growing
   `PlayerCommandKind` (`ChangeTaxBurden`, `ToggleMartialLaw`, ...).
   Each new kind adds its own dispatch arm and per-kind JSON shape,
-  same pattern M2.5 set.
+  same pattern M2.5 set. Save-format-neutral additive enum.
+- **M2.8 — Replay with full time-system advancement.** Lifts the
+  M2.6 prototype's `current_date`-stuck-at-last-entry limit by
+  integrating replay with the M2.2 `step_one_day` primitive so the
+  monthly pipeline ticks naturally between commands. Save-format-
+  neutral.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
 land later as targeted follow-ups when the player loop needs them.
 
 Per the M-pacing rule, the next sub-milestone is **not** started
-until M2.5 is merged.
+until M2.6 is merged.
 
 ## When to add a new file
 

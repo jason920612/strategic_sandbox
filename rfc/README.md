@@ -315,6 +315,28 @@ M0 / M1 中落地，部分仍是未來工作：
   `player_command_kind_to_string` 的 fallback 從返回 `"EnactPolicy"`
   改成 `"UnknownPlayerCommandKind"` sentinel，避免未來新增 kind
   卻忘了更新 mapping 時靜默 corrupt save。
+  **M2.6（Replay applied command log prototype）** 為
+  `systems::commands` 新增 `replay(state, log)` free function 與
+  `ReplayOutcome` struct，作為 M2.4 log 的第一個消費者。對每個
+  log entry：強制設定 `target_state.current_date = entry.applied_on`、
+  建立 1-element `CommandQueue`、呼叫 `apply_pending`──完全沿用
+  M2.3 dispatch + M2.4 log-append + M1.5/M1.15 effect machinery，
+  沒有複製 logic。**Preconditions**：`target_state.player_country`
+  合法 + `target_state.applied_commands` 必須是空（否則 replay log
+  會和既有 entries 混在一起，破壞「log mirrors source」保證；caller
+  應該對 freshly-loaded scenario 而非 reloaded save 呼叫 replay）。
+  **跨 log atomicity** 沿用 M2.3 mid-list-failure pattern：失敗 entry
+  以 `replay[N]: ...` 標出，先前 entries 已 apply + log，後續 entries
+  跳過。**Prototype 限制**（測試 pin 住）：commands 之間不跑 time
+  system（不呼叫 advance_one_day / monthly pipeline）、最終
+  `current_date` 停在最後一筆 entry 的 `applied_on` 而非 source 的
+  實際 final date、scenario 由 caller 預先載入。對應 RFC-090 §M2
+  task 2.8「玩家操作回放 log」的消費端（記錄端在 M2.4 已實作）。
+  **M2.6 不做** save schema 變更（仍 v9）、新 CLI flag、新 log line、
+  monthly pipeline tick during replay、divergence detection、scenario
+  reload、命令 outcome capture（M2.4 deferred nit）、M1 system 行為
+  變更。未來 M2.8 候選會把 M2.2 `step_one_day` 整合進來解掉
+  prototype 的時間限制。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
