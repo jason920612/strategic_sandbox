@@ -209,6 +209,25 @@ M0 / M1 中落地，部分仍是未來工作：
   `Milestone 0.10` label 改成 milestone-neutral 字串。**M1.17 不做**
   save schema 變更（仍 v7）、新 system / flag / CSV、policy
   expiration / revert、AI、events、M2 work。**M1 在此收尾。**
+- **M2（進行中）** — 玩家操作原型。**M2.1（Player country
+  selection）** 為 `core::GameState` 新增 `player_country` 欄位
+  (`CountryId`，預設 `CountryId::invalid()` = -1)，並在 runner
+  新增 `--player COUNTRY_IDCODE` 旗標。Resolution 在
+  `run_state` 載入 scenario 後立即執行：linear scan `state.countries`
+  尋找 `id_code` match，找不到 / state.countries 為空時 fail 並
+  把 id_code 寫進錯誤訊息，整個 fail 動作發生在任何 log / snapshot
+  emit 之前。**M2.1 是 M2 第一次 save schema 升版（v7 → v8）**：
+  `player_country` 是 root-level 必備整數欄位（-1 為 headless
+  sentinel；非負必須 index 進 `countries`），v7 save、missing 欄位、
+  non-integer、`< -1`、out-of-range、超出 `INT_MAX` 都會 reject 並
+  把實際值寫進錯誤訊息。**M2.1 不做** 任何 system 行為變更（M1 的
+  `faction::react` / `stability::tick` / `economy::tick` / monthly
+  pipeline / diagnostics 都沒有讀 `player_country`），所以 M1.17
+  的 5-artefact byte-identical determinism contract 仍成立。對應
+  RFC-090 §M2 task 2.1。**M2.1 不做** pause / resume / step
+  控制（M2.2 的事）、player command queue（M2.3）、player command
+  log（M2.4）、UI / map、AI / events、multi-player、scenario
+  manifest 帶 default player。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

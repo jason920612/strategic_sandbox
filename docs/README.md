@@ -45,6 +45,7 @@ Per-milestone design notes and PR description drafts.
 | [`m1-15-policy-duration-tracking.md`](m1-15-policy-duration-tracking.md) | M1.15 | **Policy duration tracking.** New `ActivePolicy{policy_id_code, expires_on}` core type and `CountryState::active_policies` vector (default empty, append-only). Every successful `policy::apply_policy_effects` records one entry with `expires_on = current_date + duration_days`. Atomicity covers the new side effect: pre-flight failure appends nothing. `duration_days == 0` is allowed and records a same-day-expiry entry. Runtime cap `kMaxTrackedPolicyDurationDays = 36500` (~100 years) is enforced inside `apply_policy_effects`; negative or over-cap `duration_days` is rejected before any mutation (PolicySystem is the last line of defense, since `GameDate::advance_days` is a per-day loop and `data_loader -> policy_system` would invert layering). **Save format bumped v6 → v7** (v6 saves rejected loudly; v7 country missing `active_policies` rejected; entry parse errors point at `active_policies[N]`). Tracking-only — no expiration sweep, no effect revert, no scheduler, no AI, no dedup, no JSON-config / DataLoader change. |
 | [`m1-16-faction-csv.md`](m1-16-faction-csv.md) | M1.16 | **Faction-level diagnostics CSV.** New `Diagnostics::FactionSummaryRow` + `faction_snapshot(state, faction)` + `write_faction_csv_header` / `write_faction_csv_row` free functions. New opt-in `--factions-csv PATH` runner flag emits 9 columns per faction per snapshot point (cadence mirrors `--summary-csv` and `--countries-csv`: start + each `month_changed` + final post-sanity). Columns: `date,id_code,country_id_code,type,support,influence,radicalism,loyalty,resources`. Doubles formatted with `std::scientific` + `setprecision(17)`. Existing summary CSV (M0.10) and per-country CSV (M1.14) both byte-for-byte unchanged. **No save-format bump (still v7).** Drive-by: `main()` now also prints per-country and per-faction CSV row counts (M1.14 omitted the country print line). |
 | [`milestone-1-result.md`](milestone-1-result.md) | **M1 exit report** | What M1 ships (every sub-milestone M1.1–M1.16 + the M1.17 integration tests), the five-artefact determinism contract, deferred items (expiration sweep, effect revert, full scheduler, AI / events / war / diplomacy, balance pass, faction `react` extension, CSV quoting, multi-country / international layer, replay vs session resume), recommendations for M2 (player-operation prototype per RFC-090 §M2), the architectural invariants every M2+ milestone must preserve, and known small-scope tech debt. **M1 closes here.** |
+| [`m2-1-player-country.md`](m2-1-player-country.md) | M2.1 | **Player country selection (Milestone 2 kickoff).** New `GameState::player_country` (`CountryId`, default `invalid()`). New `--player COUNTRY_IDCODE` runner flag; resolved in `run_state` after scenario load by linear scan against `state.countries[i].id_code`. Failure cases: empty world, unknown id_code — both rejected before any tick / log / snapshot is emitted, with the offending id_code in the error message. **Save format bumped v7 → v8.** `"player_country"` is a required root-level integer (-1 = headless; non-negative must index into `countries`); v7 saves rejected loudly; non-integer / `< -1` / out-of-range / above `INT_MAX` all rejected with specific messages. **No system reads the field yet.** None of M1's systems (faction::react / stability::tick / economy::tick / monthly pipeline / diagnostics) branch on `player_country`; M1's 5-artefact byte-identical determinism contract therefore still passes unchanged. Pause/resume, command queue, command log, UI, AI, events, multi-player all deliberately out of scope (M2.2+). |
 
 ## Reading order
 
@@ -57,35 +58,33 @@ If you're new to the codebase:
 3. Read the milestone notes here **in order** (M0.2 → M0.10 → M1.1
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
    → M1.11 → M1.12 → M1.13 → M1.14 → M1.15 → M1.16 →
-   `milestone-1-result.md`). They build on each other and each one
-   tries to call out the rules a future contributor must not
-   silently break.
+   `milestone-1-result.md` → M2.1). They build on each other and
+   each one tries to call out the rules a future contributor must
+   not silently break.
 
 ## What's next
 
-**M1 is closed.** Next milestone is **M2 — player-operation
-prototype** (RFC-090 §M2). Suggested first sub-milestones (see
-`milestone-1-result.md` §3 for details):
+**M2 has begun.** M2.1 (player country selection) shipped. Suggested
+next M2 sub-milestones (see `milestone-1-result.md` §3 for the
+broader context):
 
-- **M2.1 — Player country selection** (`--player COUNTRY_IDCODE`
-  flag → `GameState::player_country` field; save format bump v7 →
-  v8 if that field needs to persist).
-- **M2.2 — Pause / resume.** Tick-rate controller wrapping the
-  runner's `for (i < days)` loop so the simulation can stop /
-  resume / step one day at a time.
+- **M2.2 — Pause / resume / step.** Tick-rate controller wrapping
+  the runner's `for (i < days)` loop so the simulation can stop /
+  resume / step one day at a time. Save-format-neutral; the
+  controller lives outside the persistent state.
 - **M2.3 — Player command queue.** First-class command struct
   submitted by an outer driver (CLI script for now). Initial
-  commands: enact a policy, change budget allocation.
+  commands: enact a policy, change budget allocation. **Would
+  likely bump save format v8 → v9** if the queue needs to persist.
 - **M2.4 — Player command log.** Mirrors RFC-050 §8 "玩家命令需
   記錄"; foundation for future deterministic replay.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
-land later as targeted M-anything follow-ups when the player
-loop needs them.
+land later as targeted follow-ups when the player loop needs them.
 
 Per the M-pacing rule, the next sub-milestone is **not** started
-until M1.17 is merged.
+until M2.1 is merged.
 
 ## When to add a new file
 

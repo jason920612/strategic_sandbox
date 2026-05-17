@@ -811,8 +811,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v7 - M1.15 added CountryState.active_policies.
-    CHECK(save.find("\"save_version\": 7") != std::string::npos);
+    // Save schema is now v8 - M2.1 added GameState.player_country.
+    CHECK(save.find("\"save_version\": 8") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1055,8 +1055,8 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v7 (M1.15 bumped from v6 for active_policies)") {
-    TempDir td("leviathan_runner_m115_save_version");
+TEST_CASE("run: save schema is now v8 (M2.1 bumped from v7 for player_country)") {
+    TempDir td("leviathan_runner_m201_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
     opts.days        = 31;
@@ -1065,7 +1065,7 @@ TEST_CASE("run: save schema is now v7 (M1.15 bumped from v6 for active_policies)
     const std::string save = read_file(td.path / "save.json");
     // Pin the unchanged version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 7") != std::string::npos);
+    CHECK(save.find("\"save_version\": 8") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------
@@ -1246,6 +1246,112 @@ TEST_CASE("run: explicit --seed overrides the config seed") {
     const auto save_default  = read_file(td_default.path / "save.json");
     const auto save_override = read_file(td_override.path / "save.json");
     CHECK(save_default != save_override);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.1 - --player COUNTRY_IDCODE flag
+// =====================================================================
+
+TEST_CASE("parse_args: --player flag is plumbed through") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "3",
+        "--player", "GER"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().player_id_code.has_value());
+    CHECK(r.value().player_id_code.value() == "GER");
+}
+
+TEST_CASE("parse_args: --player without a value is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--player"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--player") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --player defaults to unset when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().player_id_code.has_value());
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: --player on an empty world is rejected with the id_code in the error") {
+    // No --scenario, so state.countries is empty. --player must reject
+    // rather than silently leave player_country unset.
+    TempDir td("leviathan_runner_m201_player_empty_world");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 1;
+    opts.output_dir     = td.path;
+    opts.player_id_code = "GER";
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--player") != std::string::npos);
+    CHECK(r.error().find("GER")      != std::string::npos);
+}
+
+TEST_CASE("run: --player with an unknown id_code is rejected") {
+    TempDir td("leviathan_runner_m201_player_unknown");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 1;
+    opts.output_dir     = td.path;
+    opts.scenario_path  = kCanonicalScenario;
+    opts.player_id_code = "BOGUS";
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--player")           != std::string::npos);
+    CHECK(r.error().find("BOGUS")              != std::string::npos);
+    CHECK(r.error().find("no country with that id_code") != std::string::npos);
+}
+
+TEST_CASE("run: --player GER resolves to CountryId{0} and round-trips through save") {
+    TempDir td("leviathan_runner_m201_player_happy");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 1;
+    opts.output_dir     = td.path;
+    opts.scenario_path  = kCanonicalScenario;   // GER is the first country -> id 0
+    opts.player_id_code = "GER";
+    REQUIRE(rn::run(opts).ok());
+
+    // Save file contains the resolved player_country == 0.
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"player_country\": 0") != std::string::npos);
+}
+
+TEST_CASE("run: --player FRA picks the second country (CountryId{1})") {
+    TempDir td("leviathan_runner_m201_player_fra");
+    rn::RunnerOptions opts;
+    opts.config_path    = kCanonicalConfig;
+    opts.days           = 1;
+    opts.output_dir     = td.path;
+    opts.scenario_path  = kCanonicalScenario;
+    opts.player_id_code = "FRA";
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"player_country\": 1") != std::string::npos);
+}
+
+TEST_CASE("run: no --player keeps player_country at -1 in the save") {
+    TempDir td("leviathan_runner_m201_player_default");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    // player_id_code intentionally unset.
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"player_country\": -1") != std::string::npos);
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

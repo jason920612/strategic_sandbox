@@ -124,6 +124,12 @@ std::string usage_text() {
         "                      point (same cadence as --summary-csv).\n"
         "                      Surfaces support / loyalty / radicalism /\n"
         "                      influence / resources per faction.\n"
+        "  --player ID_CODE    Mark COUNTRY_IDCODE as the player country\n"
+        "                      (M2.1). Resolved against the loaded\n"
+        "                      scenario after --scenario completes; fails\n"
+        "                      loudly if the id_code does not match any\n"
+        "                      loaded country. Without this flag the run\n"
+        "                      is headless (player_country = invalid).\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -206,6 +212,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.factions_csv_path = std::filesystem::path(std::string(v.value()));
             ++i;
+        } else if (a == "--player") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.player_id_code = std::string(v.value());
+            ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -270,6 +281,34 @@ core::Result<RunOutcome> run_state(core::GameState& state,
 
     if (opts.days < 0) {
         return core::Result<RunOutcome>::failure("--days must be >= 0");
+    }
+
+    // M2.1: resolve --player COUNTRY_IDCODE against the loaded scenario.
+    // Must happen AFTER scenario_load (which populates state.countries
+    // in run()) and BEFORE the start log / first snapshot so a bad
+    // id_code aborts cleanly without emitting any artefact.
+    if (opts.player_id_code.has_value()) {
+        const std::string& want = opts.player_id_code.value();
+        if (state.countries.empty()) {
+            return core::Result<RunOutcome>::failure(
+                "--player " + want +
+                " requires a non-empty state.countries (typically via"
+                " --scenario)");
+        }
+        bool found = false;
+        for (std::size_t i = 0; i < state.countries.size(); ++i) {
+            if (state.countries[i].id_code == want) {
+                state.player_country =
+                    core::CountryId{static_cast<int>(i)};
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return core::Result<RunOutcome>::failure(
+                "--player " + want +
+                ": no country with that id_code in the loaded scenario");
+        }
     }
 
     const core::GameDate start_date = state.current_date;

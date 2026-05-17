@@ -225,7 +225,9 @@ TEST_CASE("M1 end-to-end: 10-year soak run completes without sanity issues") {
 
 TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all three CSVs") {
     // M0.10's determinism contract was extended through M1.12 (v6),
-    // M1.14 (--countries-csv), M1.15 (v7), and M1.16 (--factions-csv).
+    // M1.14 (--countries-csv), M1.15 (v7), M1.16 (--factions-csv),
+    // and M2.1 (v8 + --player). The contract is independent of
+    // milestone.
     // Pin the final shape here so a future system that quietly
     // introduces non-determinism on the monthly pipeline path
     // (RNG misuse, iteration-order dependence, path metadata

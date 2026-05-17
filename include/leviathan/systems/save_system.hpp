@@ -67,7 +67,14 @@ namespace leviathan::systems::save_system {
 //                would silently drop already-enacted day-0 policies
 //                from any scenario save. We bump rather than tolerate
 //                the missing array.
-inline constexpr std::uint32_t kSaveFormatVersion   = 7;
+//   v8 (M2.1)  - GameState gained `player_country` at the root level
+//                (CountryId; default invalid()/-1 for headless runs).
+//                A v7 save has no field for it, and silently defaulting
+//                to invalid() on reload would drop a player's country
+//                selection. The loader gates strictly and additionally
+//                validates that any non-invalid value indexes into
+//                `state.countries`.
+inline constexpr std::uint32_t kSaveFormatVersion   = 8;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

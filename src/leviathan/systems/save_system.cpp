@@ -640,6 +640,10 @@ std::string serialize(const core::GameState& state) {
     root["save_version"]          = kSaveFormatVersion;
     root["rng_algorithm_version"] = kRngAlgorithmVersion;
     root["current_date"]          = state.current_date.to_string();
+    // M2.1: player_country is a signed int at the root level (-1 means
+    // "no player / headless run"; any non-negative value indexes into
+    // the countries array below).
+    root["player_country"]        = state.player_country.value();
 
     json rng = json::object();
     rng["seed"]    = state.rng.seed;
@@ -780,6 +784,47 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             state.countries.push_back(std::move(c).value());
         }
     }
+
+    // player_country (M2.1, required as of v8). Validation happens
+    // AFTER countries are loaded so the index range check works
+    // against the live country count.
+    if (!root.contains("player_country")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label, "missing required field 'player_country'"));
+    }
+    const auto& pc_node = root.at("player_country");
+    if (!pc_node.is_number_integer()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'player_country' is not an integer"));
+    }
+    const auto pc_raw = pc_node.get<std::int64_t>();
+    if (pc_raw < -1) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'player_country' must be >= -1 (got " +
+                    std::to_string(pc_raw) + ")"));
+    }
+    using under = core::CountryId::underlying_type;
+    constexpr auto kMaxId =
+        static_cast<std::int64_t>(std::numeric_limits<under>::max());
+    if (pc_raw > kMaxId) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'player_country' " + std::to_string(pc_raw) +
+                    " is out of range for CountryId (max " +
+                    std::to_string(kMaxId) + ")"));
+    }
+    if (pc_raw != -1 &&
+        static_cast<std::size_t>(pc_raw) >= state.countries.size()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'player_country' index " + std::to_string(pc_raw) +
+                    " is out of range for the " +
+                    std::to_string(state.countries.size()) +
+                    " loaded countries"));
+    }
+    state.player_country = core::CountryId{static_cast<under>(pc_raw)};
 
     // factions
     if (root.contains("factions")) {
