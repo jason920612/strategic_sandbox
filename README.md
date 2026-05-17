@@ -8,28 +8,28 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.3 — Player command queue.**
-  New `core::PlayerCommand{kind, policy_id_code}` data type
-  (`PlayerCommandKind::EnactPolicy` is the only kind for M2.3) and
-  new `systems::commands::{CommandQueue, ApplyOutcome,
-  apply_pending}` free-function module. The queue is owned by an
-  outer driver (not part of `GameState`, not part of
-  `runner::TickController`); the natural pattern is
-  `begin_tick → loop { stage commands → apply_pending →
-  step_one_day } → end_tick`. `apply_pending` requires
-  `state.player_country` to index into `state.countries`, drains
-  the queue in insertion order, dispatches each `EnactPolicy`
-  through `policy::apply_policy_effects` (so M1.5 per-command
-  atomicity, M1.15 `active_policies` tracking, and the M1.15
-  duration cap all apply automatically). Non-atomic across the
-  list — first failure stops, prior successes stay applied, failed
-  cmd stays at head. **No save format change** (still v8); no new
-  CLI flag; no new log; no M1 system change.
-- Next sub-milestone candidates: **M2.4** (player command log —
-  persistent record of applied commands; foundation for
-  deterministic replay; would bump save format v8 → v9) or **M2.5**
-  (additional `PlayerCommandKind` variants — `AdjustBudget`,
-  `ChangeTaxBurden`, ...).
+- Latest shipped sub-milestone: **M2.4 — Player command log.** New
+  `core::AppliedPlayerCommand{applied_on, command}` type and new
+  `GameState::applied_commands` vector. `systems::commands::apply_pending`
+  now appends one log entry per successful per-command dispatch,
+  AFTER the M1.5 / M1.15 mutations land — so per-command
+  atomicity covers the log too (failed commands stay in the queue
+  and do NOT log). `applied_on` captures `state.current_date` at
+  apply time. **Save format bumped v8 → v9** with
+  `"applied_commands"` as a required root-level array of
+  `{applied_on, command:{kind, policy_id_code}}` objects. v8 saves
+  rejected loudly; missing field / malformed date / unknown kind /
+  missing `policy_id_code` / missing `command` sub-object all
+  rejected with `applied_commands[N]` in the error message.
+  Foundation for future deterministic replay (RFC-050 §8). M1
+  systems and M1.17's 5-artefact byte-identical determinism
+  contract are unchanged — no simulation system reads
+  `applied_commands`.
+- Next sub-milestone candidates: **M2.5** (additional
+  `PlayerCommandKind` variants — `AdjustBudget`, `ChangeTaxBurden`,
+  etc.; save-neutral) or **M2.6** (deterministic replay primitive
+  — re-issue logged commands against a fresh-loaded scenario and
+  verify state convergence).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -53,8 +53,8 @@ the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
-RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 merged. Twenty
-sub-milestones shipped:
+RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 merged.
+Twenty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -134,7 +134,18 @@ is driver-owned (not in `GameState` or `TickController`).
 M1.5 atomicity + M1.15 active_policies tracking + duration cap).
 Non-atomic across the list; first failure stops with failed cmd
 at head. No save format change (still v8); no new flag / log / M1
-system change.**
+system change; **M2.4 Player command log — new
+`core::AppliedPlayerCommand{applied_on, command}` type and new
+`GameState::applied_commands` vector. `commands::apply_pending`
+appends one log entry per successful per-command dispatch (after
+the M1.5 / M1.15 mutations land), so per-command atomicity covers
+the log too; failed commands stay in the queue and do NOT log.
+`applied_on` captures `state.current_date` at apply time. **Save
+format bumped v8 → v9** with `"applied_commands"` as a required
+root-level array; v8 saves rejected loudly; malformed entries
+all rejected with `applied_commands[N]` in the error. Foundation
+for future deterministic replay (RFC-050 §8). No M1 system
+behaviour change.**
 
 ## Repository layout
 
@@ -289,13 +300,27 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.3 there are **470 doctest cases**. M0 contributed 179;
+As of M2.4 there are **483 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
-end-to-end integration tests; M2.1 added 17; M2.2 added 10
-covering pause/resume/step primitives; M2.3 adds 8 in a new
+end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
+added 8; M2.4 adds 13 covering player command log: 5
+commands_test cases (successful enact appends one entry; multiple
+successes append in insertion order; failed command does NOT log
+(per-command atomicity); `applied_on` captures `state.current_date`
+at apply time, distinct dates pinned across two `apply_pending`
+calls; precondition failure leaves log untouched); 8 save_system
+cases (rejects an old v8 save loudly; serialize emits
+`"applied_commands": []`; populated round-trip preserves dates +
+policy_id_code; v9 missing `applied_commands` rejected; entry
+with malformed `applied_on` `"1930-02-30"` rejected; entry with
+unknown `kind` `"SomethingBogus"` rejected; entry missing
+`policy_id_code` rejected; entry missing `command` sub-object
+rejected). Plus an extension of the `game_state_test` baseline
+check to assert `applied_commands.empty()`. Save schema is now
+v9. Previously M2.3 added 8 in
 `tests/systems/commands_test.cpp`: empty queue is a no-op success;
 single `EnactPolicy` drains the queue and applies the policy;
 successful enact chains into `active_policies` (M1.15 integration:

@@ -15,6 +15,8 @@
 
 #include <string>
 
+#include "leviathan/core/game_date.hpp"
+
 namespace leviathan::core {
 
 enum class PlayerCommandKind {
@@ -33,6 +35,22 @@ struct PlayerCommand {
     // EnactPolicy payload: the policy's `id_code`. Unused for other
     // kinds; future variants may carry additional fields.
     std::string policy_id_code;
+};
+
+// One entry of the player command log (M2.4).
+//
+// Appended by `systems::commands::apply_pending` AFTER a per-command
+// dispatch succeeds and the command pops off the queue. A failed
+// command does NOT produce a log entry — that's the per-command
+// atomicity rule the M2.3 review pinned for M2.4.
+//
+// `applied_on` is `state.current_date` at the moment of the
+// successful dispatch. The log is the foundation a later sub-
+// milestone will use to implement deterministic replay
+// (RFC-050 §8 "玩家命令需記錄").
+struct AppliedPlayerCommand {
+    GameDate      applied_on{};
+    PlayerCommand command{};
 };
 
 }  // namespace leviathan::core

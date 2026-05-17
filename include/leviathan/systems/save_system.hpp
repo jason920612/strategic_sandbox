@@ -74,7 +74,12 @@ namespace leviathan::systems::save_system {
 //                selection. The loader gates strictly and additionally
 //                validates that any non-invalid value indexes into
 //                `state.countries`.
-inline constexpr std::uint32_t kSaveFormatVersion   = 8;
+//   v9 (M2.4)  - GameState gained `applied_commands` (a vector of
+//                `{applied_on, command}` records the player command
+//                queue appends on every successful enactment). A v8
+//                save would silently drop the replay log on reload,
+//                so we bump rather than tolerate the missing array.
+inline constexpr std::uint32_t kSaveFormatVersion   = 9;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

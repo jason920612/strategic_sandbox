@@ -20,6 +20,7 @@
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/log_entry.hpp"
+#include "leviathan/core/player_commands.hpp"
 #include "leviathan/core/random_state.hpp"
 #include "leviathan/core/simulation_config.hpp"
 
@@ -44,6 +45,12 @@ struct GameState {
     std::vector<PolicyData>      policies;
     std::vector<EventDefinition> events;
     std::vector<LogEntry>        logs;
+
+    // M2.4: persistent record of commands that `commands::apply_pending`
+    // has successfully applied. Append-only at the apply site; never
+    // mutated by simulation systems. Foundation for future
+    // deterministic replay (RFC-050 §8).
+    std::vector<AppliedPlayerCommand> applied_commands;
 };
 
 // Builds a fresh GameState from `config`:
