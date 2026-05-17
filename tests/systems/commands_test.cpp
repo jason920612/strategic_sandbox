@@ -1786,7 +1786,10 @@ TEST_CASE("diagnose_*: diagnostic does NOT mutate state") {
 }
 
 // =====================================================================
-// M4.2 - gate_diagnostic field on RejectionRecord
+// Post-M3 governance follow-up - gate_diagnostic field on
+// RejectionRecord (historically labelled "M4.2" before the
+// RFC-alignment correction; see
+// `docs/rfc-alignment-note-post-m3.md`).
 //
 // The apply-time rejection path and the standalone diagnose_*_gate
 // query share one source of truth for the gate explanation. The
@@ -1797,12 +1800,15 @@ TEST_CASE("diagnose_*: diagnostic does NOT mutate state") {
 //      gate_diagnostic agree by construction.
 //   3. gate_diagnostic.allowed is always false on a rejection.
 //   4. The diagnostic carries the right country / target /
-//      authority_field per the M4.1 contract.
+//      authority_field per the previous governance follow-up's
+//      contract (the helper introduced under the historical
+//      "M4.1" label).
 //   5. The legacy format_rejection_message string (used by
-//      apply_pending's failure path) is byte-identical pre/post-M4.2.
+//      apply_pending's failure path) is byte-identical before
+//      and after this post-M3 follow-up landed.
 // =====================================================================
 
-TEST_CASE("M4.2 RejectionRecord: EnactPolicy rejection carries gate_diagnostic that agrees with flat fields") {
+TEST_CASE("post-M3 RejectionRecord: EnactPolicy rejection carries gate_diagnostic that agrees with flat fields") {
     GameState s = single_country_state(/*bureaucratic=*/0.10,
                                        /*military=*/0.50);
     s.policies.push_back(raise_taxes_policy());
@@ -1825,8 +1831,8 @@ TEST_CASE("M4.2 RejectionRecord: EnactPolicy rejection carries gate_diagnostic t
     CHECK(rj.threshold       == doctest::Approx(0.30));
     CHECK(rj.resistance      == doctest::Approx(0.90));
 
-    // M4.2: new gate_diagnostic field populated and agrees with
-    // the flat fields by construction.
+    // Post-M3 follow-up: new gate_diagnostic field populated
+    // and agrees with the flat fields by construction.
     const auto& gd = rj.gate_diagnostic;
     CHECK(gd.gate            == cmd::CommandGateKind::EnactPolicy);
     CHECK(gd.country.value() == 0);
@@ -1838,7 +1844,7 @@ TEST_CASE("M4.2 RejectionRecord: EnactPolicy rejection carries gate_diagnostic t
     CHECK_FALSE(gd.allowed);
 }
 
-TEST_CASE("M4.2 RejectionRecord: military AdjustBudget rejection carries military_loyalty diagnostic") {
+TEST_CASE("post-M3 RejectionRecord: military AdjustBudget rejection carries military_loyalty diagnostic") {
     GameState s = single_country_state(/*bureaucratic=*/0.90,
                                        /*military=*/0.10);
     s.countries[0].budget.military = 0.30;
@@ -1863,7 +1869,7 @@ TEST_CASE("M4.2 RejectionRecord: military AdjustBudget rejection carries militar
     CHECK(rj.threshold       == doctest::Approx(0.30));
     CHECK(rj.resistance      == doctest::Approx(0.90));
 
-    // M4.2: gate_diagnostic mirrors and agrees.
+    // Post-M3 follow-up: gate_diagnostic mirrors and agrees.
     const auto& gd = rj.gate_diagnostic;
     CHECK(gd.gate            == cmd::CommandGateKind::AdjustBudget);
     CHECK(gd.country.value() == 0);
@@ -1875,7 +1881,7 @@ TEST_CASE("M4.2 RejectionRecord: military AdjustBudget rejection carries militar
     CHECK_FALSE(gd.allowed);
 }
 
-TEST_CASE("M4.2 RejectionRecord: non-military AdjustBudget rejection carries bureaucratic_compliance diagnostic") {
+TEST_CASE("post-M3 RejectionRecord: non-military AdjustBudget rejection carries bureaucratic_compliance diagnostic") {
     GameState s = single_country_state(/*bureaucratic=*/0.10,
                                        /*military=*/0.99);
     s.countries[0].budget.welfare = 0.20;
@@ -1903,7 +1909,7 @@ TEST_CASE("M4.2 RejectionRecord: non-military AdjustBudget rejection carries bur
     CHECK_FALSE(gd.allowed);
 }
 
-TEST_CASE("M4.2 RejectionRecord: gate_diagnostic.allowed is always false on a rejection") {
+TEST_CASE("post-M3 RejectionRecord: gate_diagnostic.allowed is always false on a rejection") {
     // Boundary just below threshold: compliance 0.299 must reject
     // and the diagnostic field must say so.
     GameState s = single_country_state(/*bureaucratic=*/0.299,
@@ -1922,12 +1928,12 @@ TEST_CASE("M4.2 RejectionRecord: gate_diagnostic.allowed is always false on a re
     CHECK_FALSE(r.value().rejection.value().gate_diagnostic.allowed);
 }
 
-TEST_CASE("M4.2 RejectionRecord: apply_pending failure message preserves legacy byte-identical surface") {
-    // M2.20's `format_rejection_message` produces the legacy string
-    // used by `apply_pending`'s `Result::failure`. M4.2 must not
-    // change that string — existing callers that grep error text
-    // (and the M2.18 / M2.19 tests that look for substrings) must
-    // keep passing.
+TEST_CASE("post-M3 RejectionRecord: apply_pending failure message preserves legacy byte-identical surface") {
+    // M2.20's `format_rejection_message` produces the legacy
+    // string used by `apply_pending`'s `Result::failure`. This
+    // post-M3 follow-up must not change that string — existing
+    // callers that grep error text (and the M2.18 / M2.19 tests
+    // that look for substrings) must keep passing.
     GameState s = single_country_state(/*bureaucratic=*/0.10,
                                        /*military=*/0.50);
     s.policies.push_back(raise_taxes_policy());
@@ -1951,10 +1957,10 @@ TEST_CASE("M4.2 RejectionRecord: apply_pending failure message preserves legacy 
     CHECK(r.error().find("threshold=")               != std::string::npos);
 }
 
-TEST_CASE("M4.2 RejectionRecord: diagnostic on rejection matches what diagnose_*_gate returns standalone") {
-    // The whole point of M4.2: the rejection-record diagnostic and
-    // the standalone helper must produce equivalent diagnostics for
-    // the same state + target.
+TEST_CASE("post-M3 RejectionRecord: diagnostic on rejection matches what diagnose_*_gate returns standalone") {
+    // The whole point of this post-M3 follow-up: the rejection-
+    // record diagnostic and the standalone helper must produce
+    // equivalent diagnostics for the same state + target.
     GameState s = single_country_state(/*bureaucratic=*/0.15,
                                        /*military=*/0.20);
     s.policies.push_back(raise_taxes_policy());

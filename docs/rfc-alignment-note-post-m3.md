@@ -132,6 +132,29 @@ For future work:
 
 No such amendment is proposed by this PR.
 
+### Hard rule for future PRs
+
+A PR title, branch name, design note filename, README
+status line, or `rfc/README.md` progress entry must
+**not** use an RFC-090 milestone number unless the work
+directly implements that RFC-090 milestone's defined
+scope, **or** the PR is an explicit RFC roadmap
+amendment.
+
+This rule is binding. The reviewer flagged the
+governance issue during PR #62 review on 2026-05-17 and
+made clear that if RFC-090 milestone numbers can be
+reused loosely, the RFCs themselves become meaningless.
+The drift inherited from PR #50 / PR #54 / PR #61 is
+frozen but **not extended**. Work that wants to use
+"M4.X" must be SVG / map / UI work per RFC-090 §M4.
+Work that wants to use "M5.X" must be event-engine work
+per RFC-090 §M5. And so on. Otherwise the PR uses a
+`post-m{N}-{slug}` label and the design note disclaims
+the mapping at the top, the way this PR's renamed
+design note (`docs/post-m3-command-gate-diagnostic-on-rejection.md`)
+does.
+
 ## 6. Strict non-claims this note makes
 
 This note explicitly does **not**:

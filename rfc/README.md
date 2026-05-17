@@ -233,16 +233,17 @@ M0 / M1 中落地，部分仍是未來工作：
 
   The most recent post-M3 follow-up (originally labelled
   "M4.2", reframed): **`CommandGateDiagnostic` on
-  `RejectionRecord`** — wires the M4.1 diagnostic shape
-  into the apply-time rejection path.
+  `RejectionRecord`** — wires the previous governance
+  diagnostic shape into the apply-time rejection path.
   `commands::RejectionRecord` 新增 `CommandGateDiagnostic
   gate_diagnostic` 欄位（**additive**，舊欄位
   `compliance` / `threshold` / `resistance` 保留以維持
   M2.20 / M2.21 / M2.22 既有 caller back-compat）。
   `dispatch_one` 兩個 rejection branch（EnactPolicy /
-  AdjustBudget）改成同時呼叫 M4.1 的 `diagnose_*_gate`
-  helper 並把結果寫進 record，所以「診斷查詢」與「實際
-  apply rejection」共用同一份 gate explanation 來源。
+  AdjustBudget）改成同時呼叫前一個 post-M3 follow-up
+  引入的 `diagnose_*_gate` helper 並把結果寫進 record，
+  所以「診斷查詢」與「實際 apply rejection」共用同一份
+  gate explanation 來源。
   Header 結構小調：把 `CommandGateKind` enum 與
   `CommandGateDiagnostic` struct 定義從 commands.hpp
   尾端搬到 M2.20 `RejectionRecord` section 之上，
@@ -262,12 +263,13 @@ M0 / M1 中落地，部分仍是未來工作：
   gameplay、沒有 event system / log / trigger、沒有
   AI / UI / CLI / REPL、沒有 command-gate 與 M3
   aggregate 整合（仍 deferred）、沒有移除 RejectionRecord
-  flat 欄位（M4.X 之後的 cleanup 候選）**。doctest count
-  794 → 800。
-- **M4.1（command gate diagnostics surface）** — 原本標
-  "opens M4"，但依 `docs/rfc-alignment-note-post-m3.md`
-  改框為「post-M3 governance follow-up，**不是 RFC-090
-  M4** (RFC-090 M4 是 SVG 地圖與 UI)」。內容上是在
+  flat 欄位（未來的 post-M3 governance cleanup 候選）**。
+  doctest count 794 → 800。
+- **Earlier post-M3 governance follow-up（historically
+  labelled "M4.1" before the RFC-alignment correction —
+  see `docs/rfc-alignment-note-post-m3.md`； NOT RFC-090
+  Milestone 4，RFC-090 M4 仍是 SVG 地圖與 UI）：command
+  gate diagnostics surface.** 內容上是在
   `leviathan::systems::commands` 加上兩個純讀
   diagnostic helper（`diagnose_enact_policy_gate` /
   `diagnose_adjust_budget_gate`）把 M2.18 / M2.19
@@ -295,8 +297,10 @@ M0 / M1 中落地，部分仍是未來工作：
   變更、沒有 mutation behaviour 變更、沒有 replay /
   runner 變更、沒有 event system / persistent log /
   trigger、沒有 AI / UI / CLI / REPL、沒有 diplomacy、
-  沒有新 interest-group channel、沒有 M3 work、沒有
-  M4 close-out**。doctest count 779 → 794。
+  沒有新 interest-group channel、沒有 M3 work、沒有任何
+  milestone close-out（這是 governance follow-up，
+  不是 milestone exit；尤其不是 RFC-090 M4，因為 RFC-090
+  M4 仍是 SVG 地圖與 UI）**。doctest count 779 → 794。
 - **M3（已完成）** — 內政 / 利益團體反應層。**M3.11（M3
   close-out）** 把 M3 收尾：新增 M3 exit report
   `docs/milestone-3-result.md`（M3.1–M3.11 全 sub-milestone

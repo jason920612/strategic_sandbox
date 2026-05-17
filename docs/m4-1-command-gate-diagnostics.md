@@ -1,13 +1,30 @@
-# M4.1 - Command gate diagnostics surface
+# Command gate diagnostics surface (historically labelled "M4.1")
+
+> **RFC alignment note (retrofitted after merge)**
+>
+> This work was originally labelled "M4.1 — opens Milestone
+> 4 — command / governance integration" in the PR that merged
+> it. That framing is a **historical mislabel** — RFC-090
+> Milestone 4 is SVG map and UI, not governance integration.
+> The reviewer flagged the drift during PR #62 review on
+> 2026-05-17 and the file has been kept as-is for historical
+> accuracy of the original PR description, but every reference
+> to M4 / M4.1 / M4.X below should be read as "post-M3
+> governance follow-up". See
+> `docs/rfc-alignment-note-post-m3.md` for the full
+> milestone-numbering drift documentation. This work is NOT
+> RFC-090 Milestone 4. This work is NOT RFC-040 diplomacy /
+> world AI (which is RFC-090 Milestone 8). This work must not
+> be cited as implementing RFC-040.
 
 Companion notes for `feature/m4-01-command-gate-diagnostics`.
 
-M4.1 opens **Milestone 4 — command / governance integration**.
-It is a small, read-only diagnostic surface bridging the M2
-command-execution gates (M2.18 `EnactPolicy` / M2.19
-`AdjustBudget`) and the M3-mutable authority state
-(`bureaucratic_compliance`, `military_loyalty`). Future M4.X
-work (UI, command feedback, AI suggestion, structured logs,
+This is the first post-M3 governance follow-up — a small,
+read-only diagnostic surface bridging the M2 command-execution
+gates (M2.18 `EnactPolicy` / M2.19 `AdjustBudget`) and the
+M3-mutable authority state (`bureaucratic_compliance`,
+`military_loyalty`). Future post-M3 governance follow-up work
+(UI, command feedback, AI suggestion, structured logs,
 event triggers) will read this surface instead of
 reverse-engineering the gate.
 
@@ -30,8 +47,9 @@ That makes the gate hard to inspect from outside the apply path:
 - a structured log can't write the gate inputs without
   duplicating the formula.
 
-M4.1 adds two pure-read free functions that explain the gate
-decision without touching state. They take the actor
+This post-M3 follow-up adds two pure-read free functions
+that explain the gate decision without touching state. They
+take the actor
 `CountryId` directly (rather than reading `state.player_country`)
 so a caller can ask "what would the gate decide for country X
 right now?" without temporarily flipping the player selection.
@@ -117,12 +135,13 @@ Introducing a new enum would either:
 
 - duplicate that string representation across two types and
   invite drift, OR
-- migrate every existing callsite — a refactor far beyond M4.1
-  scope.
+- migrate every existing callsite — a refactor far beyond
+  this post-M3 follow-up's scope.
 
-M4.1 uses `std::string` to match the existing model. If a
-future PR introduces a real enum (with explicit conversion to
-the on-disk string), the diagnostic API can adopt it then.
+This post-M3 follow-up uses `std::string` to match the
+existing model. If a future PR introduces a real enum (with
+explicit conversion to the on-disk string), the diagnostic
+API can adopt it then.
 
 ## 4. Why these helpers don't call `order_execution::evaluate`
 
@@ -141,7 +160,7 @@ same field-selection rule** from `order_execution.hpp`:
 - the `"military"` → `military_loyalty`, else →
   `bureaucratic_compliance` rule
 
-Test cases at the end of the M4.1 section in
+Test cases at the end of the post-M3-follow-up section in
 `commands_test.cpp` (the "agrees with apply_pending" group) pin
 that the diagnostic's `allowed` flag matches what
 `apply_pending` actually decides on the same inputs. A future
@@ -150,7 +169,8 @@ updating both call sites will fail those mirror tests loudly.
 
 ## 5. What is NOT in scope
 
-Per the M4.1 spec, this PR deliberately does not:
+Per the post-M3 follow-up spec, this PR deliberately does
+not:
 
 - add a new gameplay command;
 - add a new `PlayerCommandKind`;
@@ -161,12 +181,13 @@ Per the M4.1 spec, this PR deliberately does not:
 - bump the save schema (still v11);
 - add an event system / persistent event log / trigger system;
 - add AI, UI, CLI, or REPL surfaces;
-- add diplomacy or international layer work;
+- add diplomacy or international layer work (RFC-090 §M8 work);
 - change interest-group formulas;
 - add new interest-group channels (`intelligence_capability`
   / `media_control` are still future work);
 - reopen M3;
-- close M4.
+- close any milestone (in particular, this is NOT RFC-090
+  Milestone 4 work — RFC-090 §M4 is SVG map + UI).
 
 The helper is purely read-only — it never mutates `GameState`,
 the command queue, applied commands, countries, policies,
@@ -175,7 +196,7 @@ budgets, interest groups, or logs.
 ## 6. Test surface
 
 15 new doctest cases in `tests/systems/commands_test.cpp`
-M4.1 section:
+post-M3-follow-up section:
 
 - `diagnose_enact_policy_gate`:
   - boundary `bureaucratic_compliance == 0.30` accepts
@@ -212,7 +233,7 @@ M4.1 section:
 
 Doctest count: 779 → 794 (+15).
 
-## 7. Future M4.2+ candidates (none committed)
+## 7. Future post-M3 governance follow-up candidates (none committed)
 
 - Surface the diagnostic on `RunOutcome` so a CLI run can
   print "would-have-rejected" decisions for the player
@@ -227,5 +248,6 @@ Doctest count: 779 → 794 (+15).
   with the M3.6 / M3.10 trace CSVs to show "why" the gate
   decided the way it did over a multi-month run.
 
-Per the M-pacing rule, M4.2 starts only when the reviewer
-names a direction in the M4.1 approval message.
+Per the M-pacing rule, the next post-M3 governance follow-up
+starts only when the reviewer names a direction in this
+PR's approval message.

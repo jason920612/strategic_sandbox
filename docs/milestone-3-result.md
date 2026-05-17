@@ -1,12 +1,23 @@
 # Milestone 3 Exit Report
 
 **Status: closed.** M3.1 through M3.11 shipped on `main`.
-M3 — the internal-politics / interest-group reaction layer
-per RFC-090 §M3 — is complete enough to hand off to M4+.
-Closing M3 means: no more M3.X branches; future work in
-the reaction-loop space ships as M4.X (or whichever
-milestone the user opens next), with this document as the
-contract that work must preserve.
+M3 as shipped — the internal-politics / interest-group
+reaction layer — is complete enough to hand off to future
+work. Closing M3 means: no more M3.X branches; future work
+in the reaction-loop space ships as a post-M3 governance
+follow-up (or as a future RFC-090-numbered milestone),
+with this document as the contract that work must preserve.
+
+> **RFC alignment note (retrofitted after merge).** This
+> exit report originally cited "RFC-090 §M3" as the
+> matching RFC milestone for the shipped work. That mapping
+> is a **historical mislabel**: RFC-090 §M3 is multi-country
+> simulation (20–30 country data, AI policy selection,
+> relationship value, threat value), not interest-group
+> reaction. The shipped work is closer to RFC-090 §M7
+> 派系深化. See `docs/rfc-alignment-note-post-m3.md` for the
+> full drift documentation. This note is observational; the
+> body below is left as-is for historical accuracy.
 
 Predecessors: `milestone-1-result.md` (single-country
 internal politics prototype) and `milestone-2-result.md`
@@ -207,8 +218,8 @@ the project's structure makes natural at this point:
   them. An event-trigger framework would unlock the
   strike / protest / coup mechanics on top of M3 state.
 - **Authority-layer completion** (intelligence /
-  media siblings) — a small M4.1-style follow-up that
-  ships in the same shape as M3.9 / M3.10.
+  media siblings) — a small follow-up that ships in
+  the same shape as M3.9 / M3.10.
 - **Command-gate integration** — let M2.18 / M2.19
   read interest-group aggregates so commands actually
   feel different at low loyalty.
@@ -274,7 +285,8 @@ This PR is the M3 close-out. It deliberately does NOT:
   sibling channels
 - make `end_tick` atomic
 
-Anything from §5 above starts as an M4.X (or
-post-milestone follow-up) PR with its own spec.
+Anything from §5 above starts as a post-M3 governance
+follow-up PR (or as a future RFC-090-numbered milestone)
+with its own spec.
 
 **M3 closes here.**

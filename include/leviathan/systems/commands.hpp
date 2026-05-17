@@ -67,23 +67,27 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
                                          CommandQueue& q);
 
 // ===========================================================================
-// M4.1 - Command gate diagnostic shape.
+// Command gate diagnostic shape (post-M3 governance follow-up;
+// the introducing PR was historically labelled "M4.1" — see
+// `docs/rfc-alignment-note-post-m3.md`).
 //
 // Defined here (above the M2.20 rejection types) so the M2.20
 // `RejectionRecord` can carry a `CommandGateDiagnostic` field
-// (M4.2). The pure-read free functions that *produce* a
-// diagnostic from a `(state, country, target)` triple live near
-// the bottom of this header next to the other M4.1 declarations;
-// only the types live up here. Moving the types up does not
-// change M4.1 behaviour — both produce identical diagnostics.
+// (added by the subsequent post-M3 follow-up, historically
+// labelled "M4.2"). The pure-read free functions that *produce*
+// a diagnostic from a `(state, country, target)` triple live
+// near the bottom of this header next to the other declarations
+// in this thread; only the types live up here. Moving the types
+// up does not change behaviour — both produce identical
+// diagnostics.
 // ===========================================================================
 
 // Identifies which gate produced a diagnostic. Mirrors
 // `core::PlayerCommandKind` for the two kinds that currently have
-// a gate (M2.18 / M2.19); kept as a separate enum so future M4.X
-// work can add gate-only diagnostics for surfaces that have no
-// matching `PlayerCommandKind` without dragging the
-// `PlayerCommandKind` enum around.
+// a gate (M2.18 / M2.19); kept as a separate enum so future
+// post-M3 governance work can add gate-only diagnostics for
+// surfaces that have no matching `PlayerCommandKind` without
+// dragging the `PlayerCommandKind` enum around.
 enum class CommandGateKind {
     EnactPolicy,
     AdjustBudget,
@@ -94,9 +98,11 @@ enum class CommandGateKind {
 // message / surface the decision in UI / compare against
 // expectations in a test without recomputing.
 //
-// M4.2 adds this struct as a field on `RejectionRecord` so the
-// apply-time rejection path and the standalone `diagnose_*_gate`
-// query share one source of truth for the gate explanation.
+// A subsequent post-M3 governance follow-up (historically
+// labelled "M4.2") adds this struct as a field on
+// `RejectionRecord` so the apply-time rejection path and the
+// standalone `diagnose_*_gate` query share one source of truth
+// for the gate explanation.
 struct CommandGateDiagnostic {
     CommandGateKind gate{};
 
@@ -210,7 +216,8 @@ struct RejectionRecord {
     // compliance without recomputing.
     double resistance = 0.0;
 
-    // M4.2 — structured gate explanation. Same shape that
+    // Post-M3 follow-up (historically labelled "M4.2"):
+    // structured gate explanation. Same shape that
     // `commands::diagnose_enact_policy_gate` and
     // `commands::diagnose_adjust_budget_gate` produce, so an
     // apply-time rejection and a standalone diagnostic query
@@ -222,8 +229,9 @@ struct RejectionRecord {
     //
     // The flat fields remain for back-compat — every M2.20 /
     // M2.21 / M2.22 callsite reading `record.compliance` etc.
-    // keeps working. The two views agree by construction; a test
-    // in `commands_test.cpp` M4.2 section pins
+    // keeps working. The two views agree by construction; a
+    // test in `commands_test.cpp` (the post-M3 section near
+    // the end) pins
     // `record.compliance == record.gate_diagnostic.authority_value`
     // and the threshold equivalence.
     CommandGateDiagnostic gate_diagnostic{};

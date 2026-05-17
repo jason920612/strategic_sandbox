@@ -21,14 +21,17 @@
 - Latest shipped work: **post-M3 governance follow-up —
   `CommandGateDiagnostic` on `RejectionRecord`** (this PR;
   originally drafted as "M4.2"; reframed per
-  `docs/rfc-alignment-note-post-m3.md`). Wires the M4.1 diagnostic shape
-  into the apply-time rejection path. `commands::RejectionRecord`
-  gains a `CommandGateDiagnostic gate_diagnostic` field
-  (additive — every existing M2.20 / M2.21 / M2.22 caller
-  reading `record.compliance` / `threshold` / `resistance`
-  keeps working). `dispatch_one`'s two rejection branches
-  now also call `diagnose_enact_policy_gate` /
-  `diagnose_adjust_budget_gate` (introduced in M4.1) and
+  `docs/rfc-alignment-note-post-m3.md`). Wires the previous
+  governance diagnostic shape into the apply-time rejection
+  path. `commands::RejectionRecord` gains a
+  `CommandGateDiagnostic gate_diagnostic` field (additive —
+  every existing M2.20 / M2.21 / M2.22 caller reading
+  `record.compliance` / `threshold` / `resistance` keeps
+  working). `dispatch_one`'s two rejection branches now also
+  call `diagnose_enact_policy_gate` /
+  `diagnose_adjust_budget_gate` (introduced in the previous
+  post-M3 governance follow-up — see
+  `docs/rfc-alignment-note-post-m3.md`) and
   store the result on the record, so the apply-time
   rejection and the standalone diagnostic query share **one
   source of truth** for the gate explanation. Header
@@ -54,8 +57,8 @@
   event system / persistent log / trigger, no AI / UI /
   CLI / REPL, no command-gate integration with M3
   aggregates (still deferred), no removal of the flat
-  `RejectionRecord` fields (a future M4.X cleanup
-  candidate).** Doctest count 794 → 800.
+  `RejectionRecord` fields (a future post-M3 governance
+  cleanup candidate).** Doctest count 794 → 800.
 - Previously shipped (also labelled M4.1 on its merge
   commit, retroactively reframed as a post-M3
   governance follow-up by `docs/rfc-alignment-note-post-m3.md`):
@@ -700,14 +703,16 @@ M2.14 is glue. No save format change;
 on `RejectionRecord` (originally labelled "M4.2"; reframed
 per `docs/rfc-alignment-note-post-m3.md` — NOT RFC-090
 M4 work) —
-wires the M4.1 diagnostic shape into the apply-time
-rejection path. `commands::RejectionRecord` gains a
-`CommandGateDiagnostic gate_diagnostic` field
+wires the previous governance diagnostic shape into the
+apply-time rejection path. `commands::RejectionRecord`
+gains a `CommandGateDiagnostic gate_diagnostic` field
 (additive). `dispatch_one`'s two rejection branches
-populate it via the M4.1 helpers so the standalone
-diagnostic query and the real rejection share one
-source of truth. Header reshape: M4.1 type defs moved
-above M2.20 rejection types. Flat fields and
+populate it via the helpers introduced by the previous
+post-M3 governance follow-up so the standalone diagnostic
+query and the real rejection share one source of truth.
+Header reshape: the previously-introduced type defs
+(`CommandGateKind` / `CommandGateDiagnostic`) moved above
+M2.20 rejection types. Flat fields and
 `format_rejection_message` legacy string preserved
 byte-identical. 6 new doctest cases pinning flat ↔
 diagnostic agreement plus the legacy-substring
@@ -717,9 +722,10 @@ change, no new `PlayerCommandKind`, no event system /
 log / trigger, no AI / UI / CLI / REPL, no
 command-gate integration with M3 aggregates (still
 deferred).** Doctest count 794 → 800;
-**M4.1 command gate diagnostics surface — opens M4
-(command / governance integration). Small read-only
-helpers `diagnose_enact_policy_gate` /
+**Command gate diagnostics surface (post-M3 governance
+follow-up; historically labelled "M4.1" on its merge
+commit — see `docs/rfc-alignment-note-post-m3.md`). Small
+read-only helpers `diagnose_enact_policy_gate` /
 `diagnose_adjust_budget_gate` in
 `leviathan::systems::commands` that explain how the
 existing M2.18 / M2.19 gates would decide on a country
@@ -742,8 +748,10 @@ actually does on the same state. **No save schema bump
 `PlayerCommandKind`, no command formula / threshold
 change, no event system / log / trigger, no AI / UI /
 CLI / REPL, no command-gate integration with M3
-aggregates (deferred to a future M4.X), no M3 work,
-no M4 close-out.** Doctest count 779 → 794;
+aggregates (deferred to a future post-M3 governance
+follow-up), no M3 work, NOT RFC-090 Milestone 4 (which
+remains SVG map + UI) and NOT a close-out of any
+milestone.** Doctest count 779 → 794;
 **M3.11 M3 close-out — M3 exit report
 (`docs/milestone-3-result.md`) pinning the M3.1–M3.11
 ledger, the four-stage reaction loop with rate ladder
