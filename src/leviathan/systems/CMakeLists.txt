@@ -37,6 +37,7 @@ add_library(leviathan_systems STATIC
     logging_system.cpp
     faction_system.cpp
     monthly_pipeline.cpp
+    order_execution.cpp
     policy_system.cpp
     random_service.cpp
     runner.cpp

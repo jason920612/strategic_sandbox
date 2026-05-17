@@ -456,6 +456,34 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.17（OrderExecutionSystem skeleton）** 為 M2 引入第一個讀
+  M2.16 `government_authority` 的 system。新模組
+  `leviathan::systems::order_execution` 包含三個型別與一個 free
+  function：`OrderExecutionInputs`（actor country 的 4 個 authority
+  ratio snapshot，預設 0.5）、`ExecutionStatus` enum（M2.17 只 ship
+  `Accepted`，但 `Rejected` / `Delayed` / `Distorted` 在 header
+  以註解方式保留 RFC-020 §2 對應的未來 variant）、
+  `OrderExecutionOutcome { status, inputs }`，以及
+  `evaluate(state, command) → Result<OrderExecutionOutcome>`。
+  `evaluate` 沿用 M2.3 `apply_pending` 的 precondition shape
+  （`state.player_country` 須有效且 index 進 countries），把
+  actor 的 government_authority 整段 snapshot 到 outcome，然後一律
+  回 `Accepted`。函式是 pure read：不 mutate state、不寫 log、不
+  動 RNG、不 inspect `command.kind`（只是讓 signature 為 M2.18+
+  保留 API shape）。**沒有 caller wire 進來** —
+  `commands::apply_pending` 行為與 M2.5 / M2.16 byte-identical，
+  M1.10 monthly pipeline 也不變。**故意不 ship `resistance`
+  欄位**：避免假裝公式 shape 已定；M2.18+ 在引入公式時一起 ship
+  resistance representation。新 `order_execution.cpp` 接進
+  `leviathan_systems`，新 `order_execution_test.cpp` 接進
+  `leviathan_tests`。10 個新 doctest cover preconditions、success
+  path、inputs mirror authority、non-mutation、kind-independence、
+  determinism、default outcome。對應 RFC-020 §2-§3 的「命令不
+  保證成功」未來工作的第一個資料 seam。**M2.17 不做** save format
+  變更（仍 v10）、`commands::apply_pending` 行為變更、`resistance`
+  欄位 / 公式、`Rejected` / `Delayed` / `Distorted` 行為、replay
+  變更、policy effect 變更、DataLoader 變更、新 `PlayerCommandKind`、
+  新 CSV 欄位、新 `state.logs` 條目、AI / events / UI / scheduler。
   **M2.16（GovernmentAuthorityState）** 為 `core::CountryState` 新增
   `government_authority` 子結構，是 M2 第一個真正的 gameplay state
   擴張，對應 RFC-020 §3「國家掌控力」的 stripped-down 子集。新型別
