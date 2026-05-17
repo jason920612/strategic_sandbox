@@ -154,7 +154,13 @@ TEST_CASE("evaluate: leaves the state byte-identical") {
     CHECK(after.applied_commands.size() == before.applied_commands.size());
 }
 
-TEST_CASE("evaluate: EnactPolicy and AdjustBudget produce identical outcomes") {
+TEST_CASE("evaluate: EnactPolicy and AdjustBudget snapshot the same inputs but compute different resistance") {
+    // With M2.18 the EnactPolicy branch fills in resistance from
+    // bureaucratic_compliance, while AdjustBudget keeps resistance
+    // at 0.0 (no gate evaluated yet). Both still see the same
+    // inputs snapshot and — at the seeded country's 0.62
+    // compliance, well above the 0.3 threshold — both still
+    // resolve to Accepted.
     GameState state;
     state.countries.push_back(seeded_country());
     state.player_country = CountryId{0};
@@ -163,7 +169,11 @@ TEST_CASE("evaluate: EnactPolicy and AdjustBudget produce identical outcomes") {
     const auto adjust = oe::evaluate(state, adjust_military_budget());
     REQUIRE(enact.ok());
     REQUIRE(adjust.ok());
-    CHECK(enact.value().status == adjust.value().status);
+
+    CHECK(enact.value().status  == oe::ExecutionStatus::Accepted);
+    CHECK(adjust.value().status == oe::ExecutionStatus::Accepted);
+
+    // Inputs are kind-independent.
     CHECK(enact.value().inputs.bureaucratic_compliance ==
           doctest::Approx(adjust.value().inputs.bureaucratic_compliance));
     CHECK(enact.value().inputs.military_loyalty ==
@@ -172,6 +182,11 @@ TEST_CASE("evaluate: EnactPolicy and AdjustBudget produce identical outcomes") {
           doctest::Approx(adjust.value().inputs.intelligence_capability));
     CHECK(enact.value().inputs.media_control ==
           doctest::Approx(adjust.value().inputs.media_control));
+
+    // Resistance differs: EnactPolicy fills it; AdjustBudget leaves
+    // it at the default 0.0.
+    CHECK(enact.value().resistance  == doctest::Approx(1.0 - 0.62));
+    CHECK(adjust.value().resistance == doctest::Approx(0.0));
 }
 
 TEST_CASE("evaluate: repeated calls are deterministic") {
@@ -194,11 +209,86 @@ TEST_CASE("evaluate: repeated calls are deterministic") {
 // default constructions
 // ---------------------------------------------------------------------
 
-TEST_CASE("default OrderExecutionOutcome has the M2.17 baseline") {
+TEST_CASE("default OrderExecutionOutcome has the M2.18 baseline") {
     oe::OrderExecutionOutcome o;
     CHECK(o.status == oe::ExecutionStatus::Accepted);
+    CHECK(o.resistance == doctest::Approx(0.0));
     CHECK(o.inputs.bureaucratic_compliance  == doctest::Approx(0.5));
     CHECK(o.inputs.military_loyalty         == doctest::Approx(0.5));
     CHECK(o.inputs.intelligence_capability  == doctest::Approx(0.5));
     CHECK(o.inputs.media_control            == doctest::Approx(0.5));
+}
+
+// ---------------------------------------------------------------------
+// M2.18 - EnactPolicy gate
+// ---------------------------------------------------------------------
+
+namespace {
+
+GameState state_with_compliance(double compliance) {
+    GameState s;
+    CountryState c = seeded_country();
+    c.government_authority.bureaucratic_compliance = compliance;
+    s.countries.push_back(c);
+    s.player_country = CountryId{0};
+    return s;
+}
+
+}  // namespace
+
+TEST_CASE("evaluate EnactPolicy: compliance at threshold (0.3) accepts") {
+    auto s = state_with_compliance(0.3);
+    const auto r = oe::evaluate(s, enact_raise_taxes());
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Accepted);
+    CHECK(r.value().resistance == doctest::Approx(0.7));
+}
+
+TEST_CASE("evaluate EnactPolicy: compliance just below threshold (0.299) rejects") {
+    auto s = state_with_compliance(0.299);
+    const auto r = oe::evaluate(s, enact_raise_taxes());
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+    CHECK(r.value().resistance == doctest::Approx(1.0 - 0.299));
+}
+
+TEST_CASE("evaluate EnactPolicy: resistance is 1.0 - bureaucratic_compliance") {
+    // Spot-check the formula across the [0, 1] range.
+    for (const double c : {0.0, 0.1, 0.5, 0.75, 1.0}) {
+        auto s = state_with_compliance(c);
+        const auto r = oe::evaluate(s, enact_raise_taxes());
+        REQUIRE(r.ok());
+        CHECK(r.value().resistance == doctest::Approx(1.0 - c));
+    }
+}
+
+TEST_CASE("evaluate EnactPolicy: default 0.5 compliance still accepts") {
+    // Regression: canonical scenarios load with default 0.5; the
+    // M2.18 gate must not silently start rejecting them.
+    auto s = state_with_compliance(0.5);
+    const auto r = oe::evaluate(s, enact_raise_taxes());
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Accepted);
+}
+
+TEST_CASE("evaluate AdjustBudget: bypasses the gate even at very low compliance") {
+    auto s = state_with_compliance(0.01);  // would reject EnactPolicy.
+    const auto r = oe::evaluate(s, adjust_military_budget());
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Accepted);
+    // No gate evaluated -> resistance stays at the default 0.0.
+    CHECK(r.value().resistance == doctest::Approx(0.0));
+}
+
+TEST_CASE("evaluate EnactPolicy: rejected path is non-mutating") {
+    auto before = state_with_compliance(0.1);
+    auto after  = before;
+    const auto r = oe::evaluate(after, enact_raise_taxes());
+    REQUIRE(r.ok());
+    CHECK(r.value().status == oe::ExecutionStatus::Rejected);
+    // The country and root-level state stay byte-identical.
+    CHECK(after.countries[0].government_authority.bureaucratic_compliance ==
+          before.countries[0].government_authority.bureaucratic_compliance);
+    CHECK(after.logs.size()             == before.logs.size());
+    CHECK(after.applied_commands.size() == before.applied_commands.size());
 }

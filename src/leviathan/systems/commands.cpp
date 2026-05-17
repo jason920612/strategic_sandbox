@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <sstream>
 #include <string>
 #include <utility>
 
 #include "leviathan/core/entities.hpp"
+#include "leviathan/systems/order_execution.hpp"
 #include "leviathan/systems/policy_system.hpp"
 
 namespace leviathan::systems::commands {
@@ -68,6 +70,35 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
 
         switch (cmd.kind) {
             case core::PlayerCommandKind::EnactPolicy: {
+                // M2.18: order-execution gate. Evaluate BEFORE the
+                // policy lookup so a rejected command can never
+                // touch state.policies / faction state.
+                namespace oe = leviathan::systems::order_execution;
+                auto eval_r = oe::evaluate(state, cmd);
+                if (!eval_r) {
+                    // Precondition failure inside evaluate. This
+                    // should not happen here because apply_pending
+                    // already validated player_country at the top,
+                    // but surface the message faithfully if it does.
+                    return core::Result<ApplyOutcome>::failure(
+                        ctx + ": EnactPolicy '" + cmd.policy_id_code +
+                        "': order_execution::evaluate failed: " +
+                        std::move(eval_r.error()));
+                }
+                if (eval_r.value().status ==
+                        oe::ExecutionStatus::Rejected) {
+                    std::ostringstream os;
+                    os << ctx << ": EnactPolicy '"
+                       << cmd.policy_id_code
+                       << "' rejected by order_execution gate"
+                       << " (bureaucratic_compliance="
+                       << eval_r.value().inputs.bureaucratic_compliance
+                       << " < threshold="
+                       << oe::kEnactPolicyComplianceThreshold
+                       << ")";
+                    return core::Result<ApplyOutcome>::failure(os.str());
+                }
+
                 const core::PolicyData* p =
                     find_policy_by_id_code(state, cmd.policy_id_code);
                 if (p == nullptr) {

@@ -876,3 +876,104 @@ TEST_CASE("M2.7 replay_with_time: full equivalence with original simulation") {
     CHECK(target.countries[0].last_gdp_growth_rate ==
           doctest::Approx(source.countries[0].last_gdp_growth_rate));
 }
+
+// =====================================================================
+// M2.18 - apply_pending honours the order_execution gate
+// =====================================================================
+
+TEST_CASE("M2.18 apply_pending: EnactPolicy is accepted at the default 0.5 compliance") {
+    // Regression: scenario-loaded countries default to 0.5 across
+    // every government_authority field; the M2.18 gate must not
+    // silently start rejecting them.
+    GameState s = ger_state_with_player_selected();
+    REQUIRE(s.countries[0].government_authority.bureaucratic_compliance ==
+            doctest::Approx(0.5));
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.ok());
+    CHECK(r.value().commands_applied == 1);
+    CHECK(q.pending.empty());
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+}
+
+TEST_CASE("M2.18 apply_pending: EnactPolicy rejected when compliance < 0.3") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+    const double tax_before = s.countries[0].legal_tax_burden;
+    const auto active_before = s.countries[0].active_policies.size();
+    const auto log_before    = s.applied_commands.size();
+
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("order_execution") != std::string::npos);
+    CHECK(r.error().find("rejected")        != std::string::npos);
+    CHECK(r.error().find("raise_taxes")     != std::string::npos);
+
+    // Per-command atomicity: state unchanged, queue head intact,
+    // applied_commands log untouched.
+    CHECK(s.countries[0].legal_tax_burden    == doctest::Approx(tax_before));
+    CHECK(s.countries[0].active_policies.size() == active_before);
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(q.pending[0].kind == PlayerCommandKind::EnactPolicy);
+    CHECK(q.pending[0].policy_id_code == "raise_taxes");
+    CHECK(s.applied_commands.size() == log_before);
+}
+
+TEST_CASE("M2.18 apply_pending: rejected EnactPolicy stops a mid-list queue") {
+    // Mid-list rejection mirrors M2.3's unknown-policy semantics:
+    // the previous command applied, the rejected one stays at the
+    // head, and the trailing command stays queued.
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.02;
+    q.pending.push_back(adjust);                                          // accepted (AdjustBudget bypasses gate)
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"}); // rejected at gate
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "increase_education"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("raise_taxes") != std::string::npos);
+
+    // AdjustBudget applied + popped + logged.
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.37));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::AdjustBudget);
+
+    // Rejected EnactPolicy still at head; trailing entry still queued.
+    REQUIRE(q.pending.size() == 2u);
+    CHECK(q.pending[0].kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(q.pending[0].policy_id_code  == "raise_taxes");
+    CHECK(q.pending[1].policy_id_code  == "increase_education");
+}
+
+TEST_CASE("M2.18 apply_pending: AdjustBudget unaffected by low compliance") {
+    // AdjustBudget is explicitly excluded from the M2.18 gate.
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    const double mil_before = s.countries[0].budget.military;
+
+    cmd::CommandQueue q;
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.03;
+    q.pending.push_back(adjust);
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.ok());
+    CHECK(s.countries[0].budget.military ==
+          doctest::Approx(mil_before + 0.03));
+    REQUIRE(s.applied_commands.size() == 1u);
+}

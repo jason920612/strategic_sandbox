@@ -8,35 +8,37 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.17 — OrderExecutionSystem
-  skeleton.** First M2 system that reads the M2.16
-  `government_authority` block. New module
-  `leviathan::systems::order_execution` ships three types and one
-  free function: `OrderExecutionInputs` (4-field snapshot of the
-  actor country's authority ratios, defaults 0.5),
-  `ExecutionStatus` (enum with only `Accepted` shipped; `Rejected`
-  / `Delayed` / `Distorted` reserved by name for M2.18+),
-  `OrderExecutionOutcome { status, inputs }`, and
-  `evaluate(state, command) → Result<OrderExecutionOutcome>`.
-  `evaluate` mirrors the M2.3 precondition shape (valid
-  `player_country` indexing into countries), snapshots the actor's
-  authority into the outcome, and always returns `Accepted`. **No
-  caller wires the function in yet** — `commands::apply_pending`
-  is byte-identical with M2.5 / M2.16. **No `resistance` field**
-  in the outcome: ship the API surface without pretending the
-  formula shape is decided; M2.18+ will introduce the formula and
-  the resistance representation together. No save format change
-  (still v10); no new CLI flag; no `state.logs` entry; no policy
-  effect change.
-- Previously shipped: **M2.16 — GovernmentAuthorityState** (new
-  POD with 4 `[0, 1]` ratios on `CountryState`; save schema bumped
-  v9 → v10). **M2.14 — Replay target-date CLI**. **M2.9 — Replay
-  CLI error-path hardening**.
-- Next sub-milestone candidate: **M2.18 — EnactPolicy execution
-  gate.** Introduces the first formula over
-  `OrderExecutionInputs`, wires `evaluate` into
-  `commands::apply_pending`, and decides how non-Accepted outcomes
-  surface in the applied-commands log. Save-neutral.
+- Latest shipped sub-milestone: **M2.18 — EnactPolicy execution
+  gate.** First M2 sub-milestone where a player command can be
+  **rejected**. `order_execution` grows two pieces: a new constant
+  `kEnactPolicyComplianceThreshold = 0.3` and a `Rejected` variant
+  on `ExecutionStatus`. `OrderExecutionOutcome` adds a
+  `resistance` field (`1.0 - bureaucratic_compliance` for
+  `EnactPolicy`; `0.0` for every other kind since no gate is
+  evaluated for them yet). `evaluate()` now branches on
+  `command.kind`: `EnactPolicy` compares the actor's
+  `bureaucratic_compliance` against the threshold and returns
+  `Accepted` when `>= 0.3`, `Rejected` otherwise; `AdjustBudget`
+  stays unconditionally `Accepted`. `commands::apply_pending` is
+  wired: before the M2.3 policy lookup for an `EnactPolicy`
+  command, it calls `evaluate` and short-circuits on `Rejected`
+  with a `Result::failure` whose error names `order_execution`,
+  `rejected`, and the policy id_code. The rejected command stays
+  at the head of the queue and is **not** appended to
+  `state.applied_commands` — mirrors M2.3 / M2.4 mid-list-failure
+  atomicity. Threshold 0.3 is chosen so canonical default-0.5
+  scenarios accept unchanged (no test regression). No save format
+  change (still v10); no `state.logs` entry on rejection; no
+  `AdjustBudget` gate; no `Delayed` / `Distorted` variants; no
+  scheduler; no RNG; no AI / events / UI.
+- Previously shipped: **M2.17 — OrderExecutionSystem skeleton**.
+  **M2.16 — GovernmentAuthorityState** (save schema bumped v9 →
+  v10). **M2.14 — Replay target-date CLI**.
+- Next sub-milestone candidate: **M2.19 — AdjustBudget execution
+  gate.** Apply the same shape to `AdjustBudget`. Likely picks
+  `bureaucratic_compliance` plus possibly `corruption` (already
+  on `CountryState`) as the formula inputs and ships a separate
+  `kAdjustBudgetComplianceThreshold`. Save-neutral.
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -62,7 +64,7 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
-M2.16 + M2.17 merged. Thirty-three sub-milestones shipped:
+M2.16 + M2.17 + M2.18 merged. Thirty-four sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -209,6 +211,27 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.18 EnactPolicy execution gate — first M2 sub-milestone where
+a player command can be **rejected**. `order_execution` grows the
+constant `kEnactPolicyComplianceThreshold = 0.3`, a `Rejected`
+variant on `ExecutionStatus`, and a `resistance` field on
+`OrderExecutionOutcome` (`1.0 - bureaucratic_compliance` for
+`EnactPolicy`; `0.0` for kinds without a gate). `evaluate` now
+branches on `command.kind`: `EnactPolicy` is `Accepted` when
+`bureaucratic_compliance >= 0.3` and `Rejected` otherwise;
+`AdjustBudget` stays unconditionally `Accepted`.
+`commands::apply_pending` calls `evaluate` BEFORE the M2.3 policy
+lookup for `EnactPolicy` commands; on `Rejected` it returns
+`Result::failure` whose error names `order_execution`, `rejected`,
+and the policy id_code. The rejected command stays at the head of
+the queue and is NOT appended to `state.applied_commands`
+(mirrors M2.3 / M2.4 mid-list-failure atomicity). Threshold 0.3
+chosen so canonical default-0.5 scenarios accept unchanged. No
+save format change (still v10); no `AdjustBudget` gate; no
+`Delayed` / `Distorted` outcomes; no scheduler; no RNG; no
+`state.logs` entry on rejection; no `RunOutcome` field counting
+rejected commands; no DataLoader / policy effect / replay /
+runner / M1 system change;
 **M2.17 OrderExecutionSystem skeleton — first M2 system that reads
 the M2.16 `government_authority` block. New module
 `leviathan::systems::order_execution` with `OrderExecutionInputs`
@@ -506,7 +529,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.17 there are **585 doctest cases**. M0 contributed 179;
+As of M2.18 there are **595 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -515,7 +538,23 @@ end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
-M2.17 adds 10 covering the new `order_execution::evaluate`
+M2.17 added 10; M2.18 adds 10 covering the new EnactPolicy gate:
+6 in `order_execution_test.cpp` (compliance at threshold 0.3
+accepts with resistance 0.7; compliance 0.299 rejects;
+`resistance == 1.0 - compliance` across spot-check inputs;
+default 0.5 compliance still accepts; `AdjustBudget` bypasses the
+gate at compliance 0.01; rejected path leaves state byte-
+identical) and 4 in `commands_test.cpp` (default 0.5 EnactPolicy
+still drains the queue and logs; compliance < 0.3 rejected with
+`order_execution` + `rejected` + policy id_code in the error,
+state unchanged, queue head intact, applied_commands untouched;
+mid-list rejection stops with prior AdjustBudget already applied
+and logged while trailing EnactPolicy stays queued;
+`AdjustBudget` unaffected by 0.05 compliance). Drive-by updates:
+"default OrderExecutionOutcome" now also pins `resistance == 0.0`
+and the "EnactPolicy and AdjustBudget" kind-comparison test
+splits into "same inputs, different resistance". Previously
+M2.17 added 10 covering the new `order_execution::evaluate`
 skeleton (3 precondition cases — no player_country, out of range,
 empty countries; 3 success-path cases — Accepted returned, inputs
 mirror the actor's authority block one-for-one, function reads
