@@ -456,6 +456,35 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.19（AdjustBudget execution gate）** 延伸 M2.18 的命令拒絕
+  shape 到 `AdjustBudget`，加入一個 category-aware 的單欄位切換：
+  `command.budget_category == "military"` 時 gate 看
+  `military_loyalty`，其他 6 個 category 仍走 `bureaucratic_compliance`。
+  新常數 `kAdjustBudgetComplianceThreshold = 0.3`（與 M2.18 同值，
+  維持 canonical default-0.5 scenario Accepted 不變）。`evaluate()`
+  的 `AdjustBudget` arm 依 category 選 input → 計算
+  `resistance = 1.0 - selected` →
+  `status = (selected >= 0.3) ? Accepted : Rejected`。
+  `commands::apply_pending` 在 M2.5 的 finite-delta + category
+  whitelist 檢查之前先呼叫 `evaluate`：Rejected 時直接回
+  `Result::failure`，錯誤訊息包含 `order_execution` /
+  `rejected` / `AdjustBudget` / `budget_category` / selected
+  compliance 數值 / threshold；rejected command 留在 queue head、
+  state 不 mutate、`state.applied_commands` 不 append（沿用
+  M2.3 / M2.4 mid-list-failure atomicity）。軍事 category 走
+  military_loyalty 的設計反映 RFC-020 §2「軍方陽奉陰違」的核心：
+  低忠誠度政權想改變軍隊預算時會被擋下；其他 category 仍由
+  官僚層處理，與 EnactPolicy 一致。Replay 相容性：所有現存 v10
+  save 在 default 0.5 authority 下都 Accept，replay 不會 regression。
+  對應 RFC-020 §2 命令阻力列表的第二個落地工作。**M2.19 不做**
+  save format 變更（仍 v10）、`Delayed` / `Distorted` outcome、
+  `military` 之外的 per-category routing（例如
+  `intelligence` → `intelligence_capability`，留給未來 PR）、
+  weighted multi-input formula、RNG / 機率 gate、scheduler、
+  rejected 時的 `state.logs` 條目、`RunOutcome` 拒絕計數
+  （M2.20 候選）、DataLoader / policy effect / replay primitive /
+  runner 變更、新 `PlayerCommandKind`、新 CSV 欄位、M1 system
+  變更。
   **M2.18（EnactPolicy execution gate）** 是 M2 第一個會「拒絕」
   玩家命令的 sub-milestone。`order_execution` 新增三件事：
   常數 `kEnactPolicyComplianceThreshold = 0.3`、`ExecutionStatus`

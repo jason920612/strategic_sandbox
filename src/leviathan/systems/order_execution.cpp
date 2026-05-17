@@ -49,8 +49,21 @@ core::Result<OrderExecutionOutcome> evaluate(
             break;
         }
         case core::PlayerCommandKind::AdjustBudget: {
-            // No gate yet. resistance stays at 0.0 ("no gate
-            // evaluated"), status stays at Accepted.
+            // M2.19: category-aware single-input gate. The
+            // "military" budget category gates on military_loyalty
+            // (the armed forces resist reshaping their own budget
+            // when they don't trust the regime); every other
+            // category flows through bureaucratic_compliance, the
+            // same channel as M2.18 EnactPolicy.
+            const double selected =
+                (command.budget_category == "military")
+                    ? outcome.inputs.military_loyalty
+                    : outcome.inputs.bureaucratic_compliance;
+            outcome.resistance = 1.0 - selected;
+            outcome.status =
+                (selected >= kAdjustBudgetComplianceThreshold)
+                    ? ExecutionStatus::Accepted
+                    : ExecutionStatus::Rejected;
             break;
         }
     }

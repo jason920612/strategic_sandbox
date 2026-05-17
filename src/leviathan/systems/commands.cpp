@@ -117,6 +117,37 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
                 break;
             }
             case core::PlayerCommandKind::AdjustBudget: {
+                // M2.19: order-execution gate. Evaluate BEFORE the
+                // existing finite-delta + category-whitelist checks
+                // so a rejected command never touches the budget
+                // pointer. Mirrors the M2.18 EnactPolicy wiring
+                // shape.
+                namespace oe = leviathan::systems::order_execution;
+                auto eval_r = oe::evaluate(state, cmd);
+                if (!eval_r) {
+                    return core::Result<ApplyOutcome>::failure(
+                        ctx + ": AdjustBudget '" + cmd.budget_category +
+                        "': order_execution::evaluate failed: " +
+                        std::move(eval_r.error()));
+                }
+                if (eval_r.value().status ==
+                        oe::ExecutionStatus::Rejected) {
+                    const double selected =
+                        (cmd.budget_category == "military")
+                            ? eval_r.value().inputs.military_loyalty
+                            : eval_r.value().inputs.bureaucratic_compliance;
+                    std::ostringstream os;
+                    os << ctx
+                       << ": AdjustBudget category '"
+                       << cmd.budget_category
+                       << "' rejected by order_execution gate"
+                       << " (compliance=" << selected
+                       << " < threshold="
+                       << oe::kAdjustBudgetComplianceThreshold
+                       << ")";
+                    return core::Result<ApplyOutcome>::failure(os.str());
+                }
+
                 // Pre-flight: finite delta. The DataLoader doesn't go
                 // through this path, so a hand-rolled NaN/Inf would
                 // otherwise corrupt the budget silently.

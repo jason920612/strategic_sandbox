@@ -1,52 +1,67 @@
-// OrderExecutionSystem (M2.17 skeleton + M2.18 EnactPolicy gate).
+// OrderExecutionSystem (M2.17 skeleton + M2.18 EnactPolicy gate +
+//                       M2.19 AdjustBudget gate).
 //
 // First M2 system that reads the M2.16 `government_authority` block.
-// M2.17 shipped the API surface (types + a pure-read `evaluate()`
-// that always returned `Accepted`); M2.18 turns the surface into
-// a real gate for `PlayerCommandKind::EnactPolicy`:
+// M2.17 shipped the API surface; M2.18 turned the `EnactPolicy`
+// branch into a real gate; M2.19 extends the gate to `AdjustBudget`
+// with a category-aware single-input formula.
 //
-//   * The first deterministic formula lives here. `EnactPolicy`
-//     command evaluation now compares the actor country's
+//   * M2.18 — `EnactPolicy` arm: compares the actor country's
 //     `bureaucratic_compliance` against
 //     `kEnactPolicyComplianceThreshold` (0.3). Strictly below ⇒
-//     `Rejected`; equal-or-above ⇒ `Accepted`.
-//   * `OrderExecutionOutcome` gains a `resistance` field
-//     (`1.0 - bureaucratic_compliance` for `EnactPolicy`). It is
-//     informational; no system other than the gate itself reads it.
-//     `AdjustBudget` and other kinds leave `resistance` at the
-//     default 0.0 because no gate is evaluated for them yet.
-//   * `ExecutionStatus` gains a `Rejected` variant.
-//   * `commands::apply_pending` calls `evaluate` BEFORE the M2.3
-//     policy lookup for `EnactPolicy` and returns `Result::failure`
-//     when the outcome is `Rejected`. The failed command stays at
-//     the head of the queue and is NOT appended to
-//     `state.applied_commands` — mirrors M2.3 mid-list failure
-//     atomicity.
+//     `Rejected`; equal-or-above ⇒ `Accepted`. `resistance` is
+//     `1.0 - bureaucratic_compliance`.
+//   * M2.19 — `AdjustBudget` arm: selects ONE authority input
+//     based on `command.budget_category`:
+//       - `"military"` ⇒ `military_loyalty`
+//       - every other category ⇒ `bureaucratic_compliance`
+//     Then compares the selected value against
+//     `kAdjustBudgetComplianceThreshold` (0.3) with the same
+//     `>= threshold` rule. `resistance` is `1.0 - selected`.
+//     The military branch captures the gameplay intuition that
+//     the armed forces resist a low-loyalty regime trying to
+//     reshape the military budget, while non-military categories
+//     still flow through normal bureaucracy.
 //
-// What this system DOES (M2.17 + M2.18):
+// Across both arms `commands::apply_pending` calls `evaluate`
+// BEFORE the existing per-kind validation (policy lookup for
+// `EnactPolicy`, category whitelist + delta finiteness for
+// `AdjustBudget`). A `Rejected` outcome returns `Result::failure`
+// from `apply_pending`; the rejected command stays at the head
+// of the queue and is NOT appended to `state.applied_commands`,
+// matching the M2.3 / M2.4 mid-list-failure atomicity rule.
+//
+// What this system DOES (M2.17 + M2.18 + M2.19):
 //   * Snapshots the actor country's `government_authority` ratios
 //     into `OrderExecutionInputs`.
-//   * Computes a per-command-kind resistance + status. M2.18 only
-//     evaluates `EnactPolicy`; every other kind is unconditionally
-//     `Accepted` with `resistance = 0.0`.
+//   * Computes a per-command-kind status + resistance:
+//       - `EnactPolicy`: bureaucratic gate (M2.18).
+//       - `AdjustBudget`: category-aware gate (M2.19).
+//       - Any future kind without an explicit arm: keeps the
+//         M2.17 defaults (`Accepted`, `resistance = 0.0`).
 //   * Fails loudly when `state.player_country` is unset or out of
 //     range (mirrors the M2.3 `apply_pending` precondition shape).
 //   * Is a pure read: never mutates `state`, never logs, never
 //     touches the RNG.
 //
-// What this system does NOT do (deliberate non-goals for M2.18):
-//   * No `Delayed` / `Distorted` status variants. M2.18 ships only
-//     `Accepted` and `Rejected`; the other RFC-020 §2 cases stay
-//     reserved by name in the enum comment.
-//   * No `AdjustBudget` gate. `evaluate` returns `Accepted` for
-//     `AdjustBudget` regardless of `bureaucratic_compliance`.
-//   * No multi-input or weighted formula. The composite shape
-//     waits for actual gameplay evidence about which terms matter.
-//   * No probabilistic / RNG-based gate. The threshold check is
-//     fully deterministic.
+// What this system does NOT do (deliberate non-goals for M2.19):
+//   * No `Delayed` / `Distorted` status variants. M2.19 still
+//     ships only `Accepted` and `Rejected`; the other RFC-020 §2
+//     cases stay reserved by name in the enum comment.
+//   * No multi-input or weighted formula. M2.19 keeps the per-
+//     kind / per-category formula to a single input; weighted
+//     composites wait for actual gameplay evidence.
+//   * No probabilistic / RNG-based gate.
 //   * No scheduler / pending-execution queue.
-//   * No automatic logging of rejected commands. `state.logs` is
-//     untouched.
+//   * No category-specific selection beyond
+//     `"military"` ⇒ `military_loyalty`. The other six budget
+//     categories (administration / education / welfare /
+//     intelligence / infrastructure / industry) all share the
+//     `bureaucratic_compliance` path — adding bespoke per-
+//     category inputs (e.g. `intelligence` ⇒
+//     `intelligence_capability`) waits for its own PR.
+//   * No automatic logging of rejected commands. `state.logs`
+//     remains untouched.
 //   * No AI, no events, no UI.
 //
 // Stable seam (still applies):
@@ -72,6 +87,14 @@ namespace leviathan::systems::order_execution {
 // existing scenarios) while leaving room to author low-compliance
 // countries that visibly stall.
 inline constexpr double kEnactPolicyComplianceThreshold = 0.3;
+
+// M2.19 threshold for the `AdjustBudget` gate. Compared against
+// the category-selected input (`military_loyalty` for the
+// `"military"` budget category, `bureaucratic_compliance` for
+// every other category). Same `0.3` floor as the `EnactPolicy`
+// gate so canonical default-0.5 authority countries continue to
+// accept budget changes unchanged.
+inline constexpr double kAdjustBudgetComplianceThreshold = 0.3;
 
 // Snapshot of the M2.16 `GovernmentAuthorityState` fields read out
 // of the actor country. Captured into the outcome so callers can
@@ -105,19 +128,28 @@ enum class ExecutionStatus {
     // Future: Delayed, Distorted
 };
 
-// Result of evaluating how a command would execute. M2.18:
-//   * `status` is `Rejected` only for `EnactPolicy` with
-//     `inputs.bureaucratic_compliance < kEnactPolicyComplianceThreshold`.
+// Result of evaluating how a command would execute. M2.19:
+//   * `status` is `Rejected` when:
+//       - `EnactPolicy` with
+//         `bureaucratic_compliance < kEnactPolicyComplianceThreshold`,
+//         OR
+//       - `AdjustBudget` with the category-selected input below
+//         `kAdjustBudgetComplianceThreshold` — the selection is
+//         `military_loyalty` for `budget_category == "military"`
+//         and `bureaucratic_compliance` for every other category.
 //     Every other (command kind, inputs) pair returns `Accepted`.
-//   * `resistance` is `1.0 - bureaucratic_compliance` for
-//     `EnactPolicy` (informational; equals the distance from
-//     full compliance). For `AdjustBudget` and any future kind
-//     that doesn't yet have a gate, `resistance` stays at the
-//     default `0.0` — "no gate was evaluated".
+//   * `resistance` is `1.0 - selected_input`:
+//       - For `EnactPolicy`: selected = `bureaucratic_compliance`.
+//       - For `AdjustBudget` military: selected = `military_loyalty`.
+//       - For `AdjustBudget` non-military: selected =
+//         `bureaucratic_compliance`.
+//     For any future kind that doesn't yet have a gate,
+//     `resistance` stays at the default `0.0` — "no gate was
+//     evaluated".
 //   * `inputs` is always populated with the actor country's
 //     authority snapshot regardless of kind.
 //
-// `resistance` is informational. M2.18 doesn't consume it
+// `resistance` is informational. M2.19 doesn't consume it
 // anywhere downstream; future diagnostics / logging PRs may
 // surface it but should not change its computation rule.
 struct OrderExecutionOutcome {
@@ -137,21 +169,28 @@ struct OrderExecutionOutcome {
 // On success the function:
 //   * Snapshots the actor country's `government_authority` into
 //     `OrderExecutionInputs`.
-//   * For `PlayerCommandKind::EnactPolicy`:
+//   * For `PlayerCommandKind::EnactPolicy` (M2.18):
 //       resistance = 1.0 - bureaucratic_compliance
 //       status     = (bureaucratic_compliance >=
 //                     kEnactPolicyComplianceThreshold)
 //                    ? Accepted : Rejected
-//   * For every other kind:
+//   * For `PlayerCommandKind::AdjustBudget` (M2.19):
+//       selected   = (command.budget_category == "military")
+//                    ? military_loyalty
+//                    : bureaucratic_compliance
+//       resistance = 1.0 - selected
+//       status     = (selected >= kAdjustBudgetComplianceThreshold)
+//                    ? Accepted : Rejected
+//   * For every other (future) kind:
 //       resistance = 0.0
 //       status     = Accepted
 //   * Leaves `state` and `command` byte-identical.
 //
 // `commands::apply_pending` calls this function before the M2.3
-// policy lookup for every `EnactPolicy` command. A `Rejected`
-// outcome short-circuits the call: no state mutation, no queue
-// pop, no `applied_commands` entry — same atomicity rule M2.3
-// applies to mid-list policy-system failures.
+// per-kind validation for every `EnactPolicy` and `AdjustBudget`
+// command. A `Rejected` outcome short-circuits the call: no
+// state mutation, no queue pop, no `applied_commands` entry —
+// same atomicity rule M2.3 applies to mid-list per-kind failures.
 core::Result<OrderExecutionOutcome> evaluate(
     const core::GameState& state,
     const core::PlayerCommand& command);
