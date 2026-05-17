@@ -747,6 +747,61 @@ TEST_CASE("compare_states: M3.1 interest_groups per-field differences are report
 }
 
 // ---------------------------------------------------------------------
+// M4.1 - provinces compare_states walk
+// ---------------------------------------------------------------------
+
+TEST_CASE("compare_states: M4.1 identical provinces produce no mismatch") {
+    GameState a;
+    GameState b;
+    leviathan::core::ProvinceNode p;
+    p.id_code = "berlin";
+    p.name    = "Berlin";
+    p.owner   = CountryId{0};
+    p.x       = 0.5;
+    p.y       = 0.4;
+    a.provinces.push_back(p);
+    b.provinces.push_back(p);
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: M4.1 provinces size mismatch reported") {
+    GameState a;
+    GameState b;
+    leviathan::core::ProvinceNode p;
+    p.id_code = "berlin";
+    p.name    = "Berlin";
+    p.owner   = CountryId{0};
+    b.provinces.push_back(p);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "provinces.size()");
+    CHECK(m[0].detail     == "0 != 1");
+}
+
+TEST_CASE("compare_states: M4.1 provinces per-field differences are reported per path") {
+    GameState a;
+    GameState b;
+    leviathan::core::ProvinceNode pa;
+    pa.id_code = "berlin";
+    pa.name    = "Berlin";
+    pa.owner   = CountryId{0};
+    pa.x       = 0.5;
+    pa.y       = 0.4;
+    a.provinces.push_back(pa);
+    leviathan::core::ProvinceNode pb = pa;
+    pb.name  = "Berlin-West";
+    pb.owner = CountryId{1};
+    pb.x     = 0.51;
+    b.provinces.push_back(pb);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 3u);
+    CHECK(m[0].field_path == "provinces[0].name");
+    CHECK(m[1].field_path == "provinces[0].owner");
+    CHECK(m[2].field_path == "provinces[0].x");
+}
+
+// ---------------------------------------------------------------------
 // M3.5 - per-interest-group snapshot + CSV + csv_escape
 // ---------------------------------------------------------------------
 

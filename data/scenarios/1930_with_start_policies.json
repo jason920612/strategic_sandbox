@@ -26,6 +26,9 @@
       { "policy": "raise_taxes",              "actor": "GER" },
       { "policy": "increase_military_budget", "actor": "GER" }
     ],
+    "provinces": [
+      "provinces/1930_core_nodes.json"
+    ],
     "interest_groups": [
       {
         "id_code":    "ger_bureaucracy",

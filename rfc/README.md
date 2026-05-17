@@ -217,6 +217,35 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.1（SVG
+  map data skeleton）** 開啟 M4。把 M0 死掉的
+  `ProvinceState{id, owner}` stub 換成 typed
+  `core::ProvinceNode { id_code, name, owner, x, y }`，
+  `x` / `y` 是 normalised `[0, 1]` 地圖座標；
+  `GameState::provinces` 變成 typed vector，但目前沒有任何
+  system 讀它 ── M4.1 是 **純資料** PR，未來 SVG exporter /
+  HTML viewer / clickable map 才會消費。**Save format 從
+  v11 bump 到 v12**：`provinces` array 在 save 層 REQUIRED
+  （empty 允許），每個 entry 全部 validate（id_code / name
+  非空、owner 必須索引到 `state.countries`、x / y finite 在
+  `[0, 1]`、duplicate id_code 拒絕）；v11 save 直接拒收。
+  Scenario loader 新增 OPTIONAL 的 root-level `provinces`
+  array，每個元素是指到 per-file province manifest 的路徑
+  （`{ "provinces": [ {id, name, owner, x, y}, ... ] }`）；
+  pre-M4.1 manifest 不會壞（缺鍵 = 空 vector）；跨檔案的
+  id_code 唯一性也在這層強制。新 canonical fixture
+  `data/provinces/1930_core_nodes.json` 三個 nodes
+  （berlin / paris / tokyo，分別屬於 GER / FRA / JPN），兩
+  個 canonical scenario manifest 都接上。`ScenarioLoadOutcome`
+  新增 `provinces_loaded`。`diagnostics::compare_states`
+  新增 provinces walk（size + per-field paths）。19 個新
+  doctest cases（8 save_system + 8 scenario_loader + 3
+  diagnostics；共 764）。**M4 in progress.** **M4.1 不做**
+  SVG exporter / HTML viewer / clickable UI / 任何 rendering /
+  map colour / ownership dynamics / 鄰接 / terrain / 戰爭 /
+  events / AI / command integration / 新 `PlayerCommandKind` /
+  runner CLI flag / 新 artefact（仍 8）/ provinces CSV /
+  M3 公式變更 / M2 command gate 變更 / 外交 / M5 event engine。
 - **M3（已關閉）** — 內政 / 利益團體反應層。**M3.9（M3
   close-out）** 是純文件 PR：新增 `docs/milestone-3-result.md`
   （M3 exit report：M3.1–M3.8 ledger、final dataflow、8-artefact

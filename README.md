@@ -6,24 +6,49 @@
 
 ## Status
 
-- Phase: **Milestone 3 closed.** M0 / M1 / M2 / M3 all
-  closed. M3 shipped a typed political-actor data layer
-  (M3.1), a closed reaction loop across country state and
-  group state (M3.2 / M3.3 / M3.4), three observability
-  artefacts covering both group state and per-mutation
-  outcome traces (M3.5 / M3.6), an integration checkpoint
-  pinning the loop (M3.7), a small canonical-scenario
-  fixture so the artefacts carry real data on canonical
-  runs (M3.8), and a final close-out (M3.9). See
+- Phase: **Milestone 4 — SVG map + UI (in progress, RFC-090
+  §M4).** M0 / M1 / M2 / M3 all closed; M4 opens with
+  M4.1 introducing the typed `ProvinceNode` map-node data
+  layer. M4 will go on to add an SVG exporter, an HTML viewer
+  / clickable map, and the gameplay-side surfaces that the
+  RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- **Next milestone: TBD — requires explicit reviewer
-  direction.** Candidates: RFC-090 M4 (SVG map + UI),
-  RFC-090 M5 (event engine), or a deliberately
-  non-RFC-numbered post-M3 governance follow-up. No
-  candidate is committed and no next-milestone work has
-  started.
-- Latest shipped sub-milestone: **M3.9 — M3 close-out.**
+- Latest shipped sub-milestone: **M4.1 — SVG map data
+  skeleton.** Fleshes out what used to be the M0
+  `ProvinceState{id, owner}` stub into a typed
+  `core::ProvinceNode { id_code, name, owner, x, y }` with
+  normalised `[0, 1]` map coordinates. `GameState::provinces`
+  is now a typed vector that no system reads yet —
+  M4.1 is **data only**; the future SVG exporter / UI
+  consumes it. **Save format bumped v11 → v12**: the
+  `provinces` array is required at the save layer (empty
+  allowed), every entry validated (non-empty id_code + name,
+  owner resolves into `state.countries`, x / y finite in
+  `[0, 1]`, duplicate id_code rejected); v11 saves rejected
+  loudly. Scenario loader gains an **optional** root-level
+  `provinces` array of file paths pointing at per-file
+  province manifests (`{ "provinces": [ {id, name, owner,
+  x, y}, ... ] }`); manifests authored before M4.1 stay
+  valid (missing key parses as empty); cross-file id_code
+  uniqueness enforced. New canonical fixture
+  `data/provinces/1930_core_nodes.json` ships three nodes
+  (`berlin` / `paris` / `tokyo` owned by GER / FRA / JPN),
+  wired into both canonical scenario manifests.
+  `ScenarioLoadOutcome` gains `provinces_loaded`.
+  `diagnostics::compare_states` now walks the provinces
+  vector (size + per-field paths). 19 new doctest cases
+  (8 save_system + 8 scenario_loader + 3 diagnostics; 764
+  total). **M4 in progress.** **No SVG exporter, no HTML
+  viewer, no clickable UI, no province rendering, no map
+  colours, no ownership dynamics, no neighbour adjacency,
+  no terrain / resources / population, no war / fronts /
+  movement, no events, no AI, no command integration, no
+  new `PlayerCommandKind`, no runner CLI flag, no new
+  artefact (still 8), no CSV for provinces, no changes to
+  M3 formulas, no changes to M2 command gates, no
+  diplomacy, no M5 event-engine work.**
+- Previously shipped: **M3.9 — M3 close-out.**
   Doc-only PR that publishes `docs/milestone-3-result.md`
   (M3 exit report), annotates
   `docs/milestone-3-checkpoint.md` as historical, and flips
@@ -313,19 +338,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- **Next milestone: TBD — requires explicit reviewer
-  direction.** Candidates: **RFC-090 M4** (SVG map + UI),
-  **RFC-090 M5** (event engine), or a deliberately
-  non-RFC-numbered post-M3 governance follow-up. None
-  committed; reviewer chooses. M3.9 deliberately does not
-  open or claim any of the above — there is no "M4 in
-  progress" wording in main.
+- Next sub-milestone candidate (post-M4.1): **M4.2** — open.
+  M4.1 only ships the `ProvinceNode` data layer; natural
+  next steps include (a) an SVG exporter that walks
+  `state.provinces` and emits a static map, (b) an HTML
+  viewer wrapped around that exporter, (c) a clickable map
+  / country-panel surface, (d) richer node fields
+  (neighbour adjacency, terrain) once a renderer needs
+  them. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
-  shipped. See `docs/milestone-0-result.md`,
-  `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
-  and `docs/milestone-3-result.md` for the exit reports,
-  and `rfc/RFC-090-roadmap.md` for the full milestone map.
+  shipped. **M4 in progress** with M4.1 shipped. See
+  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
+  `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
+  for the exit reports, and `rfc/RFC-090-roadmap.md` for the
+  full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -349,7 +376,9 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped. Forty-seven sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
+**Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
+with M4.1 shipped. Forty-eight sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -496,6 +525,37 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.1 SVG map data skeleton — opens RFC-090 §M4 (SVG map +
+UI). Replaces the dead M0 `ProvinceState{id, owner}` stub with
+a typed `core::ProvinceNode { id_code, name, owner, x, y }`
+where `x` / `y` are normalised `[0, 1]` map coordinates;
+`GameState::provinces` is now a typed vector but no system
+reads it yet — M4.1 is data only, the future SVG exporter / UI
+consumes it. **Save format bumped v11 → v12**: the `provinces`
+array is REQUIRED at the save layer (empty allowed) with every
+entry validated (non-empty id_code + name, owner resolving
+into `state.countries`, x / y finite in `[0, 1]`, duplicate
+id_code rejected); v11 saves rejected loudly. Scenario loader
+gains an OPTIONAL root-level `provinces` array of file paths
+pointing at per-file province manifests (`{ "provinces": [
+{id, name, owner, x, y}, ... ] }`); manifests authored before
+M4.1 stay valid (missing key parses as empty); cross-file
+id_code uniqueness enforced. New canonical fixture
+`data/provinces/1930_core_nodes.json` ships three nodes
+(berlin / paris / tokyo owned by GER / FRA / JPN), wired into
+both canonical scenario manifests. `ScenarioLoadOutcome` gains
+`provinces_loaded`. `diagnostics::compare_states` walks the
+provinces vector (size + per-field paths `provinces[N].
+{id_code,name,owner,x,y}`). 19 new doctest cases
+(8 save_system + 8 scenario_loader + 3 diagnostics; 764 total).
+**M4 in progress.** **No SVG exporter, no HTML viewer, no
+clickable UI, no province rendering, no map colours, no
+ownership dynamics, no neighbour adjacency, no terrain /
+resources / population, no war / fronts / movement, no events,
+no AI, no command integration, no new `PlayerCommandKind`,
+no runner CLI flag, no new artefact (still 8), no CSV for
+provinces, no changes to M3 formulas, no changes to M2
+command gates, no diplomacy, no M5 event-engine work.**;
 **M3.9 M3 close-out — doc-only PR that publishes
 `docs/milestone-3-result.md` (the M3 exit report:
 nine-row sub-milestone ledger, final dataflow, eight-artefact

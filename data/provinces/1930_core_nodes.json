@@ -1,0 +1,25 @@
+{
+  "provinces": [
+    {
+      "id":    "berlin",
+      "name":  "Berlin",
+      "owner": "GER",
+      "x":     0.52,
+      "y":     0.44
+    },
+    {
+      "id":    "paris",
+      "name":  "Paris",
+      "owner": "FRA",
+      "x":     0.47,
+      "y":     0.48
+    },
+    {
+      "id":    "tokyo",
+      "name":  "Tokyo",
+      "owner": "JPN",
+      "x":     0.83,
+      "y":     0.55
+    }
+  ]
+}

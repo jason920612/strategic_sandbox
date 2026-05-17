@@ -19,7 +19,7 @@ using leviathan::core::make_game_state;
 using leviathan::core::PolicyData;
 using leviathan::core::PolicyId;
 using leviathan::core::ProvinceId;
-using leviathan::core::ProvinceState;
+using leviathan::core::ProvinceNode;
 using leviathan::core::SimulationConfig;
 
 TEST_CASE("Default GameState has the documented baseline") {
@@ -83,7 +83,15 @@ TEST_CASE("GameState containers accept their entity types") {
     germany.id   = CountryId{1};
     germany.name = "Germany";
     state.countries.push_back(std::move(germany));
-    state.provinces.push_back(ProvinceState{ProvinceId{10}, CountryId{1}});
+    {
+        ProvinceNode n;
+        n.id_code = "berlin";
+        n.name    = "Berlin";
+        n.owner   = CountryId{1};
+        n.x       = 0.5;
+        n.y       = 0.5;
+        state.provinces.push_back(std::move(n));
+    }
     state.factions.push_back(FactionState{FactionId{100}, CountryId{1}});
     state.policies.push_back(PolicyData{PolicyId{1}, "increase_military_budget"});
     state.events.push_back(EventDefinition{EventId{1}, "labor_strike"});

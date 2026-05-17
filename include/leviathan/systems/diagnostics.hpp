@@ -288,6 +288,9 @@ void write_authority_pressure_csv_row(
 //   * interest_groups[*] (M3.1): identity strings (id_code, name),
 //     kind, country (numeric handle), and the three behavioural
 //     ratios (influence, loyalty, radicalism).
+//   * provinces[*] (M4.1): identity strings (id_code, name),
+//     owner (numeric CountryId handle), and the normalised map
+//     coordinates x / y.
 //
 // SCOPE — fields DELIBERATELY skipped:
 //   * rng: not part of gameplay comparison; M2 replay does not yet
@@ -300,8 +303,7 @@ void write_authority_pressure_csv_row(
 //   * policies: immutable templates loaded from disk. If they differ
 //     between two states, the scenario manifests or fixtures differ
 //     — that's a config bug, not a divergence.
-//   * provinces, events: still reserved-empty in M2; nothing to
-//     compare.
+//   * events: still reserved-empty in M3; nothing to compare.
 //   * simulation_config (not in GameState; lives separately).
 // ---------------------------------------------------------------------------
 
