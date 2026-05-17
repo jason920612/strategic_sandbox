@@ -456,6 +456,31 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.14（Replay target-date CLI）** 在 runner 新增
+  `--target-date YYYY-MM-DD` 旗標（須與 `--replay` 並用），把 M2.8
+  的 replay flow 限縮到指定日期。一個 flag 兩個作用：log 截斷
+  （loaded.applied_commands 中 `applied_on > target_date` 的條目
+  直接略過，因為 M2.7 monotonic non-decreasing 保證，所以單向掃過
+  一遍就夠）+ replay 後時間延伸（`step_one_day` loop 直到
+  `state.current_date == target_date`，過程中遇到月份邊界
+  自然觸發 M1.10 monthly pipeline）。`--target-date` 經
+  `core::GameDate::parse` 在 parse 時就拒絕格式錯誤；scenario-start
+  precondition（target 不得早於 scenario 起始日）在 run() 進到
+  begin_tick 之前驗證，因此 bad target 落在 M2.9 pre-`end_tick`
+  no-artefact contract 內。`RunnerOptions` 新增
+  `std::optional<core::GameDate> target_date`；`main()` 在 replay
+  block 多印 `Target date: <value>` 一行。`replay_with_time` /
+  `step_one_day` 語意都沒變 —— M2.14 純粹是 runner 端的接合。
+  M2.9 contract 對應補上兩條 pre-`end_tick` 條目（target-date
+  precondition、post-replay step loop 的 monthly pipeline failure）。
+  新增 dated-log test helper `build_source_with_dated_log` 手動拼出
+  具備非起點日期的 `applied_commands` log，方便測試截斷情境（一般
+  apply_pending 跑出來的 log 全部都在 scenario 起始日）。對應
+  RFC-090 §M2 replay family 的「截斷重播窗口」需求。**M2.14 不做**
+  save schema 變更（仍 v9）、`--target-date` 在 `--replay` 之外
+  使用、sub-day 解析度、與 `--verify` 的特別整合（mismatch 結果
+  仍對 source save 比較，用戶自行解讀）、新 gameplay、新
+  `state.logs` 條目、M1 system 變更。
   **M2.9（Replay CLI error-path hardening，補位版）** 是補回 M2
   sprint 中跳過的編號：M2.8 引入 `--replay` 之後，當時把編號讓給
   了 M2.10 → M2.13 一連串 verify-family，把 `--replay` 自身的

@@ -8,38 +8,32 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.9 — Replay CLI error-path
-  hardening.** Documentation + regression-test PR with zero library
-  behaviour change. `runner::run`'s doc comment gains an explicit
-  "M2.9 contract" block stating that `--replay`-mode failures
-  occurring BEFORE `end_tick` is reached (missing/corrupt source
-  save, missing `--scenario`, `begin_tick` rejection, out-of-order
-  log, unknown policy id_code, bad `AdjustBudget` payload, monthly
-  pipeline failure while advancing) write ZERO output artefacts
-  (save.json / events.jsonl / summary.csv / countries.csv /
-  factions.csv). Failures INSIDE `end_tick` itself are explicitly
-  out of scope — `end_tick`'s five writes are sequential and not
-  transactional, so a mid-`end_tick` I/O failure can leave a
-  partial set on disk; switching to atomic temp-file + rename is
-  a deliberate non-goal for this PR. 3 new doctest cases pin the
-  pre-`end_tick` guarantee: missing source file, out-of-order log,
-  unknown policy id_code — each wires all five artefact paths and
-  asserts none exist after the failed run. No save format bump
-  (still v9); no new flag; no M1 system change. Closes the gap M2.8
-  left open: --replay shipped but its failure-path artefact
-  semantics weren't spelled out.
-- Previously shipped: **M2.13 — Verify tolerance CLI** (`--verify-
-  tolerance FLOAT` overrides M2.10's default `1e-9` via
-  `diagnostics::CompareOptions`; parses through a new exception-
-  free `parse_nonneg_double` helper; closes the M2 replay-CLI family
-  `--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`;
-  no save format bump).
-- Next sub-milestone candidates: **M2.14** (further
-  `PlayerCommandKind` variants — `ChangeTaxBurden`,
-  `ToggleMartialLaw`, …; save-neutral additive enum) or
-  **M2.15** (relative-tolerance support in `CompareOptions` —
-  upgrade M2.10's absolute-only comparison to handle large-
-  magnitude fields better; save-neutral).
+- Latest shipped sub-milestone: **M2.14 — Replay target-date CLI.**
+  New `--target-date YYYY-MM-DD` runner flag (requires `--replay`)
+  scopes the M2.8 replay flow to a specific calendar day: entries
+  with `applied_on > target_date` are skipped, and after replay
+  finishes the time system is advanced day-by-day until
+  `current_date == target_date` so the resulting save reflects
+  exactly that day. The M1.10 monthly pipeline fires naturally on
+  every month boundary the extension crosses. Parsed via
+  `core::GameDate::parse` (rejects malformed dates at parse time);
+  scenario-start precondition (target_date must be on or after the
+  scenario start date) checked in `run()` before any tick, so a
+  bad target falls under the M2.9 pre-`end_tick` no-artefact
+  contract. `main()` prints `Target date: <value>` in replay
+  summary when set. No library behaviour change to
+  `replay_with_time` or `step_one_day`; M2.14 is glue. **No save
+  format bump** (still v9); CLI-only.
+- Previously shipped: **M2.9 — Replay CLI error-path hardening**
+  (doc + 3 regression tests cementing the pre-`end_tick` no-artefact
+  contract for `--replay`-mode failures). **M2.13 — Verify
+  tolerance CLI** (`--verify-tolerance FLOAT` overrides M2.10's
+  default `1e-9`).
+- Next sub-milestone candidates: **M2.15** (relative-tolerance
+  support in `CompareOptions` — upgrade M2.10's absolute-only
+  comparison to handle large-magnitude fields better; save-neutral)
+  or **M2.16** (`GovernmentAuthorityState` in `CountryState` —
+  first M2 gameplay extension, save schema bump v9 → v10).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -64,8 +58,8 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 merged. Thirty
-sub-milestones shipped:
++ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 merged.
+Thirty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -199,6 +193,19 @@ runs `begin_tick → replay_with_time → end_tick`, and populates
 a new `RunOutcome::replay_commands_replayed` field. `main()`
 prints two extra summary lines. The CLI does NOT auto-compare —
 user diffs source vs target save files. No save format change;
+**M2.14 Replay target-date CLI — new `--target-date YYYY-MM-DD`
+runner flag (requires `--replay`). Combines two effects: log
+truncation (entries with `applied_on > target_date` are skipped
+before `replay_with_time` runs) + post-replay time-system
+extension (`step_one_day` loop until `current_date == target_date`,
+so the M1.10 monthly pipeline fires on every month boundary
+crossed). Parsed via `core::GameDate::parse` (rejects malformed
+dates at parse time). Scenario-start precondition checked in
+`run()` before any tick — pre-`end_tick` failure under the M2.9
+contract, so bad target_date writes no artefacts. `main()` prints
+`Target date: <value>` in the replay block when set.
+`replay_with_time` and `step_one_day` semantics are unchanged;
+M2.14 is glue. No save format change;
 **M2.9 Replay CLI error-path hardening — doc + tests PR with no
 library behaviour change. Cements the **pre-`end_tick`** contract:
 a `--replay` failure that occurs before `end_tick` is reached
@@ -410,6 +417,18 @@ on Windows).
     --replay   path/to/golden.json \
     --verify --verify-strict --verify-tolerance 1e-6 \
     --output   replay_out/
+
+# M2.14 - replay only up to a chosen date and save there. Entries
+# with applied_on > target_date are skipped; after the truncated
+# replay, the time system is advanced day-by-day until current_date
+# equals target_date so the resulting save reflects exactly that
+# day. Requires --replay.
+./build/bin/Debug/leviathan \
+    --days     0 \
+    --scenario data/scenarios/1930_with_start_policies.json \
+    --replay   path/to/source.json \
+    --target-date 1930-06-15 \
+    --output   replay_out/
 ```
 
 Required flag: `--days`. Everything else has a default
@@ -446,7 +465,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.9 there are **553 doctest cases**. M0 contributed 179;
+As of M2.14 there are **562 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -454,13 +473,27 @@ M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
-M2.13 added 8; M2.9 adds 3 covering the no-artefact contract under
-`--replay`: missing source file fails with "--replay" in error and
-all five artefact paths absent; out-of-order log fails with
-"out-of-order" in error and all five paths absent; unknown policy
-id_code fails with `"no_such_policy_id_code"` in error and all
-five paths absent. Each test wires save / events / summary CSV /
-countries CSV / factions CSV inside a `TempDir` and uses a shared
+M2.13 added 8; M2.9 added 3; M2.14 adds 9 covering `--target-date`:
+5 parse cases (plumbed; default nullopt; missing value rejected;
+malformed date `"1930-13-01"` rejected with flag name + value in
+error; without `--replay` rejected with both flag names in error)
+and 4 run cases (target past log advances time system and saves
+at target; target equal to last entry replays full log with no
+extra step; target earlier than a log entry truncates the log to
+entries with `applied_on <= target_date`; target before scenario
+start rejected with `--target-date` + the bad date +
+"scenario start" in error, and `check_no_artifacts` confirms the
+M2.9 pre-`end_tick` no-artefact contract). The dated-log helper
+`build_source_with_dated_log` hand-splices `AppliedPlayerCommand`
+entries at chosen monotonic dates so truncation can be exercised
+without going through `apply_pending`. Previously M2.9 added 3
+covering the no-artefact contract under `--replay`: missing
+source file fails with "--replay" in error and all five artefact
+paths absent; out-of-order log fails with "out-of-order" in error
+and all five paths absent; unknown policy id_code fails with
+`"no_such_policy_id_code"` in error and all five paths absent.
+Each test wires save / events / summary CSV / countries CSV /
+factions CSV inside a `TempDir` and uses a shared
 `wire_all_artifacts` + `check_no_artifacts` helper. Previously
 M2.13 added 8 covering `--verify-tolerance`: parse plumbed with
 value preserved; default nullopt; missing value rejected;

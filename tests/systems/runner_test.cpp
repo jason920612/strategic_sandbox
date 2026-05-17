@@ -2215,3 +2215,191 @@ TEST_CASE("run: --replay with an unknown policy id_code fails and writes no arti
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.14 - --target-date replay window
+// =====================================================================
+
+TEST_CASE("parse_args: --target-date plumbed when combined with --replay") {
+    Argv arg(std::array<const char*, 7>{
+        "leviathan", "--days", "0",
+        "--replay", "out/source.json",
+        "--target-date", "1930-06-15"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    REQUIRE(r.value().target_date.has_value());
+    CHECK(r.value().target_date.value() ==
+          leviathan::core::GameDate(1930, 6, 15));
+}
+
+TEST_CASE("parse_args: --target-date defaults to nullopt") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "0"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().target_date.has_value());
+}
+
+TEST_CASE("parse_args: --target-date without a value is rejected") {
+    Argv arg(std::array<const char*, 6>{
+        "leviathan", "--days", "0",
+        "--replay", "out/source.json",
+        "--target-date"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--target-date") != std::string::npos);
+}
+
+TEST_CASE("parse_args: --target-date with a malformed date is rejected") {
+    Argv arg(std::array<const char*, 7>{
+        "leviathan", "--days", "0",
+        "--replay", "out/source.json",
+        "--target-date", "1930-13-01"});  // month 13: parse-time reject
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--target-date") != std::string::npos);
+    CHECK(r.error().find("1930-13-01")    != std::string::npos);
+}
+
+TEST_CASE("parse_args: --target-date without --replay is rejected") {
+    Argv arg(std::array<const char*, 5>{
+        "leviathan", "--days", "0",
+        "--target-date", "1930-06-15"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--target-date") != std::string::npos);
+    CHECK(r.error().find("--replay")      != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+namespace {
+
+// Build a source save whose applied_commands log lives at chosen
+// dates. Bypasses apply_pending so the test can stage entries with
+// arbitrary (monotonic) applied_on values that the canonical
+// scenario's start date precedes — exactly the shape M2.14
+// truncation needs to exercise.
+leviathan::core::GameState build_source_with_dated_log(
+        const fs::path& save_path,
+        const std::vector<leviathan::core::GameDate>& dates) {
+    namespace ss = leviathan::systems::save_system;
+    auto state = build_source_save(save_path, {});
+    for (const auto& d : dates) {
+        leviathan::core::AppliedPlayerCommand e;
+        e.applied_on             = d;
+        e.command.kind           = leviathan::core::PlayerCommandKind::EnactPolicy;
+        e.command.policy_id_code = "raise_taxes";
+        state.applied_commands.push_back(e);
+    }
+    REQUIRE(ss::save(state, save_path).ok());
+    return state;
+}
+
+}  // namespace
+
+TEST_CASE("run: --target-date past the log advances the time system to the target") {
+    TempDir td("leviathan_runner_m214_past_log");
+    const fs::path source_path = td.path / "source.json";
+    (void) build_source_with_dated_log(source_path, {
+        leviathan::core::GameDate(1930, 1, 5),
+        leviathan::core::GameDate(1930, 1, 10),
+    });
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.target_date   = leviathan::core::GameDate(1930, 1, 20);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().replay_commands_replayed == 2);
+    CHECK(r.value().end_date ==
+          leviathan::core::GameDate(1930, 1, 20));
+
+    auto loaded_r = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded_r.ok());
+    CHECK(loaded_r.value().current_date ==
+          leviathan::core::GameDate(1930, 1, 20));
+    CHECK(loaded_r.value().applied_commands.size() == 2u);
+}
+
+TEST_CASE("run: --target-date equal to the last entry replays all and steps no further") {
+    TempDir td("leviathan_runner_m214_equal_to_last");
+    const fs::path source_path = td.path / "source.json";
+    (void) build_source_with_dated_log(source_path, {
+        leviathan::core::GameDate(1930, 1, 5),
+        leviathan::core::GameDate(1930, 1, 10),
+    });
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.target_date   = leviathan::core::GameDate(1930, 1, 10);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().replay_commands_replayed == 2);
+    CHECK(r.value().end_date ==
+          leviathan::core::GameDate(1930, 1, 10));
+}
+
+TEST_CASE("run: --target-date earlier than a log entry truncates the log") {
+    TempDir td("leviathan_runner_m214_truncate");
+    const fs::path source_path = td.path / "source.json";
+    (void) build_source_with_dated_log(source_path, {
+        leviathan::core::GameDate(1930, 1, 5),
+        leviathan::core::GameDate(1930, 1, 10),
+    });
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.target_date   = leviathan::core::GameDate(1930, 1, 7);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    // Only the first entry (1930-01-05) survives the cut.
+    CHECK(r.value().replay_commands_replayed == 1);
+    CHECK(r.value().end_date ==
+          leviathan::core::GameDate(1930, 1, 7));
+
+    auto loaded_r = leviathan::systems::save_system::load(td.path / "save.json");
+    REQUIRE(loaded_r.ok());
+    REQUIRE(loaded_r.value().applied_commands.size() == 1u);
+    CHECK(loaded_r.value().applied_commands[0].applied_on ==
+          leviathan::core::GameDate(1930, 1, 5));
+}
+
+TEST_CASE("run: --target-date before the scenario start is rejected") {
+    TempDir td("leviathan_runner_m214_before_start");
+    const fs::path source_path = td.path / "source.json";
+    (void) build_source_save(source_path, {});
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.target_date   = leviathan::core::GameDate(1929, 12, 31);
+    const auto paths = wire_all_artifacts(opts, td.path);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--target-date")        != std::string::npos);
+    CHECK(r.error().find("1929-12-31")           != std::string::npos);
+    CHECK(r.error().find("scenario start")       != std::string::npos);
+    // Pre-end_tick failure: M2.9 contract — no artefacts on disk.
+    check_no_artifacts(paths);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR
