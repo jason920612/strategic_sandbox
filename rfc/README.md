@@ -217,8 +217,29 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.8（canonical
-  scenario interest-group fixtures）** 是純資料 PR：在
+- **M3（已關閉）** — 內政 / 利益團體反應層。**M3.9（M3
+  close-out）** 是純文件 PR：新增 `docs/milestone-3-result.md`
+  （M3 exit report：M3.1–M3.8 ledger、final dataflow、8-artefact
+  contract、save-format v11 floor、future milestone 必須保留的
+  architectural invariants、deferred items、以及中立的 next-
+  milestone candidates）、在 `docs/milestone-3-checkpoint.md`
+  頂部加歷史備註指向 exit report、把三個 README 翻成「M3
+  closed / Latest shipped: M3.9 / Next milestone: TBD」。
+  **M3 在此關閉。** **M3.9 不做** 新 system / 新 formula / 新
+  artefact（仍 8）/ save schema bump（仍 v11）/ 新 state field /
+  新 `InterestGroupKind` / 新 fixture / 新 test /
+  `PlayerCommandKind` / events / interest group 直接寫 log /
+  AI / UI / REPL / CLI / command-gate change / runner CLI
+  flag / atomic `end_tick` writes / M4 / post-M3 governance
+  follow-up 字樣。Tests 不變（共 745 doctest cases）；M3.7
+  integration tests 與 M3.8 canonical-data-row test 已覆蓋
+  loop / 8-artefact / canonical-data-row paths。**未來的下一
+  個 milestone 等 reviewer 明確指示**：候選為 RFC-090 M4
+  SVG map + UI、RFC-090 M5 event engine、或刻意 scope 在
+  RFC-090 之外的 post-M3 governance follow-up；M3.9 完全不
+  替任何候選背書，也沒有任何「M4 in progress」字樣。
+  **M3.8（canonical scenario interest-group fixtures）** 是
+  純資料 PR：在
   `data/scenarios/1930_minimal.json` 與
   `data/scenarios/1930_with_start_policies.json` 各加入一個
   Bureaucracy interest group per canonical country（GER / FRA /

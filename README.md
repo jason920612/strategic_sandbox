@@ -6,12 +6,39 @@
 
 ## Status
 
-- Phase: **Milestone 3 — internal politics / interest-group
-  reaction layer (in progress).** M0 / M1 / M2 closed; M3
-  opens with M3.1 introducing the political-actor data
-  layer. See `docs/milestone-2-result.md` for the M2 exit
-  report.
-- Latest shipped sub-milestone: **M3.8 — canonical scenario
+- Phase: **Milestone 3 closed.** M0 / M1 / M2 / M3 all
+  closed. M3 shipped a typed political-actor data layer
+  (M3.1), a closed reaction loop across country state and
+  group state (M3.2 / M3.3 / M3.4), three observability
+  artefacts covering both group state and per-mutation
+  outcome traces (M3.5 / M3.6), an integration checkpoint
+  pinning the loop (M3.7), a small canonical-scenario
+  fixture so the artefacts carry real data on canonical
+  runs (M3.8), and a final close-out (M3.9). See
+  `docs/milestone-3-result.md` for the M3 exit report and
+  `docs/milestone-2-result.md` for the M2 exit report.
+- **Next milestone: TBD — requires explicit reviewer
+  direction.** Candidates: RFC-090 M4 (SVG map + UI),
+  RFC-090 M5 (event engine), or a deliberately
+  non-RFC-numbered post-M3 governance follow-up. No
+  candidate is committed and no next-milestone work has
+  started.
+- Latest shipped sub-milestone: **M3.9 — M3 close-out.**
+  Doc-only PR that publishes `docs/milestone-3-result.md`
+  (M3 exit report), annotates
+  `docs/milestone-3-checkpoint.md` as historical, and flips
+  the three READMEs to "M3 closed". No new system, no new
+  formula, no new artefact (still 8), no save schema bump
+  (still v11), no new state field, no new
+  `InterestGroupKind`, no new fixture, no new test, no
+  `PlayerCommandKind`, no event, no log, no AI / UI / REPL
+  / CLI surface, no command-gate change, no runner CLI
+  flag, no atomic `end_tick` writes. **M3 closes here.**
+  M3.7 / M3.8 integration tests continue to cover the
+  loop / 8-artefact / canonical-data-row paths; no
+  additional test was needed for the close-out itself.
+  745 doctest cases unchanged.
+- Previously shipped: **M3.8 — canonical scenario
   interest-group fixtures.** Data-only PR that adds one
   Bureaucracy interest group per canonical country
   (`ger_bureaucracy` / `fra_bureaucracy` / `jpn_bureaucracy`,
@@ -286,24 +313,19 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.8): **M3.9** — open.
-  With four reaction-loop legs (M3.2 / M3.3 / M3.4), the
-  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, the
-  M3.7 reaction-loop integration checkpoint, and the M3.8
-  canonical interest-group fixtures all in place, natural
-  next steps include (a) a sibling authority channel
-  (e.g. Military loyalty → `military_loyalty`), (b) interest-
-  group integration into the M2.18 / M2.19 command-execution
-  gate, (c) influence drift driven by event / policy
-  outcomes, (d) a second feedback input weighting loyalty
-  alongside radicalism for the stability channel, (e) M3.2
-  `react` per-mutation trace as a third trace CSV. None
-  committed; reviewer chooses.
-- M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 shipped). See
-  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
-  and `docs/milestone-2-result.md` for the exit reports, and
-  `rfc/RFC-090-roadmap.md` for the full milestone map.
+- **Next milestone: TBD — requires explicit reviewer
+  direction.** Candidates: **RFC-090 M4** (SVG map + UI),
+  **RFC-090 M5** (event engine), or a deliberately
+  non-RFC-numbered post-M3 governance follow-up. None
+  committed; reviewer chooses. M3.9 deliberately does not
+  open or claim any of the above — there is no "M4 in
+  progress" wording in main.
+- M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
+  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
+  shipped. See `docs/milestone-0-result.md`,
+  `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
+  and `docs/milestone-3-result.md` for the exit reports,
+  and `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -326,8 +348,8 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
-reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 shipped. Forty-six sub-milestones shipped:
+reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped. Forty-seven sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -474,6 +496,30 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.9 M3 close-out — doc-only PR that publishes
+`docs/milestone-3-result.md` (the M3 exit report:
+nine-row sub-milestone ledger, final dataflow, eight-artefact
+contract, save-format v11 floor, architectural invariants
+every future milestone must preserve, deferred items, and
+neutral next-milestone candidates). Annotates
+`docs/milestone-3-checkpoint.md` with a "historical
+checkpoint" top note pointing to the exit report; keeps the
+rest of the checkpoint doc for archaeology. Flips all three
+READMEs to "M3 closed" / "Latest shipped: M3.9" / "Next
+milestone: TBD — requires explicit reviewer direction". **M3
+closes here.** **No new system, no new formula, no new
+artefact (still 8), no save schema bump (still v11), no
+new state field, no new `InterestGroupKind`, no new fixture,
+no new test, no `PlayerCommandKind`, no event, no log, no
+AI / UI / REPL / CLI surface, no command-gate change, no
+runner CLI flag, no atomic `end_tick` writes, no M4, no
+post-M3 governance follow-up wording.** Tests unchanged
+(745 doctest cases); M3.7's integration tests and M3.8's
+canonical-data-row test already cover the loop, 8-artefact,
+and canonical-data-row paths. **Future player-operation or
+gameplay work moves to a separate future milestone** (M4 /
+M5 / non-RFC-numbered follow-up — reviewer chooses);
+**M3.9 makes no claim about which.**
 **M3.8 canonical scenario interest-group fixtures — adds one
 Bureaucracy interest group per canonical country
 (`ger_bureaucracy` / `fra_bureaucracy` / `jpn_bureaucracy`,
