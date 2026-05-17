@@ -315,6 +315,133 @@ core::Result<ReplayOutcome> replay_with_time(
     runner::TickController& ctrl,
     const std::vector<core::AppliedPlayerCommand>& log);
 
+// ===========================================================================
+// M4.1 - Command gate diagnostics surface.
+//
+// Read-only helpers that explain how the existing M2.18 / M2.19
+// command-execution gates would evaluate on a country in its
+// CURRENT `government_authority` state. They do NOT mutate state,
+// do NOT enqueue or dispatch commands, do NOT change the gate
+// formula. They exist so future work (UI / command feedback /
+// AI / structured logs) can read the gate seam without going
+// through `apply_pending` and without reverse-engineering the
+// formula.
+//
+// The diagnostic is purely about the authority gate. It deliberately
+// does NOT:
+//   * verify that the policy exists in `state.policies`
+//     (`diagnose_enact_policy_gate` ignores the policy lookup —
+//     that's `apply_pending`'s downstream concern);
+//   * verify that the budget category is one of the seven valid
+//     ones (`diagnose_adjust_budget_gate` only branches on the
+//     `"military"` keyword; everything else uses bureaucratic
+//     compliance, matching `order_execution::evaluate`);
+//   * branch on `state.player_country` (the diagnostic takes a
+//     CountryId argument directly so a caller can ask "what
+//     would the gate decide for country X right now?" without
+//     temporarily flipping the player selection).
+//
+// The threshold values + the field-selection rule come from
+// `order_execution::evaluate` exactly. Tests pin "diagnostic
+// agrees with `apply_pending`" on representative cases so the
+// helper can't silently drift from real gate behaviour.
+// ===========================================================================
+
+// Identifies which gate produced the diagnostic. Mirrors
+// `core::PlayerCommandKind` for the two kinds that currently have
+// a gate (M2.18 / M2.19); kept as a separate enum so M4.X work can
+// add gate-only diagnostics for surfaces that have no matching
+// `PlayerCommandKind` (e.g. a hypothetical
+// "diagnose this hypothetical command kind" helper) without
+// dragging the `PlayerCommandKind` enum around.
+enum class CommandGateKind {
+    EnactPolicy,
+    AdjustBudget,
+};
+
+// Structured snapshot of a command gate's decision on a country.
+// Carries every input the gate read so a caller can format its own
+// message / surface the decision in UI / compare against
+// expectations in a test without recomputing.
+struct CommandGateDiagnostic {
+    CommandGateKind gate{};
+
+    // The country the gate was evaluated for.
+    core::CountryId country{};
+
+    // The country's `id_code`. Denormalised so callers don't have
+    // to re-index `state.countries`.
+    std::string country_id_code;
+
+    // Human-readable descriptor of what the command would touch.
+    // For `EnactPolicy`: `"policy:<policy_id_code>"`. For
+    // `AdjustBudget`: `"budget:<category>"`. The diagnostic does
+    // NOT validate that the policy / category exists; this string
+    // is for display.
+    std::string target;
+
+    // Name of the authority sub-field this gate read. One of:
+    //   * `"bureaucratic_compliance"`
+    //   * `"military_loyalty"`
+    // Selected per `order_execution::evaluate`: `EnactPolicy`
+    // always reads bureaucratic_compliance; `AdjustBudget` reads
+    // military_loyalty iff `budget_category == "military"`,
+    // otherwise bureaucratic_compliance.
+    std::string authority_field;
+
+    // The authority value observed at evaluation time. Range
+    // `[0, 1]` if upstream invariants hold; the diagnostic does
+    // not re-validate.
+    double authority_value = 0.0;
+
+    // The threshold the gate compares `authority_value` against.
+    // Currently `0.3` from
+    // `order_execution::kEnactPolicyComplianceThreshold` /
+    // `kAdjustBudgetComplianceThreshold`. The two thresholds
+    // happen to share a value today but are sourced separately;
+    // a future PR that diverges them will flow through naturally.
+    double threshold = 0.0;
+
+    // `authority_value >= threshold` per the M2.18 / M2.19
+    // accept rule. The diagnostic does not branch on `>` vs
+    // `>=` — it matches the existing gate.
+    bool allowed = false;
+};
+
+// Explain how the `EnactPolicy` gate would evaluate on `country`
+// in its current authority state. `policy_id_code` is echoed back
+// into `target` but is NOT looked up in `state.policies` — the
+// diagnostic is gate-only.
+//
+// Failure cases:
+//   * `country` is not a valid index into `state.countries`. The
+//     diagnostic does NOT silently fall back to a default — a
+//     bad CountryId is a caller error.
+//
+// On success the diagnostic carries the full gate decision; the
+// caller decides what to do with it (display, log, compare,
+// branch downstream work).
+core::Result<CommandGateDiagnostic> diagnose_enact_policy_gate(
+    const core::GameState& state,
+    core::CountryId country,
+    const std::string& policy_id_code);
+
+// Explain how the `AdjustBudget` gate would evaluate on `country`
+// for `budget_category`. Field selection mirrors
+// `order_execution::evaluate` exactly: `"military"` selects
+// `military_loyalty`, every other string selects
+// `bureaucratic_compliance`. The diagnostic does NOT validate
+// that `budget_category` is one of the seven canonical
+// `BudgetState` fields — that's `apply_pending`'s downstream
+// whitelist check, not the gate's.
+//
+// Failure cases:
+//   * `country` is not a valid index into `state.countries`.
+core::Result<CommandGateDiagnostic> diagnose_adjust_budget_gate(
+    const core::GameState& state,
+    core::CountryId country,
+    const std::string& budget_category);
+
 }  // namespace leviathan::systems::commands
 
 #endif  // LEVIATHAN_SYSTEMS_COMMANDS_HPP
