@@ -228,6 +228,26 @@ M0 / M1 中落地，部分仍是未來工作：
   控制（M2.2 的事）、player command queue（M2.3）、player command
   log（M2.4）、UI / map、AI / events、multi-player、scenario
   manifest 帶 default player。
+  **M2.2（Pause / resume / step primitives）** 把 `run_state` 內的
+  day-at-a-time loop 抽出三個 public free function：`begin_tick` /
+  `step_one_day` / `end_tick`，搭配新的 `runner::TickController`
+  runtime struct（**不**進 `GameState`，不存進 save）。`begin_tick`
+  做 `--player` 解析 + 抓 `start_date` + 寫 simulation start log +
+  initial snapshot row；`step_one_day` 推進一天，處理 month / year
+  boundary log + M1.10 monthly pipeline 呼叫 + per-month snapshot；
+  `end_tick` 寫 simulation end log + `sanity_check` + final snapshot
+  + 解析 output path + 寫 save / JSONL / CSV，並回傳 `RunOutcome`。
+  `run_state` 重寫為三者組合，**M1.17 的 5-artefact byte-identical
+  determinism contract 仍成立**（由兩個 equivalence test pin 住：
+  `begin/step×N/end == run_state(days=N)`、`begin/step×15/step×16/
+  end == run_state(days=31)`）。Misuse path（double begin、step
+  before begin、step after end、double end）都返回 specific 錯誤
+  訊息。Drive-by：把 PR #29 提到的 bad-`--player` nit 補上兩個
+  regression test，驗證錯誤路徑不會留下 `save.json` /
+  `events.jsonl` 在 disk。對應 RFC-090 §M2 task 2.2。**M2.2 不做**
+  save schema 變更（仍 v8）、新 CLI flag（沒有 `--step` mode）、
+  新 log、M1 system 行為變更、command queue（M2.3）、command log
+  （M2.4）、UI / map、AI / events、mid-run save/load resume。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 
