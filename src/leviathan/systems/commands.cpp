@@ -127,4 +127,57 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
     return core::Result<ApplyOutcome>::success(std::move(outcome));
 }
 
+// ===========================================================================
+// M2.6: replay
+// ===========================================================================
+
+core::Result<ReplayOutcome> replay(
+        core::GameState& target_state,
+        const std::vector<core::AppliedPlayerCommand>& log) {
+    // ---- Preconditions ----------------------------------------------------
+    if (!target_state.player_country.valid() ||
+        target_state.player_country.value() < 0 ||
+        static_cast<std::size_t>(target_state.player_country.value()) >=
+            target_state.countries.size()) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay: target_state.player_country is not a"
+            " valid index into state.countries (caller must set"
+            " player_country before replay)");
+    }
+    if (!target_state.applied_commands.empty()) {
+        return core::Result<ReplayOutcome>::failure(
+            "commands::replay: target_state.applied_commands must be"
+            " empty on entry (replay would otherwise mix the new"
+            " entries with prior ones; build a fresh state from the"
+            " scenario loader and call replay on that)");
+    }
+
+    // ---- Replay loop ------------------------------------------------------
+    ReplayOutcome outcome;
+    for (std::size_t i = 0; i < log.size(); ++i) {
+        const auto& entry = log[i];
+
+        // Force the date so the new log entry's applied_on matches
+        // the source. The simulation systems are NOT ticked during
+        // replay (M2.6 prototype limit).
+        target_state.current_date = entry.applied_on;
+
+        // Build a 1-element queue and dispatch through the existing
+        // apply_pending path. This reuses every M2.3/M2.4/M2.5
+        // guarantee: precondition validation, per-command atomicity,
+        // log-on-success append, the M1.5/M1.15 effect machinery.
+        CommandQueue q;
+        q.pending.push_back(entry.command);
+        auto r = apply_pending(target_state, q);
+        if (!r) {
+            return core::Result<ReplayOutcome>::failure(
+                "commands::replay[" + std::to_string(i) + "]: " +
+                std::move(r.error()));
+        }
+        ++outcome.commands_replayed;
+    }
+
+    return core::Result<ReplayOutcome>::success(std::move(outcome));
+}
+
 }  // namespace leviathan::systems::commands
