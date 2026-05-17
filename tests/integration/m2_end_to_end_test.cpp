@@ -37,9 +37,11 @@
 //      interest_group_authority_pressure.csv all match
 //      byte-for-byte. M1.17's determinism contract carried
 //      through M2; M3.5 added the sixth artefact and M3.6
-//      added the seventh + eighth (canonical scenarios author
-//      zero interest groups so the three M3 files are
-//      header-only).
+//      added the seventh + eighth. M3.8 then added one
+//      Bureaucracy interest group per canonical country, so
+//      the three M3 files now contain real data rows here
+//      (no longer header-only) — the byte-identical contract
+//      itself is unchanged.
 
 #include <doctest/doctest.h>
 
