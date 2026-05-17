@@ -73,6 +73,13 @@ int main(int argc, char** argv) {
               << "Replay source       : " << opts.replay_path.value().string() << "\n"
               << "Commands replayed   : " << outcome.replay_commands_replayed << "\n";
     }
+    if (opts.verify) {
+        std::cout
+              << "Verify mismatches   : " << outcome.verify_mismatches.size() << "\n";
+        for (const auto& m : outcome.verify_mismatches) {
+            std::cout << "  - " << m.field_path << " : " << m.detail << "\n";
+        }
+    }
 
     return EXIT_SUCCESS;
 }

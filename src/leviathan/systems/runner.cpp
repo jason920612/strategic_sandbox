@@ -139,6 +139,12 @@ std::string usage_text() {
         "                      the M1.10 monthly pipeline fires naturally\n"
         "                      between commands; the resulting save is\n"
         "                      written to the normal output paths.\n"
+        "  --verify            After --replay, run diagnostics::compare_states\n"
+        "                      against the loaded source and populate\n"
+        "                      RunOutcome.verify_mismatches (M2.11).\n"
+        "                      Requires --replay. Informational: any\n"
+        "                      mismatches are reported but do not fail\n"
+        "                      the run (exit code stays 0).\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -231,6 +237,8 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.replay_path = std::filesystem::path(std::string(v.value()));
             ++i;
+        } else if (a == "--verify") {
+            opts.verify = true;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -240,6 +248,12 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
     if (!days_seen) {
         return core::Result<RunnerOptions>::failure(
             "--days is required (run with --help for usage)");
+    }
+    // M2.11: --verify is only meaningful inside --replay.
+    if (opts.verify && !opts.replay_path.has_value()) {
+        return core::Result<RunnerOptions>::failure(
+            "--verify requires --replay (--verify is a no-op without"
+            " a source save to compare the replayed state against)");
     }
     return core::Result<RunnerOptions>::success(std::move(opts));
 }
@@ -334,6 +348,15 @@ core::Result<RunOutcome> run(const RunnerOptions& opts) {
         }
         auto outcome = std::move(end_r).value();
         outcome.replay_commands_replayed = replay_r.value().commands_replayed;
+
+        // M2.11: optional verify — compare the replayed state to the
+        // loaded source via diagnostics::compare_states. Informational
+        // only; the run still succeeds regardless of mismatch count.
+        if (opts.verify) {
+            namespace dg = leviathan::systems::diagnostics;
+            outcome.verify_mismatches = dg::compare_states(state, loaded);
+        }
+
         return core::Result<RunOutcome>::success(std::move(outcome));
     }
 

@@ -54,6 +54,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-7-replay-with-time.md`](m2-7-replay-with-time.md) | M2.7 | **Replay with time-system advancement.** New `systems::commands::replay_with_time(state, opts, ctrl, log)` free function. Lifts M2.6's "no time advance" limit by interleaving day-by-day advancement (via M2.2 `step_one_day`) with command dispatch: for each entry, advances until `current_date == applied_on`, then runs 1-element queue through `apply_pending`. The M1.10 monthly pipeline therefore runs naturally on any month boundary between two consecutive entries. **Preconditions**: M2.6's pair + `ctrl.started && !ctrl.ended` + monotonic non-decreasing dates (addresses PR #34 nit). **Atomicity** preserves M2.3 mid-list-failure shape with the documented caveat that `state.current_date` may have advanced partway on a `step_one_day` failure. **Killer equivalence test pins behavior-preservation**: replaying a recorded log onto a fresh state reproduces the original simulation's `current_date`, `days_stepped`, `monthly_ticks`, every log entry, the command-effect fields, AND the monthly-pipeline-mutated fields (`gdp`, `stability`, `last_gdp_growth_rate`). M2.6 `replay` stays alongside for time-stripped replay. `commands.hpp` now includes `runner.hpp` (acyclic: runner does not include commands). **No save-format bump (still v9), no new CLI flag, no UI, no AI, no event integration, no divergence-report API, no transactional rollback, no new state.logs entry.** |
 | [`m2-8-replay-cli.md`](m2-8-replay-cli.md) | M2.8 | **Replay CLI harness.** Wires M2.7 into the runner via a new `--replay PATH` flag. `RunnerOptions` gains `replay_path`; `RunOutcome` gains `replay_commands_replayed`. `run()` branches: when `--replay` is set, requires `--scenario` for the fresh baseline, loads the save at PATH, optionally inherits `player_country` from the loaded save (when `--player` is unset), runs `begin_tick → replay_with_time(loaded.applied_commands) → end_tick`, populates the outcome counter, and returns. `main()` prints `Replay source` + `Commands replayed` lines when active. The CLI does NOT auto-compare the replayed state against the source — the user diffs the two save files themselves. **No per-field state-comparison API, no `--target-date` flag, no save format change, no replay outside `run()`, no new lifecycle log entries, no replay against a different scenario, no multi-save replay chains.** Foundation for M2.10+ programmatic divergence detection. |
 | [`m2-10-state-comparison.md`](m2-10-state-comparison.md) | M2.10 | **State comparison API.** New `systems::diagnostics::compare_states(a, b, opts)` free function + `StateMismatch` / `CompareOptions` structs. Walks two `GameState`s field-by-field in canonical order and returns a list of mismatches; empty list = match. **Compared fields**: `current_date`, `player_country`, every country's identity strings + 13 numerics + 7 budget categories + `active_policies` entries, every faction's identity + 5 numerics + preferred_policies count, every `applied_commands` entry (date + kind + payload). **Deliberately skipped** (each with rationale in the design note): `rng` (no divergent-RNG model yet), `logs` (begin/end_tick boilerplate noise), `policies` (immutable templates), `provinces` / `events` (still reserved-empty), `simulation_config` (not in GameState). Floating-point tolerance defaults to `1e-9` (matches M0.8 save round-trip precision); customisable. `field_path` mirrors save JSON addressing (`countries[0].budget.military`) so the same string is usable from CLI output / test asserts / error messages. Library-only — anticipated consumers: replay-equivalence integration tests and a future `--verify` CLI flag. **No save-format bump (still v9), no CLI integration in this PR, no relative-tolerance option, no log / rng / policy comparison, no mismatch-budget cap, no M1 system change.** |
+| [`m2-11-replay-verify.md`](m2-11-replay-verify.md) | M2.11 | **Replay verify CLI.** New `--verify` boolean runner flag (requires `--replay`) wires M2.10 `compare_states` into the M2.8 replay flow. After `end_tick` succeeds, the runner calls `compare_states(replayed_state, loaded_source)` and populates `RunOutcome::verify_mismatches`. `main()` prints `Verify mismatches: N` plus one bullet per mismatch (`  - <field_path> : <detail>`). **Informational only** — exit code stays 0 regardless of mismatch count; artefacts (save / JSONL / CSV) are still written so the user can forensically inspect. Reuses the already-loaded source save (no extra disk I/O). `parse_args` rejects `--verify` without `--replay` with both flag names in the error. **No save-format bump (still v9), no strict fail-on-mismatch mode (`--verify-strict` is a future candidate), no CLI tolerance knob, no `--verify` outside `--replay`, no mismatch-list truncation, no M1 system change.** |
 
 ## Reading order
 
@@ -67,34 +68,32 @@ If you're new to the codebase:
    → M1.2 → M1.3 → M1.4 → M1.5 → M1.6 → M1.7 → M1.8 → M1.9 → M1.10
    → M1.11 → M1.12 → M1.13 → M1.14 → M1.15 → M1.16 →
    `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 →
-   M2.6 → M2.7 → M2.8 → M2.10). They build on each other and each
-   one tries to call out the rules a future contributor must not
-   silently break.
+   M2.6 → M2.7 → M2.8 → M2.10 → M2.11). They build on each other
+   and each one tries to call out the rules a future contributor
+   must not silently break.
 
 ## What's next
 
-**M2 has begun.** M2.1–M2.8 + M2.10 shipped (M2.9 skipped — chose
-to ship M2.10 first per the M2.8 reviewer's "core gameplay first"
-hint). Suggested next M2 sub-milestones:
+**M2 has begun.** M2.1–M2.8 + M2.10 + M2.11 shipped (M2.9 skipped
+— chose to ship M2.10 / M2.11 first per the M2.8 reviewer's "core
+gameplay first" hint). Suggested next M2 sub-milestones:
 
-- **M2.11 — `--verify` CLI flag.** Wires M2.10 `compare_states`
-  into M2.8's `--replay` flow. After replay finishes, auto-loads
-  the source save, runs `compare_states` against the replayed
-  state, and prints any mismatches to stdout. The natural
-  end-to-end "did this replay match?" answer at the CLI level.
-  Save-format-neutral; just a runner flag.
-- **M2.9 / M2.12 — More command kinds.** Continue growing
-  `PlayerCommandKind` (`ChangeTaxBurden`, `ToggleMartialLaw`,
-  …). Each new kind adds its own dispatch arm and per-kind JSON
-  shape, same pattern M2.5 set. Save-format-neutral additive
-  enum.
+- **M2.12 — More command kinds.** Continue growing
+  `PlayerCommandKind` (`ChangeTaxBurden`, `ToggleMartialLaw`, …).
+  Each new kind adds its own dispatch arm and per-kind JSON shape,
+  same pattern M2.5 set. Save-format-neutral additive enum.
+- **M2.13 — `--verify-strict` / `--verify-tolerance` ergonomics.**
+  Strict-mode failure on non-zero mismatch count (exit non-zero
+  for CI gates), and a CLI knob for
+  `CompareOptions::double_tolerance`. Save-format-neutral runner
+  flags.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
 land later as targeted follow-ups when the player loop needs them.
 
 Per the M-pacing rule, the next sub-milestone is **not** started
-until M2.10 is merged.
+until M2.11 is merged.
 
 ## When to add a new file
 
