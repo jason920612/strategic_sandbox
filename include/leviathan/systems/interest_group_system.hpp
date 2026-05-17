@@ -1,5 +1,5 @@
-// InterestGroupSystem - interest-group reactions and the first
-// reverse-direction country feedback (M3.2 + M3.3).
+// InterestGroupSystem - interest-group reactions and reverse-
+// direction feedback (M3.2 + M3.3 + M3.4).
 //
 // M3.2 ships the country -> interest-group direction: each
 // interest group's `loyalty` drifts linearly toward its country's
@@ -17,6 +17,26 @@
 // every country), runs AFTER the M3.2 `react` step inside
 // `tick_all_countries`, and skips countries with no matching
 // groups or zero total influence.
+//
+// M3.4 extends the reverse direction with a slower second
+// channel that feeds the M2.16 government-authority block. The
+// `authority_pressure` step drifts each country's
+// `government_authority.bureaucratic_compliance` toward the
+// influence-weighted loyalty of its **Bureaucracy-kind**
+// interest groups at rate
+// `kInterestGroupAuthorityPressureRate` (0.01). Only the
+// bureaucratic_compliance sub-field of authority is touched —
+// `military_loyalty`, `intelligence_capability`, and
+// `media_control` stay where they are. The step is global,
+// runs AFTER M3.3's `country_feedback` inside
+// `tick_all_countries`, and skips countries with no matching
+// Bureaucracy groups or zero total influence among them.
+//
+// Rate ladder (deliberately decreasing so the closed loop
+// stays well-damped):
+//   group mood        (M3.2)  0.05
+//   country stability (M3.3)  0.02
+//   authority         (M3.4)  0.01
 //
 // Reaction rules (M3.2):
 //
@@ -163,6 +183,80 @@ struct CountryFeedbackOutcome {
 // administrative_efficiency, RNG, logs, the date, or applied
 // commands. The single mutation surface is `country.stability`.
 core::Result<CountryFeedbackOutcome> country_feedback(
+    core::GameState& state);
+
+// ===========================================================================
+// M3.4 - interest-group -> government_authority pressure
+// ===========================================================================
+
+// Drift rate applied to
+// `country.government_authority.bureaucratic_compliance` per
+// monthly step. Slower than `kInterestGroupCountryFeedbackRate`
+// (0.02) so the closed loop's outermost leg (group mood ->
+// stability -> authority) stays well-damped. Uniform across
+// countries; no per-kind, per-country, or per-output variant.
+inline constexpr double kInterestGroupAuthorityPressureRate = 0.01;
+
+struct AuthorityPressureOutcome {
+    // Count of countries whose
+    // `government_authority.bureaucratic_compliance` was updated.
+    // A country with no `Bureaucracy`-kind interest group, or
+    // whose matching Bureaucracy groups all have `influence <=
+    // 0.0`, is skipped (its compliance stays byte-identical) and
+    // does NOT count toward this total.
+    int countries_updated = 0;
+};
+
+// Apply one step of M3.4 interest-group -> government-authority
+// pressure.
+//
+// For each country index `ci`:
+//
+//   bureaucracy_loyalty =
+//     sum(g.influence * g.loyalty)  /  sum(g.influence)
+//     over every g in state.interest_groups with
+//         g.country.value() == ci
+//         g.kind == InterestGroupKind::Bureaucracy
+//         g.influence > 0.0
+//
+//   if weight_sum > 0:
+//       target  = bureaucracy_loyalty
+//       country.government_authority.bureaucratic_compliance
+//           += (target - bureaucratic_compliance) *
+//              kInterestGroupAuthorityPressureRate
+//       country.government_authority.bureaucratic_compliance =
+//           clamp(..., 0.0, 1.0)
+//
+//   otherwise the country is skipped (no mutation).
+//
+// Preconditions (preflight-validated BEFORE any mutation; a
+// single bad entry leaves every country untouched):
+//   * Every `g.country` in `state.interest_groups` indexes into
+//     `state.countries`.
+//   * Every `g.influence` is finite and in `[0, 1]`.
+//   * Every `g.loyalty` is finite and in `[0, 1]`.
+//   * Every country's
+//     `government_authority.bureaucratic_compliance` is finite
+//     and in `[0, 1]`.
+//
+// `radicalism` and `country.stability` are NOT consulted (M3.4
+// reads only the Bureaucracy-kind loyalty aggregate), so they
+// are not preflighted here. Same for the other three
+// `government_authority` sub-fields (military_loyalty /
+// intelligence_capability / media_control) — `authority_pressure`
+// neither reads nor writes them.
+//
+// Failure cases:
+//   * Any precondition above violated.
+//
+// Pure read of every other input field: `authority_pressure`
+// does NOT touch interest groups, factions, policies, country
+// stability / legitimacy / corruption / central_control /
+// administrative_efficiency, the other three authority sub-
+// fields, RNG, logs, the date, or applied commands. The
+// single mutation surface is
+// `country.government_authority.bureaucratic_compliance`.
+core::Result<AuthorityPressureOutcome> authority_pressure(
     core::GameState& state);
 
 }  // namespace leviathan::systems::interest_group

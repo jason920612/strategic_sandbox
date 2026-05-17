@@ -11,8 +11,43 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.3 — InterestGroup country
-  feedback skeleton.** Closes the M3 reaction loop: interest
+- Latest shipped sub-milestone: **M3.4 — InterestGroup-derived
+  authority pressure skeleton.** Opens the second reverse-
+  direction channel: interest groups press not only on
+  `country.stability` (M3.3) but also on
+  `country.government_authority.bureaucratic_compliance` —
+  the M2.18 `EnactPolicy` gate input. Extends the
+  `interest_group_system` module with constant
+  `kInterestGroupAuthorityPressureRate = 0.01`,
+  `AuthorityPressureOutcome { int countries_updated }`, and
+  `authority_pressure(state)` free function. Per country
+  computes influence-weighted loyalty over **Bureaucracy-
+  kind** groups only (`sum(g.influence * g.loyalty) /
+  sum(g.influence)` with `kind == Bureaucracy` AND
+  `influence > 0`) and drifts `bureaucratic_compliance`
+  toward that target at rate 0.01, clamping to `[0, 1]`.
+  Countries with no Bureaucracy-kind groups or zero total
+  Bureaucracy influence skipped. The single mutation surface
+  is `bureaucratic_compliance`: `military_loyalty`,
+  `intelligence_capability`, and `media_control` are byte-
+  identical, and so are stability / legitimacy / corruption.
+  The single input aggregate is Bureaucracy-kind loyalty;
+  radicalism does NOT feed this step. Strict preflight on
+  inputs actually read (group.country, group.influence,
+  group.loyalty, country.bureaucratic_compliance — all finite
+  + `[0, 1]`). Wired into `tick_all_countries` as the THIRD
+  global step, AFTER M3.3, so the rate ladder mood (0.05) →
+  stability (0.02) → authority (0.01) keeps the outermost
+  leg well-damped. `MonthlyOutcome` gains
+  `int interest_group_authority_countries_updated`. The
+  closed loop now includes the M2.18 EnactPolicy gate as a
+  downstream consumer — but M3.4 does NOT change the gate
+  formula. **No save schema bump** (still v11); canonical
+  scenarios author zero interest groups so existing M1 / M2 /
+  M3.1 / M3.2 / M3.3 callers see byte-identical pipeline
+  behaviour. 19 new doctest cases.
+- Previously shipped: **M3.3 — InterestGroup country feedback
+  skeleton.** Closes the M3 reaction loop: interest
   groups now push back on country state. Extends the M3.2
   `interest_group_system` module with a new constant
   `kInterestGroupCountryFeedbackRate = 0.02`,
@@ -147,18 +182,18 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.3): **M3.4** — open.
-  With the closed loop now in place (M3.2 country → group
-  mood, M3.3 group radicalism → country stability), natural
-  next steps include (a) a second feedback output target
-  (e.g. radicalism aggregate driving `legitimacy`), (b) a
-  second feedback input (e.g. weighted `loyalty` feeding
-  stability alongside radicalism), (c) interest-group
-  integration into the M2.18 / M2.19 command-execution gate,
-  (d) influence drift driven by event / policy outcomes. None
-  committed.
+- Next sub-milestone candidate (post-M3.4): **M3.5** — open.
+  With four reaction-loop legs in place (M3.2 country → group
+  mood; M3.3 group radicalism → country stability; M3.4
+  Bureaucracy loyalty → bureaucratic_compliance), natural
+  next steps include (a) a sibling authority channel
+  (e.g. Military loyalty → `military_loyalty`), (b) a
+  radicalism-driven legitimacy or corruption drift, (c)
+  influence drift driven by event / policy outcomes, (d)
+  reading interest-group aggregates inside the M2.18 / M2.19
+  gate. None committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 shipped). See `docs/milestone-0-result.md`,
+  M3.2 + M3.3 + M3.4 shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -185,7 +220,7 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 shipped. Forty-one sub-milestones shipped:
++ M3.3 + M3.4 shipped. Forty-two sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -332,6 +367,29 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.4 InterestGroup-derived authority pressure skeleton —
+opens the second reverse-direction channel: interest groups
+press on `country.government_authority.bureaucratic_compliance`.
+Extends `interest_group_system` with
+`kInterestGroupAuthorityPressureRate = 0.01`,
+`AuthorityPressureOutcome { countries_updated }`, and
+`authority_pressure(state)` free function. For each country,
+computes influence-weighted loyalty over **Bureaucracy-kind**
+groups only and drifts `bureaucratic_compliance` toward that
+target at rate 0.01, clamping `[0, 1]`. Countries with no
+Bureaucracy groups or zero total Bureaucracy influence are
+skipped. Mutation surface restricted to `bureaucratic_compliance`:
+the other three authority sub-fields, plus country stability /
+legitimacy / corruption, are byte-identical. Strict preflight
+on inputs actually read (group.country / influence / loyalty /
+country.bureaucratic_compliance, all finite + `[0, 1]`). Wired
+into `tick_all_countries` as the THIRD global step, AFTER
+M3.3's `country_feedback`, completing the rate ladder mood
+(0.05) → stability (0.02) → authority (0.01). `MonthlyOutcome`
+gains `int interest_group_authority_countries_updated`. 19
+new doctest cases. **No save schema bump** (still v11). The
+M2.18 EnactPolicy gate is now a downstream consumer of the
+loop but M3.4 does NOT change the gate formula;
 **M3.3 InterestGroup country feedback skeleton — closes the
 M3 reaction loop: interest groups push back on country state.
 Extends the M3.2 `interest_group_system` module with constant
@@ -799,7 +857,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M3.3 there are **674 doctest cases**. M0 contributed 179;
+As of M3.4 there are **693 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -811,8 +869,24 @@ M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
 M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
 M2.21 added 8; M2.22 added 3 end-to-end integration tests;
 M3.1 added 20 across the v10 → v11 save-format bump; M3.2 added
-13 across the new `interest_group_system` module; M3.3 adds 14
-across the new `country_feedback` API: 12 unit tests
+13 across the new `interest_group_system` module; M3.3 added 14
+across the new `country_feedback` API; M3.4 adds 19 across the
+new `authority_pressure` API: 17 unit tests (empty-state success
+/ country-with-no-Bureaucracy-group skipped / high-loyalty drifts
+compliance up / low-loyalty drifts compliance down /
+influence-weighted aggregate over two Bureaucracy groups /
+non-Bureaucracy groups ignored / zero-influence groups ignored
+/ multi-country independent / interest groups never mutated /
+other three authority sub-fields byte-identical / stability /
+legitimacy / corruption byte-identical / invalid-group-country
+preflight atomicity / NaN loyalty preflight / out-of-range
+influence preflight / NaN bureaucratic_compliance preflight /
+clamp safety) and 2 monthly-pipeline tests (tick_all_countries
+runs M3.2 → M3.3 → M3.4 in that order with all four counters
+set and an order-pin via re-running `authority_pressure` on the
+resulting state; non-Bureaucracy interest group still succeeds
+with `interest_group_authority_countries_updated == 0`).
+Previously M3.3 added 14 across the new `country_feedback` API: 12 unit tests
 (empty-state success / country-with-no-groups skipped / high-
 radicalism lowers stability / low-radicalism raises / influence-
 weighted aggregate over two groups / zero-influence groups

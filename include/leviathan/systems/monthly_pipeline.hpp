@@ -32,6 +32,21 @@
 // — no other country / faction / authority / interest-group
 // field is touched in this step.
 //
+// M3.4 adds a third global step run AFTER M3.3:
+//
+//   6.  interest_group::authority_pressure (state)
+//
+// `authority_pressure` reads the freshly-drifted Bureaucracy-kind
+// `group.loyalty` (post-M3.2) and applies a small influence-
+// weighted aggregate to each country's
+// `government_authority.bureaucratic_compliance`. Slower than
+// `country_feedback` so the rate ladder mood (0.05) -> stability
+// (0.02) -> authority (0.01) keeps the outermost leg well-damped.
+// `authority_pressure` mutates ONLY
+// `government_authority.bureaucratic_compliance` — no other
+// authority sub-field, no country state field beyond compliance,
+// and no interest-group field is touched.
+//
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
 // `economy::tick`'s political-instability drag reads the stability
@@ -110,11 +125,21 @@ struct CountryMonthlyOutcome {
 // `countries_updated` field — countries with no matching
 // interest groups (or only zero-influence ones) are skipped and
 // do not count toward this total.
+//
+// M3.4: immediately after M3.3,
+// `interest_group::authority_pressure` runs to drift each
+// country's `bureaucratic_compliance` toward its Bureaucracy-
+// kind groups' weighted loyalty. The
+// `interest_group_authority_countries_updated` counter mirrors
+// that call's `countries_updated` — countries with no
+// Bureaucracy-kind interest group (or only zero-influence ones)
+// are skipped.
 struct MonthlyOutcome {
     int countries_processed = 0;
     std::vector<CountryMonthlyOutcome> countries;
-    int interest_groups_updated          = 0;
-    int interest_group_countries_updated = 0;
+    int interest_groups_updated                    = 0;
+    int interest_group_countries_updated           = 0;
+    int interest_group_authority_countries_updated = 0;
 };
 
 // Run one month-boundary pipeline for a single country in the

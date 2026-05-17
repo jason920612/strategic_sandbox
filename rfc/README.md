@@ -217,7 +217,55 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.3（InterestGroup
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.4（InterestGroup-
+  derived authority pressure skeleton）** 開啟 M3 反應 loop 的
+  第二個反向通道：interest groups 不只推 `country.stability`
+  （M3.3），也推 `country.government_authority.bureaucratic_compliance`。
+  延續 M3.2 / M3.3 的 `leviathan::systems::interest_group` 模組，
+  新增常數 `kInterestGroupAuthorityPressureRate = 0.01`、
+  `AuthorityPressureOutcome { int countries_updated }`、與
+  `authority_pressure(state)` free function。對每個 country：
+  在 `group.country == ci` 且 `g.kind == Bureaucracy` 且
+  `influence > 0` 的 groups 上計算 influence-weighted loyalty
+  `sum(g.influence * g.loyalty) / sum(g.influence)`，然後 drift
+  `country.government_authority.bureaucratic_compliance` 朝該
+  target 以 0.01 速率、clamp `[0, 1]`。沒有 Bureaucracy 群組
+  或全部 zero-influence 就 skip（不 mutate、不計數、不算失敗）。
+  輸出 surface **只動** `bureaucratic_compliance`：其他三個
+  authority 子欄位（`military_loyalty` / `intelligence_capability`
+  / `media_control`）以及 country `stability` / `legitimacy` /
+  `corruption` / `central_control` / `administrative_efficiency`
+  全不動。輸入 aggregate **只用** Bureaucracy-kind 的 influence-
+  weighted loyalty，不用 radicalism；其他 kind（Military /
+  Workers / 等）即使存在也忽略。嚴格 preflight：每個 group
+  的 `country` / `influence` / `loyalty`、以及每個 country 的
+  `bureaucratic_compliance` 都驗 finite + `[0, 1]`，任何一個
+  違規整批不 mutate（避免 NaN 擴散）；`radicalism` 與
+  `stability` 因為 M3.4 不讀，故意不重複 preflight。接進
+  monthly pipeline 作為 `tick_all_countries` 的**第三個 global
+  step**，在 M3.3 `country_feedback` 之後，完成 rate ladder
+  (`react` 0.05 → `country_feedback` 0.02 →
+  `authority_pressure` 0.01)；越外層 rate 越慢以維持 closed
+  loop 阻尼。`MonthlyOutcome` 新增
+  `int interest_group_authority_countries_updated`。M2.18
+  `EnactPolicy` 阻力閘從此成為 loop 的下游消費者，但 M3.4
+  **不**修改閘的公式。**No save schema bump（仍 v11）**；
+  canonical scenario 沒 author interest_groups，所以既有
+  M1/M2/M3.1/M3.2/M3.3 caller 完全沒有行為變更。對應
+  RFC-020 §3 國家掌控力長期想要的 interest-group 反饋的
+  第一片落地。**M3.4 不做** save schema 變更、新欄位、新
+  InterestGroupKind、`military_loyalty` / `intelligence_capability`
+  / `media_control` 的 mutation、`legitimacy` / `corruption` /
+  `stability` / `central_control` / `administrative_efficiency`
+  的 mutation、第二個 aggregate input（radicalism 不參與本步）、
+  per-kind / per-country / per-output rate、weighted multi-input
+  formula 超出 influence-weighted Bureaucracy loyalty、RNG /
+  機率行為、events / `state.logs` entry、AI / UI / CLI、
+  coup / strike / protest / civil war / cross-border、automatic
+  group generation、command-gate integration、新 PlayerCommandKind、
+  faction reaction 變更、policy preference system、`tick_country`
+  變更、M1 / M2 system 變更。
+  **M3.3（InterestGroup
   country feedback skeleton）** 把 M3 的反應 loop 收尾：interest
   groups 反推 country state。延續 M3.2 的
   `leviathan::systems::interest_group` 模組，新增常數

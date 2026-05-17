@@ -77,6 +77,21 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.interest_group_countries_updated =
         fb.value().countries_updated;
 
+    // M3.4: drift each country's
+    // government_authority.bureaucratic_compliance toward the
+    // influence-weighted loyalty of its Bureaucracy-kind
+    // interest groups, at the even slower rate
+    // kInterestGroupAuthorityPressureRate (0.01). Runs AFTER
+    // M3.3 so it sees the just-updated group loyalty values.
+    auto ap = interest_group::authority_pressure(state);
+    if (!ap.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: interest_group::"
+            "authority_pressure failed: " + ap.error());
+    }
+    out.interest_group_authority_countries_updated =
+        ap.value().countries_updated;
+
     return core::Result<MonthlyOutcome>::success(std::move(out));
 }
 
