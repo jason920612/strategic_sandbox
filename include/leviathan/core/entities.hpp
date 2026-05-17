@@ -220,6 +220,61 @@ struct EventDefinition {
     std::string name;
 };
 
+// Coarse-grained category for an interest group / political actor
+// (M3.1). Mirrors the RFC-020 §5 long-term faction list, narrowed
+// to the ten kinds M3 expects to model in its first iteration.
+// String mapping lives in `save_system.cpp` next to other enum
+// round-trips; scenario JSON spells the variant out
+// ("Bureaucracy", "Military", ...).
+//
+// Future kinds (Nationalists, Aristocracy, Intelligence as a
+// distinct group, ...) land additively. Existing variant names
+// must not be renamed or reordered.
+enum class InterestGroupKind {
+    Bureaucracy,
+    Military,
+    Workers,
+    Farmers,
+    Religious,
+    Media,
+    Students,
+    LocalElites,
+    Business,
+    Technocrats,
+};
+
+// One interest group / political actor (M3.1).
+//
+// M3.1 ships only the data shape: no M1/M2 system reads or
+// mutates these fields. Future M3 sub-milestones will introduce
+// monthly reactions, command resistance contributions, event
+// triggers, and AI behaviour against this struct.
+//
+// Identity:
+//   * `id_code` — stable on-disk identifier ("ger_bureaucracy").
+//   * `name`    — human-readable label.
+//   * `kind`    — coarse category from `InterestGroupKind`.
+//   * `country` — owning country; numeric handle (caller-resolved
+//                 from the scenario manifest's `country` id_code).
+//
+// Behavioural ratios (all in [0, 1] unless noted):
+//   * `influence`  — share of political clout this group commands.
+//   * `loyalty`    — loyalty to the current regime / player.
+//   * `radicalism` — willingness to escalate / disrupt stability.
+//
+// Defaults reflect "neutral newly-authored group": equal influence
+// and loyalty at the mid-point, zero radicalism.
+struct InterestGroupState {
+    std::string       id_code;
+    std::string       name;
+    InterestGroupKind kind    = InterestGroupKind::Bureaucracy;
+    CountryId         country = CountryId::invalid();
+
+    double influence  = 0.5;
+    double loyalty    = 0.5;
+    double radicalism = 0.0;
+};
+
 }  // namespace leviathan::core
 
 #endif  // LEVIATHAN_CORE_ENTITIES_HPP

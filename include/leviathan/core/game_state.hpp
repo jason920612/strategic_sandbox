@@ -51,6 +51,16 @@ struct GameState {
     // mutated by simulation systems. Foundation for future
     // deterministic replay (RFC-050 §8).
     std::vector<AppliedPlayerCommand> applied_commands;
+
+    // M3.1: interest-group / political-actor data layer. Root-level
+    // so future cross-country interactions (foreign-funded media,
+    // diaspora pressure, transnational religious networks) compose
+    // naturally; each entry's `country` field points back to
+    // `countries`. M3.1 is data-only — no M1 or M2 system reads or
+    // mutates the list. Loader treats the block as optional in
+    // scenario JSON; SaveSystem requires it at the save layer (save
+    // format v11).
+    std::vector<InterestGroupState> interest_groups;
 };
 
 // Builds a fresh GameState from `config`:

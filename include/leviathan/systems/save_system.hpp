@@ -91,7 +91,20 @@ namespace leviathan::systems::save_system {
 //                the block is REQUIRED with all four sub-keys present
 //                and finite in [0, 1]; DataLoader still treats the
 //                block as optional in raw country JSON.
-inline constexpr std::uint32_t kSaveFormatVersion   = 10;
+//   v11 (M3.1) - GameState gained `interest_groups` at the root
+//                level (M3.1 InterestGroupState — id_code, name,
+//                kind, country, influence, loyalty, radicalism). A
+//                v10 save lacks the array entirely; silently
+//                defaulting to an empty list on reload would drop
+//                whatever interest-group set the user originally
+//                authored. We bump strictly. At the save-file level
+//                the block is REQUIRED (empty array allowed) with
+//                every entry validated: non-empty id_code + name +
+//                known kind string + country id_code resolving into
+//                `state.countries` + three ratio fields in [0, 1].
+//                scenario_loader still treats the block as optional
+//                in raw scenario JSON.
+inline constexpr std::uint32_t kSaveFormatVersion   = 11;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

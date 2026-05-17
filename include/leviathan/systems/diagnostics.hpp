@@ -177,6 +177,9 @@ void write_faction_csv_row(std::ostream& out, const FactionSummaryRow& row);
 //   * applied_commands[*]: applied_on date, command kind, and the
 //     payload field that matches the kind (policy_id_code for
 //     EnactPolicy, budget_category + budget_delta for AdjustBudget).
+//   * interest_groups[*] (M3.1): identity strings (id_code, name),
+//     kind, country (numeric handle), and the three behavioural
+//     ratios (influence, loyalty, radicalism).
 //
 // SCOPE — fields DELIBERATELY skipped:
 //   * rng: not part of gameplay comparison; M2 replay does not yet

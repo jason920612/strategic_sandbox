@@ -39,6 +39,19 @@ TEST_CASE("Default GameState has the documented baseline") {
     CHECK(state.player_country.value() == -1);
     // M2.4: applied_commands log starts empty.
     CHECK(state.applied_commands.empty());
+    // M3.1: interest_groups list starts empty.
+    CHECK(state.interest_groups.empty());
+}
+
+TEST_CASE("Default InterestGroupState has the M3.1 baseline") {
+    leviathan::core::InterestGroupState g;
+    CHECK(g.id_code.empty());
+    CHECK(g.name.empty());
+    CHECK(g.kind    == leviathan::core::InterestGroupKind::Bureaucracy);
+    CHECK_FALSE(g.country.valid());
+    CHECK(g.influence  == doctest::Approx(0.5));
+    CHECK(g.loyalty    == doctest::Approx(0.5));
+    CHECK(g.radicalism == doctest::Approx(0.0));
 }
 
 TEST_CASE("Default CountryState.government_authority has the M2.16 baseline") {

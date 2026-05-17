@@ -86,6 +86,45 @@ core::Result<core::PlayerCommandKind> player_command_kind_from_string(
     return core::Result<core::PlayerCommandKind>::failure(std::move(msg));
 }
 
+// ----- InterestGroupKind <-> string (M3.1) --------------------------------
+
+std::string interest_group_kind_to_string(core::InterestGroupKind k) {
+    switch (k) {
+        case core::InterestGroupKind::Bureaucracy:  return "Bureaucracy";
+        case core::InterestGroupKind::Military:     return "Military";
+        case core::InterestGroupKind::Workers:      return "Workers";
+        case core::InterestGroupKind::Farmers:      return "Farmers";
+        case core::InterestGroupKind::Religious:    return "Religious";
+        case core::InterestGroupKind::Media:        return "Media";
+        case core::InterestGroupKind::Students:     return "Students";
+        case core::InterestGroupKind::LocalElites:  return "LocalElites";
+        case core::InterestGroupKind::Business:     return "Business";
+        case core::InterestGroupKind::Technocrats:  return "Technocrats";
+    }
+    // Sentinel fallback for the same reason as
+    // `player_command_kind_to_string`.
+    return "UnknownInterestGroupKind";
+}
+
+core::Result<core::InterestGroupKind> interest_group_kind_from_string(
+        std::string_view s) {
+    if (s == "Bureaucracy")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Bureaucracy);
+    if (s == "Military")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Military);
+    if (s == "Workers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Workers);
+    if (s == "Farmers")      return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Farmers);
+    if (s == "Religious")    return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Religious);
+    if (s == "Media")        return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Media);
+    if (s == "Students")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Students);
+    if (s == "LocalElites")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::LocalElites);
+    if (s == "Business")     return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Business);
+    if (s == "Technocrats")  return core::Result<core::InterestGroupKind>::success(core::InterestGroupKind::Technocrats);
+    std::string msg = "unknown interest_group kind '";
+    msg.append(s.data(), s.size());
+    msg += "' (expected Bureaucracy|Military|Workers|Farmers|"
+           "Religious|Media|Students|LocalElites|Business|Technocrats)";
+    return core::Result<core::InterestGroupKind>::failure(std::move(msg));
+}
+
 // ----- serialise -----------------------------------------------------------
 
 json country_to_json(const core::CountryState& c) {
@@ -789,6 +828,26 @@ std::string serialize(const core::GameState& state) {
     }
     root["applied_commands"] = std::move(applied);
 
+    // M3.1 interest_groups block. Root-level array of POD entries;
+    // each entry round-trips kind as its string spelling, the
+    // owning country as its numeric handle (CountryId::value), and
+    // the three behavioural ratios verbatim. Empty array is valid
+    // and is always emitted so the strict v11 loader contract has
+    // a stable target.
+    json igs = json::array();
+    for (const auto& g : state.interest_groups) {
+        json entry = json::object();
+        entry["id_code"]    = g.id_code;
+        entry["name"]       = g.name;
+        entry["kind"]       = interest_group_kind_to_string(g.kind);
+        entry["country"]    = g.country.value();
+        entry["influence"]  = g.influence;
+        entry["loyalty"]    = g.loyalty;
+        entry["radicalism"] = g.radicalism;
+        igs.push_back(std::move(entry));
+    }
+    root["interest_groups"] = std::move(igs);
+
     return root.dump(/*indent=*/2);
 }
 
@@ -1073,6 +1132,122 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             }
         }
         state.applied_commands.push_back(std::move(ac));
+    }
+
+    // M3.1 interest_groups block. Required as of save format v11.
+    // Empty array is valid; missing key is rejected so a v10 save
+    // that simply omits it (which would otherwise silently drop the
+    // entire interest-group set) fails loudly. Each entry is fully
+    // validated: id_code + name non-empty strings, kind a known
+    // enum, country a non-negative index inside `state.countries`,
+    // and the three behavioural ratios in [0, 1] via require_ratio.
+    if (!root.contains("interest_groups")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'interest_groups'"));
+    }
+    const auto& ig_arr = root.at("interest_groups");
+    if (!ig_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'interest_groups' has wrong type (expected"
+                    " JSON array)"));
+    }
+    state.interest_groups.reserve(ig_arr.size());
+    for (std::size_t i = 0; i < ig_arr.size(); ++i) {
+        const std::string ig_ctx =
+            std::string(source_label) + ": interest_groups[" +
+            std::to_string(i) + "]";
+        const auto& entry = ig_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": expected JSON object");
+        }
+        auto id_code_r = require_string(entry, "id_code", ig_ctx);
+        if (!id_code_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(id_code_r.error()));
+        }
+        if (id_code_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": 'id_code' must be non-empty");
+        }
+        auto name_r = require_string(entry, "name", ig_ctx);
+        if (!name_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(name_r.error()));
+        }
+        if (name_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": 'name' must be non-empty");
+        }
+        auto kind_r = require_string(entry, "kind", ig_ctx);
+        if (!kind_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(kind_r.error()));
+        }
+        auto kind = interest_group_kind_from_string(kind_r.value());
+        if (!kind) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": 'kind': " + kind.error());
+        }
+        auto country_r = require_u64(entry, "country", ig_ctx);
+        if (!country_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(country_r.error()));
+        }
+        using under = core::CountryId::underlying_type;
+        constexpr auto kIntMax =
+            static_cast<std::uint64_t>(
+                std::numeric_limits<under>::max());
+        if (country_r.value() > kIntMax) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": 'country' is out of range for CountryId");
+        }
+        const auto country_int = static_cast<under>(country_r.value());
+        if (country_int < 0 ||
+            static_cast<std::size_t>(country_int) >=
+                state.countries.size()) {
+            return core::Result<core::GameState>::failure(
+                ig_ctx + ": 'country' " + std::to_string(country_int) +
+                " is not a valid index into state.countries");
+        }
+        auto influence_r  = require_ratio(entry, "influence",  ig_ctx);
+        if (!influence_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(influence_r.error()));
+        }
+        auto loyalty_r    = require_ratio(entry, "loyalty",    ig_ctx);
+        if (!loyalty_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(loyalty_r.error()));
+        }
+        auto radicalism_r = require_ratio(entry, "radicalism", ig_ctx);
+        if (!radicalism_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(radicalism_r.error()));
+        }
+
+        // Duplicate id_code is a hard failure — the save layer is the
+        // strictest gate and a duplicate breaks identity-based lookups
+        // any future system would need.
+        for (const auto& existing : state.interest_groups) {
+            if (existing.id_code == id_code_r.value()) {
+                return core::Result<core::GameState>::failure(
+                    ig_ctx + ": duplicate 'id_code' '" +
+                    id_code_r.value() + "'");
+            }
+        }
+
+        core::InterestGroupState g;
+        g.id_code    = std::move(id_code_r).value();
+        g.name       = std::move(name_r).value();
+        g.kind       = kind.value();
+        g.country    = core::CountryId{country_int};
+        g.influence  = influence_r.value();
+        g.loyalty    = loyalty_r.value();
+        g.radicalism = radicalism_r.value();
+        state.interest_groups.push_back(std::move(g));
     }
 
     // provinces, policies, events: keys reserved, contents not yet

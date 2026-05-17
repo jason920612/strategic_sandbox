@@ -395,6 +395,32 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
         }
     }
 
+    // ---- interest_groups (M3.1) ------------------------------------
+    if (a.interest_groups.size() != b.interest_groups.size()) {
+        push_mismatch(out, "interest_groups.size()",
+                      std::to_string(a.interest_groups.size()) + " != " +
+                      std::to_string(b.interest_groups.size()));
+    } else {
+        for (std::size_t i = 0; i < a.interest_groups.size(); ++i) {
+            const auto& ga = a.interest_groups[i];
+            const auto& gb = b.interest_groups[i];
+            const std::string prefix =
+                "interest_groups[" + std::to_string(i) + "]";
+
+            check_string(out, prefix + ".id_code", ga.id_code, gb.id_code);
+            check_string(out, prefix + ".name",    ga.name,    gb.name);
+            check_int(out, prefix + ".kind",
+                      static_cast<long long>(ga.kind),
+                      static_cast<long long>(gb.kind));
+            check_int(out, prefix + ".country",
+                      static_cast<long long>(ga.country.value()),
+                      static_cast<long long>(gb.country.value()));
+            check_double(out, prefix + ".influence",  ga.influence,  gb.influence,  tol);
+            check_double(out, prefix + ".loyalty",    ga.loyalty,    gb.loyalty,    tol);
+            check_double(out, prefix + ".radicalism", ga.radicalism, gb.radicalism, tol);
+        }
+    }
+
     return out;
 }
 

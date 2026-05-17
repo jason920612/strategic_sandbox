@@ -709,3 +709,39 @@ TEST_CASE("compare_states: M2.16 government_authority differences are reported p
     CHECK(m[0].field_path == "countries[0].government_authority.bureaucratic_compliance");
     CHECK(m[1].field_path == "countries[0].government_authority.media_control");
 }
+
+TEST_CASE("compare_states: M3.1 interest_groups size mismatch reported") {
+    GameState a;
+    GameState b;
+    leviathan::core::InterestGroupState g;
+    g.id_code = "ger_bureaucracy";
+    g.name    = "German Bureaucracy";
+    g.kind    = leviathan::core::InterestGroupKind::Bureaucracy;
+    g.country = CountryId{0};
+    b.interest_groups.push_back(g);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "interest_groups.size()");
+    CHECK(m[0].detail     == "0 != 1");
+}
+
+TEST_CASE("compare_states: M3.1 interest_groups per-field differences are reported per path") {
+    GameState a;
+    GameState b;
+    leviathan::core::InterestGroupState g;
+    g.id_code   = "ger_bureaucracy";
+    g.name      = "German Bureaucracy";
+    g.kind      = leviathan::core::InterestGroupKind::Bureaucracy;
+    g.country   = CountryId{0};
+    g.influence = 0.5;
+    g.loyalty   = 0.5;
+    a.interest_groups.push_back(g);
+    leviathan::core::InterestGroupState gb = g;
+    gb.influence  = 0.7;
+    gb.radicalism = 0.2;
+    b.interest_groups.push_back(gb);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 2u);
+    CHECK(m[0].field_path == "interest_groups[0].influence");
+    CHECK(m[1].field_path == "interest_groups[0].radicalism");
+}
