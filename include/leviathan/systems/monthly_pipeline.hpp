@@ -19,6 +19,19 @@
 // state and never feeds back into the per-country pipeline in
 // the same month.
 //
+// M3.3 adds the reverse direction as a second global step run
+// AFTER M3.2:
+//
+//   5.  interest_group::country_feedback (state)
+//
+// `country_feedback` reads the freshly-drifted `group.radicalism`
+// (post-M3.2) and applies a small influence-weighted feedback to
+// each country's `stability`. The closed loop (4 then 5) is
+// deliberately tuned so 5 runs at a slower rate than 4 to avoid
+// oscillation. `country_feedback` mutates ONLY `country.stability`
+// — no other country / faction / authority / interest-group
+// field is touched in this step.
+//
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
 // `economy::tick`'s political-instability drag reads the stability
@@ -89,12 +102,19 @@ struct CountryMonthlyOutcome {
 // M3.2: after the per-country loop finishes, `tick_all_countries`
 // invokes `interest_group::react(state)` once. The
 // `interest_groups_updated` counter mirrors that call's
-// `groups_updated` field. The global step runs LAST so it reads
-// post-tick `stability` from each country.
+// `groups_updated` field.
+//
+// M3.3: immediately after M3.2, `interest_group::country_feedback`
+// runs to close the reaction loop. The
+// `interest_group_countries_updated` counter mirrors that call's
+// `countries_updated` field — countries with no matching
+// interest groups (or only zero-influence ones) are skipped and
+// do not count toward this total.
 struct MonthlyOutcome {
     int countries_processed = 0;
     std::vector<CountryMonthlyOutcome> countries;
-    int interest_groups_updated = 0;
+    int interest_groups_updated          = 0;
+    int interest_group_countries_updated = 0;
 };
 
 // Run one month-boundary pipeline for a single country in the

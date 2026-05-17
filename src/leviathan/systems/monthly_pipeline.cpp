@@ -63,6 +63,20 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     }
     out.interest_groups_updated = ig.value().groups_updated;
 
+    // M3.3: close the loop in the opposite direction. Each
+    // country's stability drifts toward (1 - influence-weighted
+    // radicalism) of its own interest groups, at the slower
+    // rate kInterestGroupCountryFeedbackRate (0.02). Runs AFTER
+    // M3.2 so it sees the just-updated radicalism values.
+    auto fb = interest_group::country_feedback(state);
+    if (!fb.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: interest_group::"
+            "country_feedback failed: " + fb.error());
+    }
+    out.interest_group_countries_updated =
+        fb.value().countries_updated;
+
     return core::Result<MonthlyOutcome>::success(std::move(out));
 }
 

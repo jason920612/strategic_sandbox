@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -235,4 +236,210 @@ TEST_CASE("react: invalid (sentinel) country index fails preflight") {
     REQUIRE(r.failed());
     CHECK(r.error().find("interest_group::react") != std::string::npos);
     CHECK(r.error().find("interest_groups[0]")    != std::string::npos);
+}
+
+// =====================================================================
+// M3.3 - country_feedback: influence-weighted radicalism -> country.stability
+// =====================================================================
+
+TEST_CASE("country_feedback: empty state succeeds with zero updates") {
+    GameState state;
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+}
+
+TEST_CASE("country_feedback: country with no matching groups is skipped") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.6, "GER"));
+    const double before = state.countries[0].stability;
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    // Stability untouched.
+    CHECK(state.countries[0].stability == doctest::Approx(before));
+}
+
+TEST_CASE("country_feedback: high group radicalism lowers country stability") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.8, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.5, /*radicalism=*/0.6,
+                 /*influence=*/1.0));
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+
+    // target = 1 - 0.6 = 0.4
+    // new    = 0.8 + (0.4 - 0.8) * 0.02 = 0.792
+    CHECK(state.countries[0].stability == doctest::Approx(0.792));
+}
+
+TEST_CASE("country_feedback: low group radicalism raises country stability") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.5, /*radicalism=*/0.1,
+                 /*influence=*/1.0));
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    // target = 1 - 0.1 = 0.9
+    // new    = 0.4 + (0.9 - 0.4) * 0.02 = 0.41
+    CHECK(state.countries[0].stability == doctest::Approx(0.41));
+}
+
+TEST_CASE("country_feedback: influence-weighted aggregate across two groups") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.5, /*radicalism=*/0.2,
+                 /*influence=*/0.75,
+                 InterestGroupKind::Bureaucracy, "g1"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.5, /*radicalism=*/0.8,
+                 /*influence=*/0.25,
+                 InterestGroupKind::Military,    "g2"));
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    // weighted = (0.75*0.2 + 0.25*0.8) / (0.75 + 0.25)
+    //          = (0.15 + 0.20) / 1.0 = 0.35
+    // target   = 1 - 0.35 = 0.65
+    // new      = 0.5 + (0.65 - 0.5) * 0.02 = 0.503
+    CHECK(state.countries[0].stability == doctest::Approx(0.503));
+}
+
+TEST_CASE("country_feedback: zero-influence groups are ignored") {
+    // The only group has influence 0 — it should not affect the
+    // aggregate; the country is treated as having no political
+    // weight and is skipped.
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.5, /*radicalism=*/0.9,
+                 /*influence=*/0.0));
+    const double before = state.countries[0].stability;
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].stability == doctest::Approx(before));
+}
+
+TEST_CASE("country_feedback: multi-country updates are independent") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));   // 0
+    state.countries.push_back(country_at_stability(0.5, "FRA"));   // 1
+
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, /*rad=*/0.2, 1.0,
+                 InterestGroupKind::Bureaucracy, "ger_b"));
+    state.interest_groups.push_back(
+        group_at(CountryId{1}, 0.5, /*rad=*/0.8, 1.0,
+                 InterestGroupKind::Military,    "fra_m"));
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 2);
+
+    // GER: target = 1 - 0.2 = 0.8; new = 0.5 + 0.3 * 0.02 = 0.506
+    // FRA: target = 1 - 0.8 = 0.2; new = 0.5 + (-0.3) * 0.02 = 0.494
+    CHECK(state.countries[0].stability == doctest::Approx(0.506));
+    CHECK(state.countries[1].stability == doctest::Approx(0.494));
+}
+
+TEST_CASE("country_feedback: interest groups themselves are never mutated") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.4, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, /*loyalty=*/0.37, /*radicalism=*/0.62,
+                 /*influence=*/0.81);
+    state.interest_groups.push_back(g);
+
+    REQUIRE(ig::country_feedback(state).ok());
+    const auto& after = state.interest_groups[0];
+    CHECK(after.loyalty    == doctest::Approx(0.37));
+    CHECK(after.radicalism == doctest::Approx(0.62));
+    CHECK(after.influence  == doctest::Approx(0.81));
+}
+
+TEST_CASE("country_feedback: invalid group country fails preflight without mutating any country") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    state.countries.push_back(country_at_stability(0.5, "FRA"));
+    // Valid group first.
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Bureaucracy, "ok"));
+    // Bad group with country index past the end.
+    InterestGroupState bad =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military, "bad");
+    bad.country = CountryId{7};
+    state.interest_groups.push_back(bad);
+
+    const double ger_before = state.countries[0].stability;
+    const double fra_before = state.countries[1].stability;
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country_feedback")  != std::string::npos);
+    CHECK(r.error().find("interest_groups[1]") != std::string::npos);
+
+    // No country mutated.
+    CHECK(state.countries[0].stability == doctest::Approx(ger_before));
+    CHECK(state.countries[1].stability == doctest::Approx(fra_before));
+}
+
+TEST_CASE("country_feedback: non-finite group ratio fails preflight") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    InterestGroupState g = group_at(CountryId{0}, 0.5, 0.5, 1.0);
+    g.radicalism = std::nan("");
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("radicalism") != std::string::npos);
+}
+
+TEST_CASE("country_feedback: out-of-range group influence fails preflight") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    InterestGroupState g = group_at(CountryId{0}, 0.5, 0.5, 1.0);
+    g.influence = 1.5;
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("influence") != std::string::npos);
+}
+
+TEST_CASE("country_feedback: non-finite country stability fails preflight") {
+    GameState state;
+    state.countries.push_back(country_at_stability(0.5, "GER"));
+    state.countries[0].stability = std::nan("");
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 1.0));
+
+    const auto r = ig::country_feedback(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("stability") != std::string::npos);
+}
+
+TEST_CASE("country_feedback: clamp keeps stability inside [0, 1]") {
+    // Pathological inputs at the edge: stability 1.0 and very low
+    // weighted radicalism nudge above 1.0 before clamp; clamp
+    // must keep it inside.
+    GameState state;
+    state.countries.push_back(country_at_stability(1.0, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, /*rad=*/0.0, 1.0));
+
+    REQUIRE(ig::country_feedback(state).ok());
+    CHECK(state.countries[0].stability >= 0.0);
+    CHECK(state.countries[0].stability <= 1.0);
 }
