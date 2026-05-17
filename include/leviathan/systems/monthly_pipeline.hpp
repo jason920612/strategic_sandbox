@@ -9,6 +9,16 @@
 //   2.  stability::tick  (state, country)
 //   3.  economy::tick    (state, country)
 //
+// M3.2 extends `tick_all_countries` with a global step that runs
+// AFTER every per-country tick:
+//
+//   4.  interest_group::react (state)
+//
+// The global step runs last so it reads post-tick stability from
+// every country; it never mutates country / faction / policy
+// state and never feeds back into the per-country pipeline in
+// the same month.
+//
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
 // `economy::tick`'s political-instability drag reads the stability
@@ -57,6 +67,7 @@
 #include "leviathan/core/result.hpp"
 #include "leviathan/systems/economy_system.hpp"
 #include "leviathan/systems/faction_system.hpp"
+#include "leviathan/systems/interest_group_system.hpp"
 #include "leviathan/systems/stability_system.hpp"
 
 namespace leviathan::systems::monthly {
@@ -74,9 +85,16 @@ struct CountryMonthlyOutcome {
 // Aggregate outcome for a `tick_all_countries` call. The `countries`
 // vector is filled in the same order as `state.countries`; size is
 // always `countries_processed`.
+//
+// M3.2: after the per-country loop finishes, `tick_all_countries`
+// invokes `interest_group::react(state)` once. The
+// `interest_groups_updated` counter mirrors that call's
+// `groups_updated` field. The global step runs LAST so it reads
+// post-tick `stability` from each country.
 struct MonthlyOutcome {
     int countries_processed = 0;
     std::vector<CountryMonthlyOutcome> countries;
+    int interest_groups_updated = 0;
 };
 
 // Run one month-boundary pipeline for a single country in the

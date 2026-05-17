@@ -414,3 +414,92 @@ TEST_CASE("tick_country: pipeline ordering is unchanged (faction -> stability ->
     //   target = 0.5*0.05 + 0.5*1.0 - 0 - 0.2*0.5 + 2.0*0.0 = 0.425
     CHECK(r.value().stability.target_stability == doctest::Approx(0.425));
 }
+
+// =====================================================================
+// M3.2 - interest_group::react runs after every per-country tick
+// =====================================================================
+
+TEST_CASE("tick_all_countries runs interest_group::react after every per-country tick (M3.2)") {
+    // Build two countries with distinct stability values so the
+    // post-pipeline drift is visibly different per group. Each
+    // country owns one interest group sitting at the neutral
+    // (0.5, 0.5) starting point.
+    GameState state;
+    CountryState ger = germany_baseline(0);
+    ger.stability    = 0.55;   // baseline already.
+    CountryState fra = germany_baseline(1);
+    fra.id_code      = "FRA";
+    fra.stability    = 0.55;   // explicit, mirrors ger.
+    state.countries.push_back(ger);
+    state.countries.push_back(fra);
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+    state.factions.push_back(make_faction(1, 1, 0.3, 0.3));
+
+    leviathan::core::InterestGroupState ger_b;
+    ger_b.id_code = "ger_b";
+    ger_b.name    = "GER bureaucracy";
+    ger_b.kind    = leviathan::core::InterestGroupKind::Bureaucracy;
+    ger_b.country = CountryId{0};
+    leviathan::core::InterestGroupState fra_m;
+    fra_m.id_code = "fra_m";
+    fra_m.name    = "FRA military";
+    fra_m.kind    = leviathan::core::InterestGroupKind::Military;
+    fra_m.country = CountryId{1};
+    state.interest_groups.push_back(ger_b);
+    state.interest_groups.push_back(fra_m);
+
+    // Existing M1 systems must still run — capture pre-tick GDPs
+    // to assert economy::tick fired afterwards.
+    const double ger_gdp_before = state.countries[0].gdp;
+    const double fra_gdp_before = state.countries[1].gdp;
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_processed       == 2);
+    CHECK(r.value().interest_groups_updated   == 2);
+
+    // M3.2: interest groups drifted toward post-tick stability.
+    // The per-country tick mutates stability, so we read the
+    // post-tick value off the state itself rather than predicting
+    // it (the canonical M1.9 ordering tests already pin the
+    // pre-react math). The contract here is simply "react ran":
+    // for both groups, BOTH loyalty AND radicalism must have
+    // moved off the 0.5 starting point unless the post-tick
+    // stability happens to be exactly 0.5 (it isn't with these
+    // inputs).
+    CHECK(state.interest_groups[0].loyalty    != doctest::Approx(0.5));
+    CHECK(state.interest_groups[0].radicalism != doctest::Approx(0.5));
+    CHECK(state.interest_groups[1].loyalty    != doctest::Approx(0.5));
+    CHECK(state.interest_groups[1].radicalism != doctest::Approx(0.5));
+
+    // And explicitly: each group's loyalty target is its
+    // country's post-tick stability. The drift step is
+    //   loyalty += (target - loyalty) * 0.05
+    // so after one step the new loyalty equals
+    //   0.5 * 0.95 + post_tick_stability * 0.05.
+    const double ger_stab_after = state.countries[0].stability;
+    const double fra_stab_after = state.countries[1].stability;
+    CHECK(state.interest_groups[0].loyalty ==
+          doctest::Approx(0.5 * 0.95 + ger_stab_after * 0.05));
+    CHECK(state.interest_groups[1].loyalty ==
+          doctest::Approx(0.5 * 0.95 + fra_stab_after * 0.05));
+
+    // Existing M1 systems still ran: GDP shifted via economy::tick.
+    CHECK(state.countries[0].gdp != doctest::Approx(ger_gdp_before));
+    CHECK(state.countries[1].gdp != doctest::Approx(fra_gdp_before));
+}
+
+TEST_CASE("tick_all_countries on a state with no interest_groups still succeeds (M3.2)") {
+    // Regression: every existing M1 / M2 test fixture has
+    // state.interest_groups empty. The added M3.2 step must not
+    // change behaviour for those callers.
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+    REQUIRE(state.interest_groups.empty());
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_processed     == 1);
+    CHECK(r.value().interest_groups_updated == 0);
+}
