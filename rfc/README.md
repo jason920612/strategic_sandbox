@@ -217,8 +217,39 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中）** — 指令 / 治理整合。**M4.1（command
-  gate diagnostics surface）** 開啟 M4：在
+- **M4（進行中）** — 指令 / 治理整合。**M4.2
+  （CommandGateDiagnostic on RejectionRecord）** 把 M4.1
+  diagnostic shape 接進 apply-time rejection 路徑。
+  `commands::RejectionRecord` 新增 `CommandGateDiagnostic
+  gate_diagnostic` 欄位（**additive**，舊欄位
+  `compliance` / `threshold` / `resistance` 保留以維持
+  M2.20 / M2.21 / M2.22 既有 caller back-compat）。
+  `dispatch_one` 兩個 rejection branch（EnactPolicy /
+  AdjustBudget）改成同時呼叫 M4.1 的 `diagnose_*_gate`
+  helper 並把結果寫進 record，所以「診斷查詢」與「實際
+  apply rejection」共用同一份 gate explanation 來源。
+  Header 結構小調：把 `CommandGateKind` enum 與
+  `CommandGateDiagnostic` struct 定義從 commands.hpp
+  尾端搬到 M2.20 `RejectionRecord` section 之上，
+  讓 record 可以直接帶 diagnostic 欄位；`diagnose_*_gate`
+  函式宣告留在原本位置。`format_rejection_message`
+  舊有錯誤字串輸出 byte-identical 保留（既有
+  M2.18 / M2.19 子字串測試全數通過）。新增 6 個
+  doctest cases，pin：flat ↔ diagnostic agreement 在
+  EnactPolicy / 軍事 AdjustBudget / 非軍事 AdjustBudget
+  三條 rejection 路徑都一致、`gate_diagnostic.allowed`
+  在 rejection 永遠 false、boundary `0.299` 同樣 reject、
+  舊錯誤字串保留、rejection 攜帶的 diagnostic 與
+  standalone helper 同 state + target 一致（核心
+  「one source of truth」契約）。**沒有 save schema 變更
+  （仍 v11）、沒有新 artefact（仍 9 個）、沒有公式 /
+  threshold 變更、沒有新 PlayerCommandKind、沒有新
+  gameplay、沒有 event system / log / trigger、沒有
+  AI / UI / CLI / REPL、沒有 command-gate 與 M3
+  aggregate 整合（仍 deferred）、沒有移除 RejectionRecord
+  flat 欄位（M4.X 之後的 cleanup 候選）**。doctest count
+  794 → 800。
+- **M4.1（command gate diagnostics surface）** 開啟 M4：在
   `leviathan::systems::commands` 加上兩個純讀
   diagnostic helper（`diagnose_enact_policy_gate` /
   `diagnose_adjust_budget_gate`）把 M2.18 / M2.19

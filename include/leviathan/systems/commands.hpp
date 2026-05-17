@@ -67,6 +67,82 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
                                          CommandQueue& q);
 
 // ===========================================================================
+// M4.1 - Command gate diagnostic shape.
+//
+// Defined here (above the M2.20 rejection types) so the M2.20
+// `RejectionRecord` can carry a `CommandGateDiagnostic` field
+// (M4.2). The pure-read free functions that *produce* a
+// diagnostic from a `(state, country, target)` triple live near
+// the bottom of this header next to the other M4.1 declarations;
+// only the types live up here. Moving the types up does not
+// change M4.1 behaviour — both produce identical diagnostics.
+// ===========================================================================
+
+// Identifies which gate produced a diagnostic. Mirrors
+// `core::PlayerCommandKind` for the two kinds that currently have
+// a gate (M2.18 / M2.19); kept as a separate enum so future M4.X
+// work can add gate-only diagnostics for surfaces that have no
+// matching `PlayerCommandKind` without dragging the
+// `PlayerCommandKind` enum around.
+enum class CommandGateKind {
+    EnactPolicy,
+    AdjustBudget,
+};
+
+// Structured snapshot of a command gate's decision on a country.
+// Carries every input the gate read so a caller can format its own
+// message / surface the decision in UI / compare against
+// expectations in a test without recomputing.
+//
+// M4.2 adds this struct as a field on `RejectionRecord` so the
+// apply-time rejection path and the standalone `diagnose_*_gate`
+// query share one source of truth for the gate explanation.
+struct CommandGateDiagnostic {
+    CommandGateKind gate{};
+
+    // The country the gate was evaluated for.
+    core::CountryId country{};
+
+    // The country's `id_code`. Denormalised so callers don't have
+    // to re-index `state.countries`.
+    std::string country_id_code;
+
+    // Human-readable descriptor of what the command would touch.
+    // For `EnactPolicy`: `"policy:<policy_id_code>"`. For
+    // `AdjustBudget`: `"budget:<category>"`. The diagnostic does
+    // NOT validate that the policy / category exists; this string
+    // is for display.
+    std::string target;
+
+    // Name of the authority sub-field this gate read. One of:
+    //   * `"bureaucratic_compliance"`
+    //   * `"military_loyalty"`
+    // Selected per `order_execution::evaluate`: `EnactPolicy`
+    // always reads bureaucratic_compliance; `AdjustBudget` reads
+    // military_loyalty iff `budget_category == "military"`,
+    // otherwise bureaucratic_compliance.
+    std::string authority_field;
+
+    // The authority value observed at evaluation time. Range
+    // `[0, 1]` if upstream invariants hold; the diagnostic does
+    // not re-validate.
+    double authority_value = 0.0;
+
+    // The threshold the gate compares `authority_value` against.
+    // Currently `0.3` from
+    // `order_execution::kEnactPolicyComplianceThreshold` /
+    // `kAdjustBudgetComplianceThreshold`. The two thresholds
+    // happen to share a value today but are sourced separately;
+    // a future PR that diverges them will flow through naturally.
+    double threshold = 0.0;
+
+    // `authority_value >= threshold` per the M2.18 / M2.19
+    // accept rule. The diagnostic does not branch on `>` vs
+    // `>=` — it matches the existing gate.
+    bool allowed = false;
+};
+
+// ===========================================================================
 // M2.20 - structured rejection reporting.
 //
 // `apply_pending` returns `Result::failure` when an order-execution
@@ -133,6 +209,24 @@ struct RejectionRecord {
     // can present the rejection in terms of resistance instead of
     // compliance without recomputing.
     double resistance = 0.0;
+
+    // M4.2 — structured gate explanation. Same shape that
+    // `commands::diagnose_enact_policy_gate` and
+    // `commands::diagnose_adjust_budget_gate` produce, so an
+    // apply-time rejection and a standalone diagnostic query
+    // share one source of truth for the explanation. Populated
+    // alongside the flat `compliance` / `threshold` /
+    // `resistance` fields above in `dispatch_one`'s rejection
+    // branches; on a rejection `gate_diagnostic.allowed` is
+    // always `false`.
+    //
+    // The flat fields remain for back-compat — every M2.20 /
+    // M2.21 / M2.22 callsite reading `record.compliance` etc.
+    // keeps working. The two views agree by construction; a test
+    // in `commands_test.cpp` M4.2 section pins
+    // `record.compliance == record.gate_diagnostic.authority_value`
+    // and the threshold equivalence.
+    CommandGateDiagnostic gate_diagnostic{};
 };
 
 // Outcome shape for `try_apply_pending`. Wraps the existing
@@ -347,66 +441,11 @@ core::Result<ReplayOutcome> replay_with_time(
 // helper can't silently drift from real gate behaviour.
 // ===========================================================================
 
-// Identifies which gate produced the diagnostic. Mirrors
-// `core::PlayerCommandKind` for the two kinds that currently have
-// a gate (M2.18 / M2.19); kept as a separate enum so M4.X work can
-// add gate-only diagnostics for surfaces that have no matching
-// `PlayerCommandKind` (e.g. a hypothetical
-// "diagnose this hypothetical command kind" helper) without
-// dragging the `PlayerCommandKind` enum around.
-enum class CommandGateKind {
-    EnactPolicy,
-    AdjustBudget,
-};
-
-// Structured snapshot of a command gate's decision on a country.
-// Carries every input the gate read so a caller can format its own
-// message / surface the decision in UI / compare against
-// expectations in a test without recomputing.
-struct CommandGateDiagnostic {
-    CommandGateKind gate{};
-
-    // The country the gate was evaluated for.
-    core::CountryId country{};
-
-    // The country's `id_code`. Denormalised so callers don't have
-    // to re-index `state.countries`.
-    std::string country_id_code;
-
-    // Human-readable descriptor of what the command would touch.
-    // For `EnactPolicy`: `"policy:<policy_id_code>"`. For
-    // `AdjustBudget`: `"budget:<category>"`. The diagnostic does
-    // NOT validate that the policy / category exists; this string
-    // is for display.
-    std::string target;
-
-    // Name of the authority sub-field this gate read. One of:
-    //   * `"bureaucratic_compliance"`
-    //   * `"military_loyalty"`
-    // Selected per `order_execution::evaluate`: `EnactPolicy`
-    // always reads bureaucratic_compliance; `AdjustBudget` reads
-    // military_loyalty iff `budget_category == "military"`,
-    // otherwise bureaucratic_compliance.
-    std::string authority_field;
-
-    // The authority value observed at evaluation time. Range
-    // `[0, 1]` if upstream invariants hold; the diagnostic does
-    // not re-validate.
-    double authority_value = 0.0;
-
-    // The threshold the gate compares `authority_value` against.
-    // Currently `0.3` from
-    // `order_execution::kEnactPolicyComplianceThreshold` /
-    // `kAdjustBudgetComplianceThreshold`. The two thresholds
-    // happen to share a value today but are sourced separately;
-    // a future PR that diverges them will flow through naturally.
-    double threshold = 0.0;
-
-    // `authority_value >= threshold` per the M2.18 / M2.19
-    // accept rule. The diagnostic does not branch on `>` vs
-    // `>=` — it matches the existing gate.
-    bool allowed = false;
-};
+// The `CommandGateKind` enum and `CommandGateDiagnostic` struct
+// definitions live higher in this header (above the M2.20
+// rejection types) so `RejectionRecord` can carry a diagnostic
+// field directly. See the M4.1 type block earlier in this file
+// for the docstrings.
 
 // Explain how the `EnactPolicy` gate would evaluate on `country`
 // in its current authority state. `policy_id_code` is echoed back

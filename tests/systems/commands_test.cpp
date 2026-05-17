@@ -1784,3 +1784,205 @@ TEST_CASE("diagnose_*: diagnostic does NOT mutate state") {
     CHECK(s.countries[0].government_authority.military_loyalty
           == doctest::Approx(ml_before));
 }
+
+// =====================================================================
+// M4.2 - gate_diagnostic field on RejectionRecord
+//
+// The apply-time rejection path and the standalone diagnose_*_gate
+// query share one source of truth for the gate explanation. The
+// tests below pin:
+//   1. Both EnactPolicy and AdjustBudget rejection branches
+//      populate gate_diagnostic.
+//   2. The flat fields (compliance / threshold / resistance) and
+//      gate_diagnostic agree by construction.
+//   3. gate_diagnostic.allowed is always false on a rejection.
+//   4. The diagnostic carries the right country / target /
+//      authority_field per the M4.1 contract.
+//   5. The legacy format_rejection_message string (used by
+//      apply_pending's failure path) is byte-identical pre/post-M4.2.
+// =====================================================================
+
+TEST_CASE("M4.2 RejectionRecord: EnactPolicy rejection carries gate_diagnostic that agrees with flat fields") {
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.50);
+    s.policies.push_back(raise_taxes_policy());
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+
+    // Flat fields populated as before.
+    CHECK(rj.kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(rj.policy_id_code  == "raise_taxes");
+    CHECK(rj.compliance      == doctest::Approx(0.10));
+    CHECK(rj.threshold       == doctest::Approx(0.30));
+    CHECK(rj.resistance      == doctest::Approx(0.90));
+
+    // M4.2: new gate_diagnostic field populated and agrees with
+    // the flat fields by construction.
+    const auto& gd = rj.gate_diagnostic;
+    CHECK(gd.gate            == cmd::CommandGateKind::EnactPolicy);
+    CHECK(gd.country.value() == 0);
+    CHECK(gd.country_id_code == "GER");
+    CHECK(gd.target          == "policy:raise_taxes");
+    CHECK(gd.authority_field == "bureaucratic_compliance");
+    CHECK(gd.authority_value == doctest::Approx(rj.compliance));
+    CHECK(gd.threshold       == doctest::Approx(rj.threshold));
+    CHECK_FALSE(gd.allowed);
+}
+
+TEST_CASE("M4.2 RejectionRecord: military AdjustBudget rejection carries military_loyalty diagnostic") {
+    GameState s = single_country_state(/*bureaucratic=*/0.90,
+                                       /*military=*/0.10);
+    s.countries[0].budget.military = 0.30;
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::AdjustBudget;
+    cmd_p.budget_category = "military";
+    cmd_p.budget_delta    = 0.05;
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+
+    // Flat fields: military_loyalty selected because category is
+    // "military".
+    CHECK(rj.kind            == PlayerCommandKind::AdjustBudget);
+    CHECK(rj.budget_category == "military");
+    CHECK(rj.compliance      == doctest::Approx(0.10));
+    CHECK(rj.threshold       == doctest::Approx(0.30));
+    CHECK(rj.resistance      == doctest::Approx(0.90));
+
+    // M4.2: gate_diagnostic mirrors and agrees.
+    const auto& gd = rj.gate_diagnostic;
+    CHECK(gd.gate            == cmd::CommandGateKind::AdjustBudget);
+    CHECK(gd.country.value() == 0);
+    CHECK(gd.country_id_code == "GER");
+    CHECK(gd.target          == "budget:military");
+    CHECK(gd.authority_field == "military_loyalty");
+    CHECK(gd.authority_value == doctest::Approx(rj.compliance));
+    CHECK(gd.threshold       == doctest::Approx(rj.threshold));
+    CHECK_FALSE(gd.allowed);
+}
+
+TEST_CASE("M4.2 RejectionRecord: non-military AdjustBudget rejection carries bureaucratic_compliance diagnostic") {
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.99);
+    s.countries[0].budget.welfare = 0.20;
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::AdjustBudget;
+    cmd_p.budget_category = "welfare";
+    cmd_p.budget_delta    = 0.05;
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+
+    // Non-military category → bureaucratic_compliance, NOT
+    // military_loyalty (even though military_loyalty == 0.99 would
+    // have accepted).
+    const auto& gd = rj.gate_diagnostic;
+    CHECK(gd.target          == "budget:welfare");
+    CHECK(gd.authority_field == "bureaucratic_compliance");
+    CHECK(gd.authority_value == doctest::Approx(0.10));
+    CHECK(gd.authority_value == doctest::Approx(rj.compliance));
+    CHECK_FALSE(gd.allowed);
+}
+
+TEST_CASE("M4.2 RejectionRecord: gate_diagnostic.allowed is always false on a rejection") {
+    // Boundary just below threshold: compliance 0.299 must reject
+    // and the diagnostic field must say so.
+    GameState s = single_country_state(/*bureaucratic=*/0.299,
+                                       /*military=*/0.5);
+    s.policies.push_back(raise_taxes_policy());
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+
+    const auto r = cmd::try_apply_pending(s, q);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    CHECK_FALSE(r.value().rejection.value().gate_diagnostic.allowed);
+}
+
+TEST_CASE("M4.2 RejectionRecord: apply_pending failure message preserves legacy byte-identical surface") {
+    // M2.20's `format_rejection_message` produces the legacy string
+    // used by `apply_pending`'s `Result::failure`. M4.2 must not
+    // change that string — existing callers that grep error text
+    // (and the M2.18 / M2.19 tests that look for substrings) must
+    // keep passing.
+    GameState s = single_country_state(/*bureaucratic=*/0.10,
+                                       /*military=*/0.50);
+    s.policies.push_back(raise_taxes_policy());
+
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    // M2.18 substring contract is preserved.
+    CHECK(r.error().find("order_execution") != std::string::npos);
+    CHECK(r.error().find("rejected")        != std::string::npos);
+    CHECK(r.error().find("raise_taxes")     != std::string::npos);
+    // Specific shape from format_rejection_message — the
+    // "bureaucratic_compliance=X < threshold=Y" snippet must
+    // survive untouched.
+    CHECK(r.error().find("bureaucratic_compliance=") != std::string::npos);
+    CHECK(r.error().find("threshold=")               != std::string::npos);
+}
+
+TEST_CASE("M4.2 RejectionRecord: diagnostic on rejection matches what diagnose_*_gate returns standalone") {
+    // The whole point of M4.2: the rejection-record diagnostic and
+    // the standalone helper must produce equivalent diagnostics for
+    // the same state + target.
+    GameState s = single_country_state(/*bureaucratic=*/0.15,
+                                       /*military=*/0.20);
+    s.policies.push_back(raise_taxes_policy());
+
+    // Standalone diagnostic query.
+    const auto standalone_p = cmd::diagnose_enact_policy_gate(
+        s, s.player_country, "raise_taxes");
+    REQUIRE(standalone_p.ok());
+
+    // Drive the same state through apply_pending and capture the
+    // rejection's diagnostic.
+    PlayerCommand cmd_p;
+    cmd_p.kind            = PlayerCommandKind::EnactPolicy;
+    cmd_p.policy_id_code  = "raise_taxes";
+    cmd::CommandQueue q;
+    q.pending.push_back(cmd_p);
+    const auto apply_r = cmd::try_apply_pending(s, q);
+    REQUIRE(apply_r.ok());
+    REQUIRE(apply_r.value().rejection.has_value());
+
+    const auto& a = standalone_p.value();
+    const auto& b = apply_r.value().rejection.value().gate_diagnostic;
+    CHECK(a.gate            == b.gate);
+    CHECK(a.country.value() == b.country.value());
+    CHECK(a.country_id_code == b.country_id_code);
+    CHECK(a.target          == b.target);
+    CHECK(a.authority_field == b.authority_field);
+    CHECK(a.authority_value == doctest::Approx(b.authority_value));
+    CHECK(a.threshold       == doctest::Approx(b.threshold));
+    CHECK(a.allowed         == b.allowed);
+}

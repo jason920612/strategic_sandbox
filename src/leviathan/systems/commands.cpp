@@ -87,6 +87,20 @@ core::Result<DispatchOutcome> dispatch_one(core::GameState& state,
                 rj.compliance      = eval_r.value().inputs.bureaucratic_compliance;
                 rj.threshold       = oe::kEnactPolicyComplianceThreshold;
                 rj.resistance      = eval_r.value().resistance;
+                // M4.2: same gate explanation as the standalone
+                // `diagnose_enact_policy_gate` query. `apply_pending`
+                // has already validated `state.player_country`, so
+                // the helper can't realistically fail — we still
+                // surface its error verbatim if that ever changes.
+                auto diag_r = diagnose_enact_policy_gate(
+                    state, state.player_country, cmd.policy_id_code);
+                if (!diag_r) {
+                    return core::Result<DispatchOutcome>::failure(
+                        ctx + ": EnactPolicy '" + cmd.policy_id_code +
+                        "': gate diagnostic failed: " +
+                        std::move(diag_r.error()));
+                }
+                rj.gate_diagnostic = std::move(diag_r).value();
                 DispatchOutcome out;
                 out.applied   = false;
                 out.rejection = std::move(rj);
@@ -131,6 +145,17 @@ core::Result<DispatchOutcome> dispatch_one(core::GameState& state,
                 rj.compliance      = selected;
                 rj.threshold       = oe::kAdjustBudgetComplianceThreshold;
                 rj.resistance      = eval_r.value().resistance;
+                // M4.2: same gate explanation as the standalone
+                // `diagnose_adjust_budget_gate` query.
+                auto diag_r = diagnose_adjust_budget_gate(
+                    state, state.player_country, cmd.budget_category);
+                if (!diag_r) {
+                    return core::Result<DispatchOutcome>::failure(
+                        ctx + ": AdjustBudget '" + cmd.budget_category +
+                        "': gate diagnostic failed: " +
+                        std::move(diag_r.error()));
+                }
+                rj.gate_diagnostic = std::move(diag_r).value();
                 DispatchOutcome out;
                 out.applied   = false;
                 out.rejection = std::move(rj);

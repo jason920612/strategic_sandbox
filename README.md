@@ -11,7 +11,43 @@
   with M4.1 introducing the read-only command-gate
   diagnostics surface. See `docs/milestone-3-result.md`
   for the M3 exit report.
-- Latest shipped sub-milestone: **M4.1 — command gate
+- Latest shipped sub-milestone: **M4.2 — `CommandGateDiagnostic`
+  on `RejectionRecord`.** Wires the M4.1 diagnostic shape
+  into the apply-time rejection path. `commands::RejectionRecord`
+  gains a `CommandGateDiagnostic gate_diagnostic` field
+  (additive — every existing M2.20 / M2.21 / M2.22 caller
+  reading `record.compliance` / `threshold` / `resistance`
+  keeps working). `dispatch_one`'s two rejection branches
+  now also call `diagnose_enact_policy_gate` /
+  `diagnose_adjust_budget_gate` (introduced in M4.1) and
+  store the result on the record, so the apply-time
+  rejection and the standalone diagnostic query share **one
+  source of truth** for the gate explanation. Header
+  reshape: `CommandGateKind` enum + `CommandGateDiagnostic`
+  struct definitions moved above the M2.20 `RejectionRecord`
+  section in `commands.hpp` so the record can carry the
+  diagnostic field directly; the diagnose_* free function
+  declarations stay where they were near the bottom of the
+  file. `format_rejection_message` legacy string is
+  preserved byte-identical (every M2.18 / M2.19 substring
+  test still passes). 6 new doctest cases: flat ↔
+  diagnostic agreement on EnactPolicy rejection, military
+  AdjustBudget rejection, non-military AdjustBudget
+  rejection (where `military_loyalty == 0.99` would have
+  accepted but the gate routes via `bureaucratic_compliance`
+  and rejects); boundary `0.299` rejection with
+  `gate_diagnostic.allowed == false`; legacy message
+  byte-identical; the rejection-carried diagnostic matches
+  what the standalone helper returns for the same state
+  + target. **No save schema bump (still v11), no new
+  artefact (still 9), no command formula / threshold
+  change, no new `PlayerCommandKind`, no new gameplay, no
+  event system / persistent log / trigger, no AI / UI /
+  CLI / REPL, no command-gate integration with M3
+  aggregates (still deferred), no removal of the flat
+  `RejectionRecord` fields (a future M4.X cleanup
+  candidate).** Doctest count 794 → 800.
+- Previously shipped: **M4.1 — command gate
   diagnostics surface.** Opens M4. Small read-only
   helpers that explain how the existing M2.18 / M2.19
   command-execution gates would decide on a country given
@@ -439,24 +475,26 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.1): **M4.2** —
-  open. Natural candidates after the diagnostic surface
-  landed: (a) surface a `CommandGateDiagnostic` on
-  `RunOutcome` so a CLI run can print would-have-
-  rejected decisions; (b) plumb the diagnostic shape
-  into the M2.20 `RejectionRecord` so apply-time
-  rejections and diagnostic-time queries reuse one
-  struct; (c) **structured command-feedback log** as
-  a 10th unconditional CSV artefact (per-command
-  decision rows); (d) interest-group aggregates as
-  additional inputs to the M2.18 / M2.19 gate (the
-  long-discussed M3 → M2 integration); (e) the third
-  sibling authority channel (`intelligence_capability`
-  or `media_control`); (f) atomic `end_tick` writes
-  (temp-file + rename), still long-deferred. None
-  committed.
+- Next sub-milestone candidate (post-M4.2): **M4.3** —
+  open. Natural candidates after the rejection record
+  carries the diagnostic: (a) surface a
+  `RejectionRecord` (or just its `gate_diagnostic`) on
+  `RunOutcome` so a CLI run prints why a command was
+  rejected, not just the count; (b) **structured
+  command-feedback log** as a 10th unconditional CSV
+  artefact recording every gate rejection with the M4.1
+  diagnostic shape as the row; (c) interest-group
+  aggregates as additional inputs to the M2.18 / M2.19
+  gate (the long-discussed M3 → M2 integration); (d)
+  the third sibling authority channel
+  (`intelligence_capability` or `media_control`); (e)
+  remove the redundant flat `RejectionRecord` fields
+  once enough callers migrate to `gate_diagnostic`
+  (behaviour-preserving cleanup, no formula change);
+  (f) atomic `end_tick` writes (temp-file + rename),
+  still long-deferred. None committed.
 - M0 closed. M1 closed. M2 closed. M3 closed. M4 in
-  progress (M4.1 shipped). See
+  progress (M4.1 + M4.2 shipped). See
   `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and
@@ -491,7 +529,8 @@ reaction layer, RFC-090 §M3) is **closed** with M3.1 + M3.2
 + M3.10 + M3.11 shipped (see `docs/milestone-3-result.md`
 for the exit report); **Milestone 4** (command / governance
 integration) is in progress with M4.1 (command gate
-diagnostics surface) shipped. Fifty sub-milestones shipped:
+diagnostics surface) and M4.2 (`CommandGateDiagnostic` on
+`RejectionRecord`) shipped. Fifty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -638,6 +677,24 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.2 `CommandGateDiagnostic` on `RejectionRecord` —
+wires the M4.1 diagnostic shape into the apply-time
+rejection path. `commands::RejectionRecord` gains a
+`CommandGateDiagnostic gate_diagnostic` field
+(additive). `dispatch_one`'s two rejection branches
+populate it via the M4.1 helpers so the standalone
+diagnostic query and the real rejection share one
+source of truth. Header reshape: M4.1 type defs moved
+above M2.20 rejection types. Flat fields and
+`format_rejection_message` legacy string preserved
+byte-identical. 6 new doctest cases pinning flat ↔
+diagnostic agreement plus the legacy-substring
+contract. **No save schema bump (still v11), no new
+artefact (still 9), no command formula / threshold
+change, no new `PlayerCommandKind`, no event system /
+log / trigger, no AI / UI / CLI / REPL, no
+command-gate integration with M3 aggregates (still
+deferred).** Doctest count 794 → 800;
 **M4.1 command gate diagnostics surface — opens M4
 (command / governance integration). Small read-only
 helpers `diagnose_enact_policy_gate` /
