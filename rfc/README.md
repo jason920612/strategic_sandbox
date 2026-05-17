@@ -217,8 +217,37 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.1（SVG
-  map data skeleton）** 開啟 M4。把 M0 死掉的
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.2（SVG
+  exporter skeleton）** 是 M4 第一個 renderer：新 module
+  `leviathan::systems::svg_export` 把 `state.provinces` 轉成
+  deterministic SVG document（`viewBox="0 0 1000 1000"`，
+  每個 node 一個 `<circle>`，`cx = node.x * 1000`、
+  `cy = node.y * 1000`、`r=8`、`fill="black"`，外加
+  `data-id` / `data-owner` identity attributes；插入順序保留；
+  LF line terminator；`std::fixed` + `setprecision(2)` 確保
+  跨平台 byte-stable；空 `state.provinces` 產出 header-only
+  `<svg>`）。`end_tick` UNCONDITIONALLY 寫 `provinces.svg`，
+  成為 **第 9 個 artefact**（沿用 M3.5 / M3.6 unconditional
+  pattern；`milestone-3-result.md` §5 規定加第 9 個 artefact
+  需要獨立 sub-milestone 並把 contracts 文件化 ── M4.2 就是
+  那個 sub-milestone）。`RunnerOptions::provinces_svg_path`
+  optional override（**沒有 CLI flag**），預設
+  `<output_dir>/provinces.svg`；`RunOutcome::provinces_svg_path`
+  記錄解析後的 path。M2.9 pre-`end_tick` no-artefact contract
+  自然延伸；M3.6 mid-`end_tick` non-transactional 警語也
+  延伸（仍是 deferred）。M1 / M2 / M3 integration byte-identical
+  determinism contracts 從 8 個 artefact 延伸到 9 個。
+  Branch 名稱帶 `rfc090-` prefix，避免跟 rolled-back 的
+  invented-M4.X 工作混淆。12 個新 doctest cases（8 個
+  svg_export + 5 個 runner；共 776）。**M4 in progress.**
+  **M4.2 不做** HTML viewer / clickable UI / event handler /
+  hover state / map colour / per-country palette /
+  ownership dynamics / 鄰接 edge / controller-vs-owner /
+  terrain / 文字 label / events / AI / command integration /
+  新 `PlayerCommandKind` / runner CLI flag / save schema bump
+  （仍 v12）/ 新 state field / 新 gameplay / atomic
+  `end_tick`。
+  **M4.1（SVG map data skeleton）** 開啟 M4。把 M0 死掉的
   `ProvinceState{id, owner}` stub 換成 typed
   `core::ProvinceNode { id_code, name, owner, x, y }`，
   `x` / `y` 是 normalised `[0, 1]` 地圖座標；

@@ -30,16 +30,18 @@
 //      reverse-direction outcomes increment and the two trace
 //      vectors get one row each).
 //
-//   B. runner::run_state emits the full 8-artefact set with
-//      actual M3 data rows when the same hand-built state goes
-//      through begin_tick / step_one_day / end_tick. M1.17 /
-//      M2's canonical-scenario runs already cover the
-//      header-only path; this run covers the data-row path.
+//   B. runner::run_state emits the full 9-artefact set (M4.2
+//      grew it from 8 to 9 with provinces.svg) with actual M3
+//      data rows when the same hand-built state goes through
+//      begin_tick / step_one_day / end_tick. M1.17 / M2's
+//      canonical-scenario runs already cover the header-only
+//      path; this run covers the data-row path.
 //
 //   C. Two byte-for-byte identical hand-built states with the
-//      same options produce byte-identical 8-artefact output.
+//      same options produce byte-identical 9-artefact output.
 //      Mirrors M1.17 / M2.22's determinism contract but with
-//      M3 mutation actually happening on the wire.
+//      M3 mutation actually happening on the wire and the M4.2
+//      SVG render of state.provinces also in the comparison.
 //
 // M3.7 deliberately does NOT add a new system, formula,
 // artefact, save schema bump, gameplay branch, or close M3 —
@@ -251,7 +253,7 @@ TEST_CASE("M3 end-to-end: run_state emits 8 artefacts and the three M3 files hav
     CHECK(outcome.interest_group_country_feedback_csv_rows   == 1u);
     CHECK(outcome.interest_group_authority_pressure_csv_rows == 1u);
 
-    // All eight artefacts on disk.
+    // All nine artefacts on disk (M4.2 grew the set 8 → 9).
     CHECK(fs::exists(td.path / "save.json"));
     CHECK(fs::exists(td.path / "events.jsonl"));
     CHECK(fs::exists(td.path / "summary.csv"));
@@ -260,6 +262,7 @@ TEST_CASE("M3 end-to-end: run_state emits 8 artefacts and the three M3 files hav
     CHECK(fs::exists(td.path / "interest_groups.csv"));
     CHECK(fs::exists(td.path / "interest_group_country_feedback.csv"));
     CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
+    CHECK(fs::exists(td.path / "provinces.svg"));
 
     // The three M3 files have header + data (not header-only).
     const std::string ig = read_file(td.path / "interest_groups.csv");
@@ -277,9 +280,9 @@ TEST_CASE("M3 end-to-end: run_state emits 8 artefacts and the three M3 files hav
 }
 
 // =====================================================================
-// C. same hand-built state + same options -> byte-identical 8 artefacts
+// C. same hand-built state + same options -> byte-identical 9 artefacts
 // =====================================================================
-TEST_CASE("M3 end-to-end: same hand-built state produces byte-identical 8 artefacts") {
+TEST_CASE("M3 end-to-end: same hand-built state produces byte-identical 9 artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         GameState state = make_m3_loop_state();
 
@@ -314,4 +317,6 @@ TEST_CASE("M3 end-to-end: same hand-built state produces byte-identical 8 artefa
           read_file(td_b.path / "interest_group_country_feedback.csv"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    CHECK(read_file(td_a.path / "provinces.svg") ==
+          read_file(td_b.path / "provinces.svg"));
 }

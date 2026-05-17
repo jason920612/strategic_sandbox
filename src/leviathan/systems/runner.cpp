@@ -20,6 +20,7 @@
 #include "leviathan/systems/monthly_pipeline.hpp"
 #include "leviathan/systems/save_system.hpp"
 #include "leviathan/systems/scenario_loader.hpp"
+#include "leviathan/systems/svg_export.hpp"
 #include "leviathan/systems/time_system.hpp"
 
 namespace leviathan::systems::runner {
@@ -720,9 +721,10 @@ core::Result<bool> step_one_day(core::GameState& state,
 core::Result<RunOutcome> end_tick(core::GameState& state,
                                   const RunnerOptions& opts,
                                   TickController& ctrl) {
-    namespace lg = leviathan::systems::logging;
-    namespace ss = leviathan::systems::save_system;
-    namespace dg = leviathan::systems::diagnostics;
+    namespace lg  = leviathan::systems::logging;
+    namespace ss  = leviathan::systems::save_system;
+    namespace dg  = leviathan::systems::diagnostics;
+    namespace svg = leviathan::systems::svg_export;
 
     if (!ctrl.started) {
         return core::Result<RunOutcome>::failure(
@@ -785,6 +787,12 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto interest_group_authority_pressure_csv_path =
         opts.interest_group_authority_pressure_csv_path.value_or(
             opts.output_dir / "interest_group_authority_pressure.csv");
+    // M4.2: provinces.svg is always written. The path defaults to
+    // <output_dir>/provinces.svg, mirroring the M3.5 / M3.6
+    // unconditional pattern.
+    const auto provinces_svg_path =
+        opts.provinces_svg_path.value_or(
+            opts.output_dir / "provinces.svg");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -874,6 +882,17 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
         }
     }
+    // M4.2: unconditionally write the SVG render of state.provinces.
+    // Empty `state.provinces` produces a header-only `<svg>`; the
+    // artefact-on-disk contract is consistent regardless of node
+    // count. svg_export::write_provinces handles the directory
+    // creation + I/O internally.
+    {
+        auto svg_w = svg::write_provinces(state, provinces_svg_path);
+        if (!svg_w) {
+            return core::Result<RunOutcome>::failure(std::move(svg_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -900,6 +919,7 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
         interest_group_authority_pressure_csv_path;
     outcome.interest_group_authority_pressure_csv_rows =
         ctrl.interest_group_authority_pressure_rows.size();
+    outcome.provinces_svg_path = provinces_svg_path;
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));

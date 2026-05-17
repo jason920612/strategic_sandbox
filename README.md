@@ -14,7 +14,49 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.1 — SVG map data
+- Latest shipped sub-milestone: **M4.2 — SVG exporter
+  skeleton.** First renderer that turns the M4.1
+  `ProvinceNode` data layer into pixels. New
+  `leviathan::systems::svg_export` module with two free
+  functions: `render_provinces(state) → std::string` (pure
+  transform) and `write_provinces(state, path) → Result<bool>`
+  (render + file write). Output is a deterministic SVG
+  document with `viewBox="0 0 1000 1000"`, one `<circle>` per
+  province at `cx = node.x * 1000`, `cy = node.y * 1000`,
+  `r=8`, `fill="black"`, plus `data-id` / `data-owner`
+  identity attributes; insertion order preserved (no sort);
+  LF line terminators; `std::fixed` + `setprecision(2)` so
+  output is byte-stable across platforms; empty
+  `state.provinces` produces a header-only `<svg>`. `end_tick`
+  writes `provinces.svg` **unconditionally** as the **9th
+  artefact** (M3 / M4.1's 8-artefact invariant grew by one —
+  per the M3.9 exit report §5 a 9th artefact requires its own
+  sub-milestone with the contracts documented; M4.2 is that
+  sub-milestone). `RunnerOptions::provinces_svg_path` is an
+  optional override defaulting to
+  `<output_dir>/provinces.svg`; **no CLI flag**.
+  `RunOutcome::provinces_svg_path` carries the resolved path.
+  M2.9 pre-`end_tick` no-artefact contract extends
+  automatically; M3.6 mid-`end_tick` non-transactional caveat
+  extends similarly (still a deferred item). Integration
+  tests m1 / m2 / m3 byte-identical determinism contracts
+  extended from 8 to 9 artefacts. Branch name carries
+  explicit `rfc090-` prefix to disambiguate from the
+  2026-05-17 rolled-back invented-M4.X governance work
+  (lesson recorded in `docs/milestone-3-result.md` §7).
+  12 new doctest cases (8 svg_export + 5 runner; one of the
+  runner cases already counted toward the SVG writer's
+  determinism evidence; 776 total). **M4 in progress.**
+  **No HTML viewer, no clickable UI, no event handlers, no
+  hover state, no map colours, no per-country palette, no
+  ownership dynamics, no neighbour / adjacency edges, no
+  controller-vs-owner split, no terrain / resources /
+  population overlays, no labels / text elements, no events,
+  no AI, no command integration, no new `PlayerCommandKind`,
+  no runner CLI flag, no save schema bump (still v12), no
+  new state field, no new gameplay, no atomic `end_tick`
+  writes.**
+- Previously shipped: **M4.1 — SVG map data
   skeleton.** Fleshes out what used to be the M0
   `ProvinceState{id, owner}` stub into a typed
   `core::ProvinceNode { id_code, name, owner, x, y }` with
@@ -338,17 +380,17 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.1): **M4.2** — open.
-  M4.1 only ships the `ProvinceNode` data layer; natural
-  next steps include (a) an SVG exporter that walks
-  `state.provinces` and emits a static map, (b) an HTML
-  viewer wrapped around that exporter, (c) a clickable map
-  / country-panel surface, (d) richer node fields
-  (neighbour adjacency, terrain) once a renderer needs
-  them. None committed; reviewer chooses.
+- Next sub-milestone candidate (post-M4.2): **M4.3** — open.
+  M4.1 shipped the `ProvinceNode` data layer and M4.2
+  shipped the first SVG renderer; natural next steps include
+  (a) an HTML viewer wrapped around the SVG, (b) a clickable
+  map / country-panel surface, (c) per-country fill colours
+  driven by `owner` or another attribute, (d) richer node
+  fields (neighbour adjacency, terrain, name labels) once a
+  renderer needs them. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
-  shipped. **M4 in progress** with M4.1 shipped. See
+  shipped. **M4 in progress** with M4.1 + M4.2 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, and `rfc/RFC-090-roadmap.md` for the
@@ -378,7 +420,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 shipped. Forty-eight sub-milestones shipped:
+with M4.1 + M4.2 shipped. Forty-nine sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -525,6 +567,44 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.2 SVG exporter skeleton — first renderer that turns the
+M4.1 `ProvinceNode` data layer into pixels. New
+`leviathan::systems::svg_export` module with two free
+functions: `render_provinces(state) → std::string` (pure
+transform) and `write_provinces(state, path) → Result<bool>`
+(render + file write). Output is a deterministic SVG document
+with `viewBox="0 0 1000 1000"`, one `<circle>` per province
+at `cx = node.x * 1000`, `cy = node.y * 1000`, `r=8`,
+`fill="black"`, plus `data-id` / `data-owner` identity
+attributes; insertion order preserved; LF terminators;
+`std::fixed` + `setprecision(2)` for byte-stable coords;
+empty `state.provinces` produces a header-only `<svg>`.
+`end_tick` writes `provinces.svg` UNCONDITIONALLY as the
+**9th artefact**, mirroring the M3.5 / M3.6
+unconditional-artefact shape; per the M3.9 exit report §5,
+adding a 9th artefact requires its own sub-milestone with
+the contracts documented — M4.2 is that sub-milestone.
+`RunnerOptions::provinces_svg_path` optional override (no
+CLI flag); default `<output_dir>/provinces.svg`;
+`RunOutcome::provinces_svg_path` carries resolution.
+M2.9 pre-`end_tick` no-artefact contract extends
+automatically; M3.6 mid-`end_tick` non-transactional caveat
+extends similarly. Integration tests m1 / m2 / m3
+byte-identical determinism contracts extended from 8 to 9
+artefacts. Branch name carries explicit `rfc090-` prefix to
+disambiguate from the rolled-back invented-M4.X work.
+12 new doctest cases (8 svg_export + 5 runner; one of the
+runner cases doubles as determinism evidence; 776 total).
+**M4 in progress.** **No HTML viewer, no clickable UI, no
+event handlers, no hover state / tooltips, no map colours,
+no per-country palette, no ownership-driven colour mapping,
+no ownership dynamics, no neighbour / adjacency edges, no
+controller-vs-owner split, no terrain / resources /
+population overlays, no labels / text elements, no events,
+no AI, no command integration, no new `PlayerCommandKind`,
+no runner CLI flag, no save schema bump (still v12), no
+new state field, no new gameplay, no atomic `end_tick`
+writes.**;
 **M4.1 SVG map data skeleton — opens RFC-090 §M4 (SVG map +
 UI). Replaces the dead M0 `ProvinceState{id, owner}` stub with
 a typed `core::ProvinceNode { id_code, name, owner, x, y }`
