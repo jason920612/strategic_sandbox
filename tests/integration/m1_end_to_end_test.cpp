@@ -275,6 +275,10 @@ TEST_CASE("M1 end-to-end: same seed produces byte-identical save / log / all thr
           read_file(td_b.path / "provinces.svg"));
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    // M4.5: map.html is the tenth unconditional artefact —
+    // minimal HTML wrapper that inlines the same <svg> body.
+    CHECK(read_file(td_a.path / "map.html") ==
+          read_file(td_b.path / "map.html"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

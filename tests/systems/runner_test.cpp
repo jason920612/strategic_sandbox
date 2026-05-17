@@ -3002,6 +3002,105 @@ TEST_CASE("run: provinces.svg preserves byte-identical determinism on same seed"
 }
 
 // =====================================================================
+// M4.5 - map.html is the 10th unconditional artefact
+// =====================================================================
+
+TEST_CASE("run: map.html is written by end_tick (unconditional, empty-state still a valid HTML doc)") {
+    // No scenario, so state.provinces is empty. The artefact
+    // still exists; the contract is "the file always exists".
+    TempDir td("leviathan_runner_m45_empty_map_html");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 0;
+    opts.output_dir  = td.path;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    REQUIRE(fs::exists(td.path / "map.html"));
+    const std::string html = read_file(td.path / "map.html");
+    CHECK(html.find("<!DOCTYPE html>") != std::string::npos);
+    CHECK(html.find("<svg ")           != std::string::npos);
+    CHECK(html.find("</html>")         != std::string::npos);
+    CHECK(html.find("<circle")         == std::string::npos);
+}
+
+TEST_CASE("run: map.html defaults to <output_dir>/map.html") {
+    TempDir td("leviathan_runner_m45_default_path");
+    rn::RunnerOptions opts;
+    opts.config_path = kCanonicalConfig;
+    opts.days        = 1;
+    opts.output_dir  = td.path;
+    // map_html_path intentionally unset.
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().map_html_path == td.path / "map.html");
+    CHECK(fs::exists(r.value().map_html_path));
+}
+
+TEST_CASE("run: map_html_path override is honoured") {
+    TempDir td("leviathan_runner_m45_path_override");
+    rn::RunnerOptions opts;
+    opts.config_path  = kCanonicalConfig;
+    opts.days         = 1;
+    opts.output_dir   = td.path;
+    opts.map_html_path = td.path / "custom" / "viewer.html";
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().map_html_path == td.path / "custom" / "viewer.html");
+    CHECK(fs::exists(td.path / "custom" / "viewer.html"));
+    // Default path is NOT written when the override is set.
+    CHECK_FALSE(fs::exists(td.path / "map.html"));
+}
+
+TEST_CASE("run: canonical scenario embeds full SVG body inside map.html") {
+    // M4.5 inlines the SAME <svg>...</svg> body as provinces.svg
+    // (minus the XML prolog). Pin that the canonical owner-keyed
+    // colours and labels appear inside the HTML output, so the
+    // wrapper is byte-faithful to the renderer.
+    TempDir td("leviathan_runner_m45_canonical_html");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string html = read_file(td.path / "map.html");
+
+    // Canonical ProvinceNode names appear as <text> bodies.
+    CHECK(html.find(">Berlin</text>") != std::string::npos);
+    CHECK(html.find(">Paris</text>")  != std::string::npos);
+    CHECK(html.find(">Tokyo</text>")  != std::string::npos);
+    // Canonical owner palette colours appear on the circles.
+    namespace svgx = leviathan::systems::svg_export;
+    const std::string ger_fill =
+        std::string("fill=\"") +
+        std::string(svgx::kOwnerPalette[0]) + "\"";
+    CHECK(html.find(ger_fill) != std::string::npos);
+    // No XML prolog inside the HTML document.
+    CHECK(html.find("<?xml") == std::string::npos);
+}
+
+TEST_CASE("run: map.html preserves byte-identical determinism on same seed") {
+    TempDir td_a("leviathan_runner_m45_det_a");
+    TempDir td_b("leviathan_runner_m45_det_b");
+
+    auto opts_for = [&](const fs::path& dir) {
+        rn::RunnerOptions o;
+        o.config_path   = kCanonicalConfig;
+        o.days          = 31;
+        o.output_dir    = dir;
+        o.seed_override = std::uint64_t{0xCAFEF00D};
+        o.scenario_path = kCanonicalScenario;
+        return o;
+    };
+    REQUIRE(rn::run(opts_for(td_a.path)).ok());
+    REQUIRE(rn::run(opts_for(td_b.path)).ok());
+    CHECK(read_file(td_a.path / "map.html") ==
+          read_file(td_b.path / "map.html"));
+}
+
+// =====================================================================
 // M3.8 - canonical scenarios author Bureaucracy interest groups
 // =====================================================================
 

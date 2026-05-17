@@ -361,3 +361,100 @@ TEST_CASE("render_provinces: label rendering is deterministic across repeat call
     state.provinces.push_back(node("c", 2, 0.30, 0.30, "Carat<>"));
     CHECK(svg::render_provinces(state) == svg::render_provinces(state));
 }
+
+// ---------------------------------------------------------------------
+// M4.5 - HTML viewer wrapping the inline SVG
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_map_html: empty state still produces a valid HTML document") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("<!DOCTYPE html>")      != std::string::npos);
+    CHECK(html.find("<html lang=\"en\">")    != std::string::npos);
+    CHECK(html.find("<meta charset=\"UTF-8\">") != std::string::npos);
+    CHECK(html.find("<title>Leviathan Map</title>") != std::string::npos);
+    CHECK(html.find("<body>")               != std::string::npos);
+    CHECK(html.find("<svg ")                != std::string::npos);
+    CHECK(html.find("</svg>")               != std::string::npos);
+    CHECK(html.find("</body>")              != std::string::npos);
+    CHECK(html.find("</html>")              != std::string::npos);
+    // No circles for empty state.
+    CHECK(html.find("<circle")              == std::string::npos);
+    // Stable LF + trailing newline; no CR (matches the SVG file).
+    CHECK(html.back() == '\n');
+    CHECK(html.find('\r') == std::string::npos);
+}
+
+TEST_CASE("render_map_html: does NOT emit an XML prolog (invalid inside HTML)") {
+    // The XML declaration `<?xml ...?>` is only valid for
+    // standalone SVG documents. Inside an HTML5 document it would
+    // be a parse error for strict consumers. Verify the wrapper
+    // strips / never emits it.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5));
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("<?xml") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: inlines the same <svg> body as render_provinces") {
+    // Whatever bytes `render_provinces` emits for the <svg>
+    // root, `render_map_html` must contain the same bytes. The
+    // wrapper is responsible only for the surrounding HTML.
+    GameState state;
+    state.provinces.push_back(node("berlin", 0, 0.52, 0.44, "Berlin"));
+    state.provinces.push_back(node("paris",  1, 0.47, 0.48, "Paris"));
+
+    const std::string svg_only = svg::render_provinces(state);
+    // Strip the XML prolog from svg_only (everything from the
+    // first `<svg` onward is the body the HTML inlines).
+    const auto svg_start = svg_only.find("<svg ");
+    REQUIRE(svg_start != std::string::npos);
+    const std::string svg_body = svg_only.substr(svg_start);
+
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find(svg_body) != std::string::npos);
+}
+
+TEST_CASE("render_map_html: no <style>, <script>, <link>, or inline event attributes") {
+    // M4.5 ships the minimum wrapper: no CSS, no JavaScript,
+    // no external resource references, no event handlers.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("<style")  == std::string::npos);
+    CHECK(html.find("<script") == std::string::npos);
+    CHECK(html.find("<link")   == std::string::npos);
+    // Common inline event attributes — none should ever appear.
+    CHECK(html.find("onclick")     == std::string::npos);
+    CHECK(html.find("onmouseover") == std::string::npos);
+    CHECK(html.find("onload")      == std::string::npos);
+}
+
+TEST_CASE("render_map_html: deterministic across repeat calls") {
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.10, 0.10, "Alpha"));
+    state.provinces.push_back(node("b", 1, 0.20, 0.20, "Beta&Gamma"));
+    state.provinces.push_back(node("c", 2, 0.30, 0.30, "Carat<>"));
+    CHECK(svg::render_map_html(state) == svg::render_map_html(state));
+}
+
+TEST_CASE("write_map_html: writes file matching render_map_html byte-for-byte") {
+    TempDir td("leviathan_svg_export_html_roundtrip");
+    GameState state;
+    state.provinces.push_back(node("berlin", 0, 0.52, 0.44, "Berlin"));
+    state.provinces.push_back(node("tokyo",  2, 0.83, 0.55, "Tokyo"));
+    const auto path = td.path / "out.html";
+    REQUIRE(svg::write_map_html(state, path).ok());
+    REQUIRE(fs::exists(path));
+    const std::string on_disk = read_file(path);
+    const std::string in_mem  = svg::render_map_html(state);
+    CHECK(on_disk == in_mem);
+}
+
+TEST_CASE("write_map_html: creates parent directories") {
+    TempDir td("leviathan_svg_export_html_mkdir");
+    GameState state;
+    const auto nested = td.path / "deep" / "nested" / "map.html";
+    REQUIRE(svg::write_map_html(state, nested).ok());
+    CHECK(fs::exists(nested));
+}

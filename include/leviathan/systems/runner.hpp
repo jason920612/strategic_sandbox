@@ -74,6 +74,16 @@ struct RunnerOptions {
     // adjacency overlay — M4.2 ships only the data → SVG pixels
     // transform.
     std::optional<std::filesystem::path> provinces_svg_path;
+    // M4.5: minimal HTML5 wrapper around the inline SVG body.
+    // Mirrors the M4.2 unconditional-artefact shape — `end_tick`
+    // always writes it, with an optional programmatic path
+    // override; default is `<output_dir>/map.html`. No CLI flag,
+    // no click handlers, no tooltips, no state mutation, no
+    // events, no AI, no gameplay — M4.5 ships only the
+    // SVG-inside-HTML wrapper so the map opens cleanly in a
+    // browser without the raw-XML chrome standalone .svg files
+    // attract.
+    std::optional<std::filesystem::path> map_html_path;
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
@@ -145,6 +155,12 @@ struct RunOutcome {
     // No row counter: an SVG carries one `<circle>` per node and
     // the node count is already on `state.provinces.size()`.
     std::filesystem::path  provinces_svg_path;
+    // M4.5: map.html path the runner actually wrote. Resolved
+    // from `RunnerOptions::map_html_path` or the default
+    // `<output_dir>/map.html` when that option is unset. Same
+    // node-count rule applies (no row counter — the count is
+    // already on `state.provinces.size()`).
+    std::filesystem::path  map_html_path;
     // M2.8: count of commands replayed from the loaded save when
     // `--replay PATH` is set. Zero when --replay was not used. The
     // outcome's `days_advanced` / `monthly_ticks` fields are
@@ -194,22 +210,25 @@ struct RunOutcome {
 // function on the runner side that writes save.json / events.jsonl
 // / summary.csv / countries.csv / factions.csv / interest_groups.csv
 // / interest_group_country_feedback.csv /
-// interest_group_authority_pressure.csv / provinces.svg. M3.5 grew
-// the artefact set from five files to six; M3.6 grew it from six
-// to eight; M4.2 grew it from eight to nine by adding the SVG
-// renderer of the M4.1 `ProvinceNode` data layer. Callers whose
-// run fails on one of the listed paths can safely retry against
-// the same `output_dir` without cleaning it first.
+// interest_group_authority_pressure.csv / provinces.svg /
+// map.html. M3.5 grew the artefact set from five files to six;
+// M3.6 grew it from six to eight; M4.2 grew it from eight to nine
+// by adding the SVG renderer of the M4.1 `ProvinceNode` data
+// layer; M4.5 grew it from nine to ten by wrapping that SVG in a
+// minimal HTML viewer. Callers whose run fails on one of the
+// listed paths can safely retry against the same `output_dir`
+// without cleaning it first.
 //
 // NOTE: failures that occur INSIDE `end_tick` itself are not
-// covered by this contract. `end_tick` writes its nine artefacts
+// covered by this contract. `end_tick` writes its ten artefacts
 // sequentially (save → log → summary CSV → countries CSV →
 // factions CSV → interest_groups CSV → country_feedback trace
-// CSV → authority_pressure trace CSV → provinces SVG) and is
-// not transactional, so a mid-`end_tick` I/O failure can leave a
-// partial set of files on disk. If atomic end-of-run writes
-// become a requirement, a future PR can switch `end_tick` to
-// temp-file + rename and update this contract.
+// CSV → authority_pressure trace CSV → provinces SVG → map
+// HTML) and is not transactional, so a mid-`end_tick` I/O
+// failure can leave a partial set of files on disk. If atomic
+// end-of-run writes become a requirement, a future PR can
+// switch `end_tick` to temp-file + rename and update this
+// contract.
 core::Result<RunOutcome> run(const RunnerOptions& opts);
 
 // Same as run() but operates on a pre-built GameState. Used by tests
@@ -334,13 +353,17 @@ core::Result<bool> step_one_day(core::GameState& state,
 // buffer, resolve output paths, write save.json / events.jsonl /
 // summary.csv / countries.csv / factions.csv / interest_groups.csv
 // / interest_group_country_feedback.csv /
-// interest_group_authority_pressure.csv / provinces.svg as
-// appropriate. M3.5 made `interest_groups.csv` an unconditional
-// artefact (header-only when `state.interest_groups` is empty).
-// M3.6 makes both formula-trace CSVs unconditional as well
-// (header-only when no monthly tick produced any mutation).
-// M4.2 makes `provinces.svg` unconditional as well (renders to
-// a header-only `<svg>` element when `state.provinces` is empty).
+// interest_group_authority_pressure.csv / provinces.svg /
+// map.html as appropriate. M3.5 made `interest_groups.csv` an
+// unconditional artefact (header-only when
+// `state.interest_groups` is empty). M3.6 makes both formula-
+// trace CSVs unconditional as well (header-only when no
+// monthly tick produced any mutation). M4.2 makes
+// `provinces.svg` unconditional as well (renders to a header-
+// only `<svg>` element when `state.provinces` is empty).
+// M4.5 makes `map.html` unconditional as well (inlines the
+// same SVG body inside a minimal HTML5 wrapper; the wrapper
+// is always written even when the embedded SVG is header-only).
 // Return the populated RunOutcome.
 //
 // Sets `ctrl.ended = true` on success. Failure cases:

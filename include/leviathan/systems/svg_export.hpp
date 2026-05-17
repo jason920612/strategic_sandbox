@@ -1,55 +1,65 @@
-// SvgExport - minimal deterministic SVG renderer for the M4 map
-// data layer.
+// SvgExport - minimal deterministic SVG / HTML renderer for
+// the M4 map data layer.
 //
-// M4.2 (predecessor) shipped the first renderer that turns
+// M4.2 (M4.x history) shipped the first renderer that turns
 // `state.provinces` into a visible deterministic SVG artefact.
 // M4.3 layered a deterministic per-owner colour onto the
 // existing circles using a fixed 10-entry palette indexed by
-// `owner.value() % kOwnerPaletteSize`. M4.4 (this revision)
-// adds a `<text>` label per node immediately after the
-// matching `<circle>`, anchored at `x = cx`, `y = cy +
-// kLabelYOffset`, `text-anchor="middle"`, with the label text
-// the XML-text-escaped `ProvinceNode::name`. Everything else
-// about the SVG shape — viewBox, circle radius, fill palette,
-// `data-id` / `data-owner` attributes, coord precision, header-
-// only-on-empty — is byte-identical with M4.3. Future M4 sub-
-// milestones (HTML viewer, clickable map, neighbour-adjacency
-// lines, terrain, legend, etc.) will extend the renderer
-// further.
+// `owner.value() % kOwnerPaletteSize`. M4.4 added a `<text>`
+// label per node immediately after the matching `<circle>`.
+// M4.5 (this revision) adds a minimal HTML5 wrapper around the
+// same SVG body so `provinces.svg` is also reachable as
+// `map.html` for browser-friendly viewing without the raw-XML
+// chrome that browsers attach to standalone `.svg` files.
+// Future M4 sub-milestones (clickable UI, legend, hover state,
+// neighbour-adjacency lines, terrain, etc.) will extend the
+// renderer further.
 //
-// What M4.4 deliberately does NOT do:
-//   * No HTML viewer / wrapper.
+// What M4.5 deliberately does NOT do:
 //   * No clickable UI / event handlers / hover state.
-//   * No tooltips (the label IS the only labelling surface).
-//   * No legend / colour key inside the SVG.
-//   * No per-province colour override (the palette is owner-
-//     keyed only; future per-province overlays land in their
-//     own sub-milestone).
+//   * No tooltips.
+//   * No state mutation from the viewer (`map.html` is a
+//     read-only render of `state.provinces`).
+//   * No legend / colour key inside the SVG or HTML.
+//   * No CSS / JavaScript inside `map.html` (no `<style>`,
+//     no `<script>`, no `<link>`, no inline event attributes).
+//   * No per-province colour override.
 //   * No ownership-dynamics layer (provinces are static; the
 //     renderer reads `owner` and never writes it).
 //   * No neighbour / adjacency edges.
 //   * No terrain / resources / population overlays.
 //   * No events / AI / command integration.
-//   * No CLI flag — the artefact is still unconditional in the
-//     same shape as `interest_groups.csv` (M3.5), with the
-//     existing `RunnerOptions::provinces_svg_path` optional
-//     override carried forward unchanged.
+//   * No CLI flag — both artefacts are unconditional, in the
+//     same shape as `interest_groups.csv` (M3.5), with
+//     `RunnerOptions::provinces_svg_path` (M4.2) and
+//     `RunnerOptions::map_html_path` (M4.5 new) as optional
+//     programmatic overrides.
 //   * No new save-format field (the renderer reads existing
 //     `state.provinces`; save format stays v12).
-//   * No change to the artefact set count (still 9).
+//   * No change to `provinces.svg`'s bytes — the M4.5
+//     refactor extracted a shared `render_svg_root` helper
+//     so the standalone-SVG path is byte-identical with M4.4.
 //   * No font-family / font-size / fill on `<text>` — the SVG
-//     consumer's default applies. M4.4 ships minimum labels;
-//     typography is a future presentation sub-milestone.
+//     consumer's default applies. Typography stays a future
+//     presentation sub-milestone.
 //
-// Output shape (M4.4):
-//   * SVG 1.1 root with viewBox `0 0 1000 1000`.
-//   * For each ProvinceNode, two paired elements emitted in
-//     `state.provinces` order:
-//       1. `<circle cx=... cy=... r="8" fill=... data-id=...
-//          data-owner=.../>` (M4.2 + M4.3 shape)
-//       2. `<text x=... y=... text-anchor="middle">NAME</text>`
-//          with x = cx, y = cy + kLabelYOffset, and NAME the
-//          XML-text-escaped `ProvinceNode::name`.
+// Output shape (M4.5):
+//   * `provinces.svg` (M4.2 unchanged on the wire):
+//       - `<?xml version="1.0" encoding="UTF-8"?>` prolog.
+//       - SVG 1.1 root with viewBox `0 0 1000 1000`.
+//       - For each ProvinceNode, two paired elements emitted
+//         in `state.provinces` order:
+//           1. `<circle cx=... cy=... r="8" fill=... data-id=...
+//              data-owner=.../>` (M4.2 + M4.3 shape)
+//           2. `<text x=... y=... text-anchor="middle">NAME</text>`
+//              with x = cx, y = cy + kLabelYOffset, and NAME
+//              the XML-text-escaped `ProvinceNode::name` (M4.4).
+//   * `map.html` (M4.5 new):
+//       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
+//         `<head>` (`<meta charset="UTF-8">` + `<title>`).
+//       - `<body>` contains the **exact same** `<svg>...</svg>`
+//         body as `provinces.svg`, but WITHOUT the XML prolog
+//         (which is invalid inside HTML).
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human
@@ -63,9 +73,10 @@
 //     text-content escape (`& < >` only) since `" '` are legal
 //     inside text content; both helpers live in the .cpp
 //     anonymous namespace.
-//   * Empty `state.provinces` produces a header-only SVG —
-//     the `<svg>` element is still written so the artefact
-//     contract is consistent (always-present file).
+//   * Empty `state.provinces` produces a header-only SVG (and
+//     therefore a header-only-SVG-inside-the-HTML wrapper) —
+//     both files are still written so the artefact contract
+//     is consistent (always-present files).
 
 #ifndef LEVIATHAN_SYSTEMS_SVG_EXPORT_HPP
 #define LEVIATHAN_SYSTEMS_SVG_EXPORT_HPP
@@ -159,6 +170,32 @@ std::string render_provinces(const core::GameState& state);
 // existing `save_system::save` and CSV-writer behaviour).
 core::Result<bool> write_provinces(const core::GameState& state,
                                    const std::filesystem::path& path);
+
+// M4.5: pure render of a minimal HTML5 wrapper around the
+// inline SVG body. The `<body>` contains exactly the same
+// `<svg>...</svg>` element `render_provinces` emits, but
+// WITHOUT the leading `<?xml ...?>` prolog (which is invalid
+// inside an HTML document). No CSS, no JavaScript, no
+// `<style>` / `<script>` / `<link>` / inline event
+// attributes — M4.5 ships the minimum viewer that opens
+// `state.provinces` in a browser without the raw-XML
+// chrome standalone `.svg` files attract.
+//
+// Never fails; always returns a valid HTML string. The
+// returned string ends with a single trailing newline and
+// uses LF line terminators throughout.
+//
+// Same-state byte-stability holds for this output too (the
+// underlying `render_svg_root` is deterministic and the HTML
+// wrapper is a fixed string).
+std::string render_map_html(const core::GameState& state);
+
+// Render + write to disk. Returns failure on any filesystem
+// error (with the path in the message). Parent directories
+// are created as needed. The on-disk contents are exactly
+// what `render_map_html(state)` would produce.
+core::Result<bool> write_map_html(const core::GameState& state,
+                                  const std::filesystem::path& path);
 
 }  // namespace leviathan::systems::svg_export
 

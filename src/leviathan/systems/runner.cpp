@@ -793,6 +793,12 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto provinces_svg_path =
         opts.provinces_svg_path.value_or(
             opts.output_dir / "provinces.svg");
+    // M4.5: map.html is always written too. Same unconditional
+    // shape; default sits next to provinces.svg under
+    // output_dir.
+    const auto map_html_path =
+        opts.map_html_path.value_or(
+            opts.output_dir / "map.html");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -893,6 +899,18 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(svg_w.error()));
         }
     }
+    // M4.5: unconditionally write the minimal HTML5 wrapper that
+    // inlines the same SVG body. Always written, even when
+    // state.provinces is empty (the embedded <svg> is then
+    // header-only but the surrounding HTML document is still a
+    // valid file on disk). svg_export::write_map_html handles
+    // directory creation + I/O internally.
+    {
+        auto html_w = svg::write_map_html(state, map_html_path);
+        if (!html_w) {
+            return core::Result<RunOutcome>::failure(std::move(html_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -920,6 +938,7 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     outcome.interest_group_authority_pressure_csv_rows =
         ctrl.interest_group_authority_pressure_rows.size();
     outcome.provinces_svg_path = provinces_svg_path;
+    outcome.map_html_path      = map_html_path;
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));
