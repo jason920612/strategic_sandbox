@@ -8,20 +8,27 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.13 — Verify tolerance CLI.**
-  New `--verify-tolerance FLOAT` runner flag (requires `--verify`)
-  overrides M2.10's default `1e-9` tolerance when calling
-  `compare_states`. Parses via a new exception-free
-  `parse_nonneg_double` helper that rejects empty input, trailing
-  garbage, non-finite values, and negatives at parse time.
-  Plumbed into `run()`'s replay branch by building a
-  `diagnostics::CompareOptions` with the override applied when set.
-  `main()` prints the active tolerance value when set so CI logs
-  show which tolerance produced the reported mismatch count.
-  Completes the M2 replay family CLI (`--replay` / `--verify` /
-  `--verify-strict` / `--verify-tolerance`). **No save format
-  bump** (still v9); no library behaviour change; no new state
-  field beyond `RunnerOptions::verify_tolerance`.
+- Latest shipped sub-milestone: **M2.9 — Replay CLI error-path
+  hardening.** Documentation + regression-test PR with zero library
+  behaviour change. `runner::run`'s doc comment gains an explicit
+  "M2.9 contract" block stating that `--replay`-mode failures
+  (missing/corrupt source save, missing `--scenario`, out-of-order
+  log, unknown policy id_code, bad `AdjustBudget` payload, monthly
+  pipeline failure, `begin_tick` / `end_tick` rejection) write
+  ZERO output artefacts (save.json / events.jsonl / summary.csv /
+  countries.csv / factions.csv). 3 new doctest cases pin the
+  guarantee end-to-end: missing source file, out-of-order log,
+  unknown policy id_code — each wires all five artefact paths and
+  asserts none exist after the failed run. No save format bump
+  (still v9); no new flag; no M1 system change. Closes the gap M2.8
+  left open: --replay shipped but its failure-path artefact
+  semantics weren't spelled out.
+- Previously shipped: **M2.13 — Verify tolerance CLI** (`--verify-
+  tolerance FLOAT` overrides M2.10's default `1e-9` via
+  `diagnostics::CompareOptions`; parses through a new exception-
+  free `parse_nonneg_double` helper; closes the M2 replay-CLI family
+  `--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`;
+  no save format bump).
 - Next sub-milestone candidates: **M2.14** (further
   `PlayerCommandKind` variants — `ChangeTaxBurden`,
   `ToggleMartialLaw`, …; save-neutral additive enum) or
@@ -52,7 +59,7 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 + M2.10 + M2.11 + M2.12 + M2.13 merged. Twenty-nine
++ M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 merged. Thirty
 sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
@@ -187,6 +194,18 @@ runs `begin_tick → replay_with_time → end_tick`, and populates
 a new `RunOutcome::replay_commands_replayed` field. `main()`
 prints two extra summary lines. The CLI does NOT auto-compare —
 user diffs source vs target save files. No save format change;
+**M2.9 Replay CLI error-path hardening — doc + tests PR with no
+library behaviour change. Cements the contract: a `--replay`
+failure from any path (`save_system::load` failure, missing
+`--scenario`, out-of-order log, unknown policy id_code,
+malformed budget command, monthly pipeline failure, `begin_tick`
+/ `end_tick` rejection) writes ZERO output artefacts because
+every replay failure returns before `end_tick`, which is the
+only function that touches disk. `runner::run`'s doc comment
+gains an explicit "M2.9 contract" block; 3 regression tests pin
+missing source / out-of-order log / unknown policy id_code with
+all five artefact paths wired and checked absent. No save format
+change;
 **M2.10 State comparison API — new
 `systems::diagnostics::compare_states(a, b, opts)` free function
 returning a list of `StateMismatch` entries (field_path +
@@ -417,7 +436,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.13 there are **550 doctest cases**. M0 contributed 179;
+As of M2.9 there are **553 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -425,7 +444,15 @@ M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
-M2.13 adds 8 covering `--verify-tolerance`: parse plumbed with
+M2.13 added 8; M2.9 adds 3 covering the no-artefact contract under
+`--replay`: missing source file fails with "--replay" in error and
+all five artefact paths absent; out-of-order log fails with
+"out-of-order" in error and all five paths absent; unknown policy
+id_code fails with `"no_such_policy_id_code"` in error and all
+five paths absent. Each test wires save / events / summary CSV /
+countries CSV / factions CSV inside a `TempDir` and uses a shared
+`wire_all_artifacts` + `check_no_artifacts` helper. Previously
+M2.13 added 8 covering `--verify-tolerance`: parse plumbed with
 value preserved; default nullopt; missing value rejected;
 non-numeric (`"abc"`) rejected with "floating-point" in error;
 negative rejected with `">= 0"` in error; without `--verify`

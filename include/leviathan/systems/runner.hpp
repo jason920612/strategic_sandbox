@@ -125,6 +125,20 @@ struct RunOutcome {
 // file write fails. opts.days == 0 is permitted (the simulation
 // simply does not advance) but `--days` is REQUIRED at the CLI;
 // parse_args() rejects the unset case.
+//
+// M2.9 contract — replay-mode artefact atomicity:
+// When `opts.replay_path` is set, a failure from any of:
+//   * `save_system::load` on the source save (missing/corrupt),
+//   * the empty-`state.countries` precondition,
+//   * `commands::replay_with_time` (out-of-order log, unknown policy
+//     id_code, malformed budget command, monthly pipeline failure),
+//   * `begin_tick` / `end_tick`,
+// returns BEFORE `end_tick` is reached, so NO output artefacts
+// (save.json / events.jsonl / summary.csv / countries.csv /
+// factions.csv) are written. Callers can safely retry against
+// the same `output_dir` without first cleaning it. The same
+// guarantee covers the non-replay run path because all file writes
+// are gated through `end_tick`.
 core::Result<RunOutcome> run(const RunnerOptions& opts);
 
 // Same as run() but operates on a pre-built GameState. Used by tests

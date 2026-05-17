@@ -2076,4 +2076,142 @@ TEST_CASE("run: --verify-tolerance tight enough catches a small mismatch") {
     CHECK(found);
 }
 
+// =====================================================================
+// M2.9 - replay CLI failure artifact semantics
+//
+// Replay-mode `run()` must not write save.json / events.jsonl /
+// summary.csv / countries.csv / factions.csv when the replay fails
+// for any reason. End-to-end this falls out of the existing layout
+// (all artefact writes happen in `end_tick`, every replay failure
+// path returns before `end_tick` is reached) — these tests cement
+// the guarantee so a future refactor can't quietly regress it.
+// =====================================================================
+
+namespace {
+
+// Set every artefact output path on `opts` to a distinct file
+// underneath `dir`, and report all five paths the test should later
+// assert absent. Used by every M2.9 regression test below so the
+// "no artefact survived" check is uniformly applied.
+struct ArtifactPaths {
+    fs::path save;
+    fs::path log;
+    fs::path summary_csv;
+    fs::path countries_csv;
+    fs::path factions_csv;
+};
+
+ArtifactPaths wire_all_artifacts(rn::RunnerOptions& opts, const fs::path& dir) {
+    ArtifactPaths a{
+        dir / "out_save.json",
+        dir / "out_events.jsonl",
+        dir / "out_summary.csv",
+        dir / "out_countries.csv",
+        dir / "out_factions.csv",
+    };
+    opts.save_path           = a.save;
+    opts.log_path            = a.log;
+    opts.summary_csv_path    = a.summary_csv;
+    opts.countries_csv_path  = a.countries_csv;
+    opts.factions_csv_path   = a.factions_csv;
+    return a;
+}
+
+void check_no_artifacts(const ArtifactPaths& a) {
+    CHECK_FALSE(fs::exists(a.save));
+    CHECK_FALSE(fs::exists(a.log));
+    CHECK_FALSE(fs::exists(a.summary_csv));
+    CHECK_FALSE(fs::exists(a.countries_csv));
+    CHECK_FALSE(fs::exists(a.factions_csv));
+}
+
+}  // namespace
+
+TEST_CASE("run: --replay with a missing source file fails and writes no artifacts") {
+    TempDir td("leviathan_runner_m209_missing_source");
+    const fs::path missing = td.path / "does_not_exist.json";
+    REQUIRE_FALSE(fs::exists(missing));
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = missing;
+    const auto paths = wire_all_artifacts(opts, td.path);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--replay") != std::string::npos);
+    check_no_artifacts(paths);
+}
+
+TEST_CASE("run: --replay with an out-of-order log fails and writes no artifacts") {
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m209_out_of_order");
+    const fs::path source_path = td.path / "source.json";
+
+    // Start from an empty-log source, then hand-craft two log
+    // entries whose dates go backward. apply_pending wouldn't have
+    // emitted these on its own; we splice them in directly to
+    // exercise replay_with_time's monotonicity check.
+    auto source = build_source_save(source_path, {});
+    leviathan::core::AppliedPlayerCommand e0;
+    e0.applied_on            = leviathan::core::GameDate(1930, 1, 5);
+    e0.command.kind          = leviathan::core::PlayerCommandKind::EnactPolicy;
+    e0.command.policy_id_code = "raise_taxes";
+    leviathan::core::AppliedPlayerCommand e1;
+    e1.applied_on            = leviathan::core::GameDate(1930, 1, 3);  // < e0
+    e1.command.kind          = leviathan::core::PlayerCommandKind::EnactPolicy;
+    e1.command.policy_id_code = "raise_taxes";
+    source.applied_commands.push_back(e0);
+    source.applied_commands.push_back(e1);
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    const auto paths = wire_all_artifacts(opts, td.path);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("out-of-order") != std::string::npos);
+    check_no_artifacts(paths);
+}
+
+TEST_CASE("run: --replay with an unknown policy id_code fails and writes no artifacts") {
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m209_unknown_policy");
+    const fs::path source_path = td.path / "source.json";
+
+    // Empty-log source plus one hand-crafted entry referencing a
+    // policy id_code the scenario does NOT define. apply_pending
+    // would have rejected this at submission time, but the on-disk
+    // log can technically hold it (e.g., a save from a scenario with
+    // a different policy set). Replay must fail and write nothing.
+    auto source = build_source_save(source_path, {});
+    leviathan::core::AppliedPlayerCommand bad;
+    bad.applied_on            = source.current_date;
+    bad.command.kind          = leviathan::core::PlayerCommandKind::EnactPolicy;
+    bad.command.policy_id_code = "no_such_policy_id_code";
+    source.applied_commands.push_back(bad);
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    const auto paths = wire_all_artifacts(opts, td.path);
+
+    const auto r = rn::run(opts);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("no_such_policy_id_code") != std::string::npos);
+    check_no_artifacts(paths);
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR
