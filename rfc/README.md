@@ -217,7 +217,40 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.8（null-trace
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.9（InterestGroup-
+  derived military_loyalty pressure，M3.4 的 sibling）** 加上
+  authority 層的第二個 pressure channel：Military-kind interest
+  group 的 influence-weighted loyalty 推動每個 country 的
+  `government_authority.military_loyalty`，rate 與 M3.4 相同
+  （`kInterestGroupMilitaryPressureRate = 0.01`；兩者是 sibling
+  關係，不是 nested）。新增 `military_pressure(state, trace_out
+  = nullptr)` 自由函式，公式與 M3.4 一致只改 kind 過濾為
+  Military、輸出欄位為 `military_loyalty`。新增
+  `MilitaryPressureOutcome` 計數器與 `MilitaryPressureTraceRow`
+  （10 欄、形狀對應 M3.4 的 `AuthorityPressureTraceRow`）。
+  接進 `tick_all_countries` 作為**第四個 global step**，在
+  `authority_pressure` 之後。`MonthlyOutcome` 新增
+  `interest_group_military_countries_updated` 計數器與
+  `interest_group_military_pressure_trace_rows` 向量。嚴格
+  preflight：group.country / group.influence / group.loyalty /
+  country.military_loyalty 皆驗 finite + `[0, 1]`；`radicalism`
+  與 `country.stability` 不讀，不重複 preflight。Skip 規則
+  與 M3.4 相同（無 Military group 或全部 zero-influence 則 skip）。
+  其他三個 `government_authority` 子欄位（M3.4 的
+  `bureaucratic_compliance`，加上仍 inert 的
+  `intelligence_capability` 與 `media_control`）保持 byte-
+  identical。Trace pointer 語意沿用 M3.6 / M3.8 pattern（null
+  vs non-null 結果 byte-identical）。**沒有 save schema 變更
+  （仍 v11）、沒有新 artefact（仍 8 個檔；per-system CSV 是
+  M3.10 候選，沿用 M3.4 → M3.6 retrofit 的同樣節奏）、沒有
+  M3.2/3.3/3.4 公式變更、沒有 events / AI / UI / CLI / REPL、
+  沒有 command-gate integration、沒有 intelligence_capability /
+  media_control channel、沒有 atomic end_tick 寫檔**。18 個新
+  doctest cases；M3 integration test 的 helper state 多了一個
+  Military-kind group，使 test A 同時驗證四個 M3 reaction
+  system 都動作正常並輸出三個 trace 向量。doctest count 748
+  → 766。
+  **M3.8（null-trace
   baseline strengthened to byte-for-byte equivalence）** 是
   tests-only 後續修正，補強 M3.6 在 PR #55 review 留下的
   non-blocker nit。原 M3.6 的 null-trace baseline 測試只驗證

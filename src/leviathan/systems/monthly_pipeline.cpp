@@ -100,6 +100,27 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.interest_group_authority_countries_updated =
         ap.value().countries_updated;
 
+    // M3.9: drift each country's
+    // government_authority.military_loyalty toward the
+    // influence-weighted loyalty of its Military-kind interest
+    // groups at kInterestGroupMilitaryPressureRate (0.01).
+    // Sibling of M3.4 — runs AFTER M3.4 so the ordering inside
+    // tick_all_countries reflects the rate ladder explicitly
+    // (mood -> stability -> bureaucratic_compliance ->
+    // military_loyalty), even though the two authority-layer
+    // siblings could in principle commute. Trace vector
+    // surfaced through MonthlyOutcome for tests / future
+    // runner CSV; no current artefact write.
+    auto mp = interest_group::military_pressure(
+        state, &out.interest_group_military_pressure_trace_rows);
+    if (!mp.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: interest_group::"
+            "military_pressure failed: " + mp.error());
+    }
+    out.interest_group_military_countries_updated =
+        mp.value().countries_updated;
+
     return core::Result<MonthlyOutcome>::success(std::move(out));
 }
 

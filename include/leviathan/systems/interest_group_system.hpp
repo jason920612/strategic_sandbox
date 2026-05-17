@@ -32,11 +32,28 @@
 // `tick_all_countries`, and skips countries with no matching
 // Bureaucracy groups or zero total influence among them.
 //
+// M3.9 adds a sibling authority channel. The
+// `military_pressure` step drifts each country's
+// `government_authority.military_loyalty` toward the
+// influence-weighted loyalty of its **Military-kind**
+// interest groups at the same rate
+// `kInterestGroupMilitaryPressureRate` (0.01). Only the
+// military_loyalty sub-field is touched. Same skip rules,
+// same preflight shape. Runs AFTER M3.4 inside
+// `tick_all_countries` as the fourth global step; the
+// `intelligence_capability` and `media_control` sub-fields
+// remain inert until their own sibling channels land in
+// future PRs.
+//
 // Rate ladder (deliberately decreasing so the closed loop
 // stays well-damped):
-//   group mood        (M3.2)  0.05
-//   country stability (M3.3)  0.02
-//   authority         (M3.4)  0.01
+//   group mood                  (M3.2)        0.05
+//   country stability           (M3.3)        0.02
+//   bureaucratic_compliance     (M3.4)        0.01
+//   military_loyalty            (M3.9)        0.01
+// M3.4 and M3.9 share the 0.01 rate because they sit at the
+// same "authority" layer of the rate ladder — siblings, not
+// nested.
 //
 // Reaction rules (M3.2):
 //
@@ -320,6 +337,109 @@ struct AuthorityPressureTraceRow {
 core::Result<AuthorityPressureOutcome> authority_pressure(
     core::GameState& state,
     std::vector<AuthorityPressureTraceRow>* trace_out = nullptr);
+
+// ===========================================================================
+// M3.9 - interest-group -> government_authority.military_loyalty pressure
+// ===========================================================================
+
+// Drift rate applied to
+// `country.government_authority.military_loyalty` per monthly
+// step. Same value as `kInterestGroupAuthorityPressureRate`
+// (0.01) — both are siblings at the "authority" layer of the
+// rate ladder. Uniform across countries; no per-kind /
+// per-country / per-output variant.
+inline constexpr double kInterestGroupMilitaryPressureRate = 0.01;
+
+struct MilitaryPressureOutcome {
+    // Count of countries whose
+    // `government_authority.military_loyalty` was updated. A
+    // country with no `Military`-kind interest group, or whose
+    // matching Military groups all have `influence <= 0.0`, is
+    // skipped (its military_loyalty stays byte-identical) and
+    // does NOT count toward this total.
+    int countries_updated = 0;
+};
+
+// One per-country formula trace emitted by `military_pressure`
+// (M3.9 outcome surface). Same emission rules as
+// `CountryFeedbackTraceRow` / `AuthorityPressureTraceRow`: row
+// only on actual mutation, skip produces no row, preflight
+// failure produces no partial rows. The runner does NOT
+// currently write a per-system CSV for these rows (deliberately
+// deferred to a future M3.X PR — adding the system without an
+// immediate CSV is the same shape M3.4 originally shipped in
+// before M3.6 retrofitted CSVs for the M3.3 / M3.4 pair).
+struct MilitaryPressureTraceRow {
+    core::GameDate date;
+    int            country_id      = -1;
+    std::string    country_id_code;
+    int            matched_groups  = 0;  // Military-kind groups counted
+    double         weight_sum                  = 0.0;
+    double         weighted_military_loyalty   = 0.0;
+    double         target_military_loyalty     = 0.0;  // == weighted loyalty
+    double         military_loyalty_before     = 0.0;
+    double         military_loyalty_after      = 0.0;  // post-clamp
+    double         military_loyalty_delta      = 0.0;
+};
+
+// Apply one step of M3.9 interest-group -> government-authority
+// pressure on `military_loyalty`.
+//
+// For each country index `ci`:
+//
+//   military_loyalty_aggregate =
+//     sum(g.influence * g.loyalty)  /  sum(g.influence)
+//     over every g in state.interest_groups with
+//         g.country.value() == ci
+//         g.kind == InterestGroupKind::Military
+//         g.influence > 0.0
+//
+//   if weight_sum > 0:
+//       target  = military_loyalty_aggregate
+//       country.government_authority.military_loyalty
+//           += (target - military_loyalty) *
+//              kInterestGroupMilitaryPressureRate
+//       country.government_authority.military_loyalty =
+//           clamp(..., 0.0, 1.0)
+//
+//   otherwise the country is skipped (no mutation).
+//
+// Preconditions (preflight-validated BEFORE any mutation; a
+// single bad entry leaves every country untouched):
+//   * Every `g.country` in `state.interest_groups` indexes into
+//     `state.countries`.
+//   * Every `g.influence` is finite and in `[0, 1]`.
+//   * Every `g.loyalty` is finite and in `[0, 1]`.
+//   * Every country's
+//     `government_authority.military_loyalty` is finite and in
+//     `[0, 1]`.
+//
+// `radicalism` and `country.stability` are NOT consulted (M3.9
+// reads only the Military-kind loyalty aggregate), so they are
+// not preflighted here. Same for the other three
+// `government_authority` sub-fields (bureaucratic_compliance /
+// intelligence_capability / media_control) — `military_pressure`
+// neither reads nor writes them.
+//
+// Failure cases:
+//   * Any precondition above violated.
+//
+// Pure read of every other input field: `military_pressure`
+// does NOT touch interest groups, factions, policies, country
+// stability / legitimacy / corruption / central_control /
+// administrative_efficiency, the other three authority sub-
+// fields, RNG, logs, the date, or applied commands. The single
+// mutation surface is
+// `country.government_authority.military_loyalty`.
+//
+// Trace pointer semantics mirror M3.6 / M3.8: default-null is
+// byte-identical with "no trace was requested"; non-null
+// appends one row per actually-updated country; preflight
+// failure produces no partial rows; the trace pointer never
+// changes the formula, the mutation, or `countries_updated`.
+core::Result<MilitaryPressureOutcome> military_pressure(
+    core::GameState& state,
+    std::vector<MilitaryPressureTraceRow>* trace_out = nullptr);
 
 }  // namespace leviathan::systems::interest_group
 
