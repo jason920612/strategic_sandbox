@@ -217,7 +217,32 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.10（InterestGroup
+- **M3（已完成）** — 內政 / 利益團體反應層。**M3.11（M3
+  close-out）** 把 M3 收尾：新增 M3 exit report
+  `docs/milestone-3-result.md`（M3.1–M3.11 全 sub-milestone
+  ledger、四階段 reaction loop 與 rate ladder
+  `0.05 → 0.02 → 0.01 → 0.01`、9-artefact runner contract、
+  每個 M4+ 必須維持的 architectural invariant、deferred 項目、
+  與 M4 候選方向）；新增三個 long-running close-out
+  integration tests 在
+  `tests/integration/m3_end_to_end_test.cpp`：(1) 365 天
+  跑一個 3 國 / 9 group / 多種 InterestGroupKind 的手建
+  state，驗證每個 M3 reaction system 都動作、counter 對得
+  上、所有 M3-mutated 欄位仍在 `[0, 1]`；(2) 10 年 soak
+  run（3652 天，約 120 個 monthly tick），驗證每個欄位
+  仍 finite 且在 `[0, 1]`，sanity_check 無 issue；(3)
+  save round-trip 完整保留 `state.interest_groups` 與四個
+  `government_authority` 子欄位，並驗證同 seed 重跑產出
+  byte-identical 9-artefact。READMEs（root / docs / rfc）
+  從「M3 in progress」翻成「M3 closed」；舊
+  `docs/milestone-3-checkpoint.md` 改標為 historical（M3.7
+  mid-milestone snapshot），導向新的 exit report。**沒有
+  新 code path、沒有新 artefact（仍 9 個）、沒有 save
+  schema 變更（仍 v11）、沒有公式變更、沒有新 gameplay**。
+  Doctest count: 776 → 779（+3 close-out integration
+  tests）。**M3 在此 closed**；下一個 milestone（M4 方向
+  待定）等 reviewer 用新的 milestone 編號明確點直。
+  **M3.10（InterestGroup
   military_pressure outcome CSV surface）** 把 M3.6 trace-CSV
   retrofit pattern 套到 M3.9 上：新增第 9 個 unconditional
   runner artefact `interest_group_military_pressure.csv`，

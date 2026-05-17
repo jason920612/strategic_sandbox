@@ -6,12 +6,48 @@
 
 ## Status
 
-- Phase: **Milestone 3 — internal politics / interest-group
-  reaction layer (in progress).** M0 / M1 / M2 closed; M3
-  opens with M3.1 introducing the political-actor data
-  layer. See `docs/milestone-2-result.md` for the M2 exit
-  report.
-- Latest shipped sub-milestone: **M3.10 — InterestGroup
+- Phase: **Milestone 3 closed — internal politics /
+  interest-group reaction layer done.** M0 / M1 / M2 / M3
+  all closed. See `docs/milestone-3-result.md` for the M3
+  exit report. The next milestone (M4 direction TBD)
+  waits for an explicit reviewer green-light with a new
+  milestone number.
+- Latest shipped sub-milestone: **M3.11 — M3 close-out.**
+  M3 exit report (`docs/milestone-3-result.md`) +
+  3 long-running close-out integration tests
+  (`tests/integration/m3_end_to_end_test.cpp`'s M3.11
+  section): (1) 365-day run on a hand-built 3-country /
+  9-group state exercises every M3 reaction system and
+  asserts counters match the expected
+  countries-times-month-boundaries arithmetic, with
+  every M3-mutated field still inside `[0, 1]` after a
+  year; (2) 10-year soak run (3652 days, ~120 monthly
+  ticks) keeps every M3-mutated field finite + inside
+  `[0, 1]` and produces zero sanity issues; (3) save
+  round-trip preserves the M3.1 `interest_groups`
+  vector entry-by-entry and the four
+  `government_authority` sub-fields exactly, plus a
+  second same-seed run reproduces byte-identical
+  9-artefact output. Pinned the M3 ledger (every
+  M3.X sub-milestone), the rate ladder
+  (`0.05 → 0.02 → 0.01 → 0.01`), the 9-artefact
+  runner contract, every architectural invariant
+  every M4+ milestone must preserve, deferred items
+  (intelligence / media sibling channels, command-gate
+  integration with interest-group aggregates, event
+  triggers, atomic `end_tick` writes, etc.), and
+  recommendations for M4 (international / diplomacy
+  layer per RFC-040, event system per RFC-050,
+  authority-layer completion, command-gate
+  integration, atomic `end_tick` cleanup). READMEs
+  flipped from "M3 in progress" to "M3 closed".
+  Previous `docs/milestone-3-checkpoint.md` marked
+  historical (M3.7 mid-milestone snapshot). **No new
+  code path, no new artefact (still 9), no save schema
+  bump (still v11), no formula change, no new
+  gameplay.** Doctest count 776 → 779 (+3 close-out
+  integration tests). **M3 closes here.**
+- Previously shipped: **M3.10 — InterestGroup
   `military_pressure` outcome CSV surface.** Retrofits the
   M3.6 trace-CSV pattern onto M3.9. New 9th unconditional
   runner artefact `interest_group_military_pressure.csv`
@@ -366,24 +402,32 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.10): **M3.11** —
-  open. Natural candidates after M3.10 wired the 9th
-  artefact: (a) the third sibling authority channel
-  (`intelligence_capability` or `media_control`); (b)
-  interest-group integration into the M2.18 / M2.19
-  command-execution gate as an additional input; (c)
-  influence drift driven by event / policy outcomes; (d)
-  M3.2 `react` per-mutation trace as a 10th artefact;
-  (e) atomic `end_tick` writes (temp-file + rename),
-  long-deferred from M2.9. None committed.
-- M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
-  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8
-  + M3.9 + M3.10 shipped). See `docs/milestone-0-result.md`,
-  `docs/milestone-1-result.md`, and
-  `docs/milestone-2-result.md` for the exit reports;
-  `docs/milestone-3-checkpoint.md` for the M3 mid-milestone
-  snapshot; and `rfc/RFC-090-roadmap.md` for the full
-  milestone map.
+- Next milestone candidate (post-M3): **M4** — open.
+  Reviewer has not named M4 yet. Plausible directions
+  the project's structure makes natural at this point
+  (none committed; see `docs/milestone-3-result.md` §6
+  for full discussion): (a) **international / diplomacy
+  layer** per RFC-040 — the M3.1 root-level
+  `interest_groups` vector design anticipated this; (b)
+  **event system** per RFC-050 — would unlock the
+  strike / protest / coup mechanics on top of M3
+  reaction state; (c) **authority-layer completion**
+  (intelligence_capability / media_control sibling
+  channels — M3.9 / M3.10 set the pattern); (d)
+  **command-gate integration** — let M2.18 / M2.19 read
+  interest-group aggregates so commands feel different
+  at low loyalty; (e) **atomic `end_tick`** — long-
+  deferred infra fix.
+- M0 closed. M1 closed. M2 closed. M3 closed (M3.1 +
+  M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint +
+  M3.8 + M3.9 + M3.10 + M3.11 shipped). See
+  `docs/milestone-0-result.md`,
+  `docs/milestone-1-result.md`,
+  `docs/milestone-2-result.md`, and
+  `docs/milestone-3-result.md` for the exit reports;
+  `docs/milestone-3-checkpoint.md` is historical (the
+  M3.7 mid-milestone snapshot); and
+  `rfc/RFC-090-roadmap.md` for the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -406,11 +450,10 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
-reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
+reaction layer, RFC-090 §M3) is **closed** with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9
-+ M3.10 shipped (M3 NOT closed — see
-`docs/milestone-3-checkpoint.md`). Forty-eight sub-milestones
-shipped:
++ M3.10 + M3.11 shipped (see `docs/milestone-3-result.md`
+for the exit report). Forty-nine sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -557,6 +600,22 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.11 M3 close-out — M3 exit report
+(`docs/milestone-3-result.md`) pinning the M3.1–M3.11
+ledger, the four-stage reaction loop with rate ladder
+(`0.05 → 0.02 → 0.01 → 0.01`), the 9-artefact runner
+contract, every architectural invariant M4+ must preserve,
+deferred items, and M4 direction candidates. Three new
+long-running integration tests in
+`tests/integration/m3_end_to_end_test.cpp` (1-year
+multi-country full-M3-surface run; 10-year soak;
+save round-trip across all 9 artefacts). READMEs flipped
+from "M3 in progress" to "M3 closed";
+`docs/milestone-3-checkpoint.md` marked historical (M3.7
+mid-milestone snapshot). **No new code path, no new
+artefact (still 9), no save schema bump (still v11),
+no formula change, no new gameplay.** Doctest count
+776 → 779. **M3 closes here.** Next milestone TBD;
 **M3.10 InterestGroup military_pressure outcome CSV surface —
 retrofits the M3.6 trace-CSV pattern onto M3.9. New 9th
 unconditional runner artefact

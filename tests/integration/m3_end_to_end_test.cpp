@@ -44,6 +44,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -59,6 +60,7 @@
 #include "leviathan/core/simulation_config.hpp"
 #include "leviathan/systems/monthly_pipeline.hpp"
 #include "leviathan/systems/runner.hpp"
+#include "leviathan/systems/save_system.hpp"
 
 namespace fs = std::filesystem;
 using leviathan::core::CountryId;
@@ -383,6 +385,322 @@ TEST_CASE("M3 integration: same seed + same options produces byte-identical 9 ar
     CHECK(read_file(td_a.path / "interest_group_authority_pressure.csv") ==
           read_file(td_b.path / "interest_group_authority_pressure.csv"));
     CHECK(read_file(td_a.path / "interest_group_military_pressure.csv") ==
+          read_file(td_b.path / "interest_group_military_pressure.csv"));
+}
+
+// =====================================================================
+// M3.11 - M3 close-out integration tests
+//
+// Three long-running, deliberately-broad tests pinning the M3 surface
+// at the seam between M3 and M4+. They mirror the M1.17 / M2.22
+// close-out pattern: a real scenario stretched across a year, a soak
+// run, and a save round-trip. Unit tests already pin per-system
+// arithmetic; M3.11 tests pin *composition over time* — that the
+// reaction loop and the 9 artefacts stay coherent across many monthly
+// boundaries.
+// =====================================================================
+
+namespace {
+
+// Build a multi-country state covering all four M3 reaction systems
+// with non-trivial inputs. Three countries (GER / FRA / JPN), each
+// with a Bureaucracy + a Military + one other-kind group so M3.2
+// drifts every group, M3.3 fires on every country, M3.4 fires
+// (Bureaucracy present), and M3.9 fires (Military present).
+// Ratios chosen so each system produces a visible delta per month.
+GameState m311_full_m3_state() {
+    SimulationConfig cfg;
+    cfg.start_date = GameDate(1930, 1, 1);
+    cfg.seed       = std::uint64_t{0xC10551A6};
+    GameState s = leviathan::core::make_game_state(cfg);
+
+    auto add_country = [&](int idx, const std::string& code,
+                           double stability, double compliance,
+                           double military_loyalty) {
+        CountryState c;
+        c.id      = CountryId{idx};
+        c.id_code = code;
+        c.name    = code;
+        c.gdp                                     = 100.0;
+        c.legal_tax_burden                        = 0.20;
+        c.fiscal_capacity                         = 0.50;
+        c.administrative_efficiency               = 0.40;
+        c.central_control                         = 0.50;
+        c.corruption                              = 0.20;
+        c.stability                               = stability;
+        c.legitimacy                              = 0.55;
+        c.military_power                          = 0.45;
+        c.threat_perception                       = 0.30;
+        c.government_authority.bureaucratic_compliance = compliance;
+        c.government_authority.military_loyalty        = military_loyalty;
+        c.budget.administration   = 0.10;
+        c.budget.military         = 0.20;
+        c.budget.education        = 0.10;
+        c.budget.welfare          = 0.10;
+        c.budget.intelligence     = 0.05;
+        c.budget.infrastructure   = 0.10;
+        c.budget.industry         = 0.15;
+        s.countries.push_back(c);
+
+        FactionState f;
+        f.id              = FactionId{idx};
+        f.country         = CountryId{idx};
+        f.id_code         = code + "_military_faction";
+        f.country_id_code = code;
+        f.name            = code + " Military Faction";
+        f.type            = "military";
+        f.support         = 0.50;
+        f.influence       = 0.40;
+        f.radicalism      = 0.20;
+        f.loyalty         = 0.50;
+        f.resources       = 1.0;
+        s.factions.push_back(f);
+    };
+
+    add_country(0, "GER", /*stability=*/0.50,
+                /*compliance=*/0.40, /*military_loyalty=*/0.40);
+    add_country(1, "FRA", /*stability=*/0.55,
+                /*compliance=*/0.50, /*military_loyalty=*/0.55);
+    add_country(2, "JPN", /*stability=*/0.45,
+                /*compliance=*/0.60, /*military_loyalty=*/0.35);
+
+    auto add_group = [&](const std::string& code, InterestGroupKind kind,
+                         int country_idx,
+                         double influence, double loyalty, double radicalism) {
+        InterestGroupState g;
+        g.id_code    = code;
+        g.name       = code;
+        g.kind       = kind;
+        g.country    = CountryId{country_idx};
+        g.influence  = influence;
+        g.loyalty    = loyalty;
+        g.radicalism = radicalism;
+        s.interest_groups.push_back(g);
+    };
+
+    // GER: bureaucracy / military / workers
+    add_group("ger_bureaucracy", InterestGroupKind::Bureaucracy, 0, 0.6, 0.8, 0.2);
+    add_group("ger_military",    InterestGroupKind::Military,    0, 0.5, 0.7, 0.3);
+    add_group("ger_workers",     InterestGroupKind::Workers,     0, 0.4, 0.4, 0.6);
+    // FRA: bureaucracy / military / religious
+    add_group("fra_bureaucracy", InterestGroupKind::Bureaucracy, 1, 0.5, 0.6, 0.3);
+    add_group("fra_military",    InterestGroupKind::Military,    1, 0.5, 0.6, 0.3);
+    add_group("fra_religious",   InterestGroupKind::Religious,   1, 0.3, 0.7, 0.2);
+    // JPN: bureaucracy / military / business
+    add_group("jpn_bureaucracy", InterestGroupKind::Bureaucracy, 2, 0.7, 0.9, 0.1);
+    add_group("jpn_military",    InterestGroupKind::Military,    2, 0.6, 0.5, 0.5);
+    add_group("jpn_business",    InterestGroupKind::Business,    2, 0.4, 0.6, 0.3);
+
+    return s;
+}
+
+rn::RunnerOptions m311_full_artefact_opts(const fs::path& dir,
+                                          int days,
+                                          std::uint64_t seed_override) {
+    rn::RunnerOptions opts;
+    opts.config_path        = kCanonicalConfig;
+    opts.days               = days;
+    opts.output_dir         = dir;
+    opts.seed_override      = seed_override;
+    opts.summary_csv_path   = dir / "summary.csv";
+    opts.countries_csv_path = dir / "countries.csv";
+    opts.factions_csv_path  = dir / "factions.csv";
+    return opts;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------
+// 1. 1-year scenario run on the full M3 surface
+// ---------------------------------------------------------------------
+TEST_CASE("M3 close-out: 365-day run on multi-country / multi-kind state exercises every M3 system") {
+    TempDir td("leviathan_m3_closeout_year");
+
+    GameState s = m311_full_m3_state();
+    const auto opts = m311_full_artefact_opts(td.path, 365,
+                                              std::uint64_t{0xC1051D11});
+    const auto r = rn::run_state(s, opts);
+    REQUIRE(r.ok());
+    const auto& outcome = r.value();
+
+    // 365 days from 1930-01-01 crosses 12 month boundaries.
+    CHECK(outcome.monthly_ticks == 12);
+
+    // Every per-system counter ticked: 9 interest groups across 3
+    // countries means M3.2 mutates all 9 every month, M3.3 fires on
+    // every country every month (3), M3.4 fires on every country
+    // (each has a Bureaucracy group), and M3.9 fires on every
+    // country (each has a Military group). 12 monthly ticks ×
+    // 3 countries = 36 rows in each of the two per-system CSVs
+    // (skipped countries would emit 0, but here none are skipped).
+    CHECK(outcome.interest_group_country_feedback_csv_rows   == 36u);
+    CHECK(outcome.interest_group_authority_pressure_csv_rows == 36u);
+    CHECK(outcome.interest_group_military_pressure_csv_rows  == 36u);
+
+    // interest_groups.csv snapshots at start + 12 month boundaries
+    // + final post-sanity = 14 points × 9 groups = 126 rows.
+    CHECK(outcome.interest_groups_csv_rows == 126u);
+
+    // All 9 artefacts present.
+    REQUIRE(fs::exists(td.path / "save.json"));
+    REQUIRE(fs::exists(td.path / "events.jsonl"));
+    REQUIRE(fs::exists(td.path / "summary.csv"));
+    REQUIRE(fs::exists(td.path / "countries.csv"));
+    REQUIRE(fs::exists(td.path / "factions.csv"));
+    REQUIRE(fs::exists(td.path / "interest_groups.csv"));
+    REQUIRE(fs::exists(td.path / "interest_group_country_feedback.csv"));
+    REQUIRE(fs::exists(td.path / "interest_group_authority_pressure.csv"));
+    REQUIRE(fs::exists(td.path / "interest_group_military_pressure.csv"));
+
+    // sanity_check found nothing — clamps and preflight held across
+    // the full year on a non-trivial state.
+    CHECK(outcome.sanity_issues_logged == 0u);
+
+    // Every country / group ratio that M3 systems mutate is still
+    // inside [0, 1] — the per-system clamps survived the year.
+    for (const auto& c : s.countries) {
+        CHECK(c.stability >= 0.0);
+        CHECK(c.stability <= 1.0);
+        CHECK(c.government_authority.bureaucratic_compliance >= 0.0);
+        CHECK(c.government_authority.bureaucratic_compliance <= 1.0);
+        CHECK(c.government_authority.military_loyalty >= 0.0);
+        CHECK(c.government_authority.military_loyalty <= 1.0);
+    }
+    for (const auto& g : s.interest_groups) {
+        CHECK(g.loyalty    >= 0.0);
+        CHECK(g.loyalty    <= 1.0);
+        CHECK(g.radicalism >= 0.0);
+        CHECK(g.radicalism <= 1.0);
+        // Influence is structural — M3 never mutates it.
+        CHECK(g.influence  >= 0.0);
+        CHECK(g.influence  <= 1.0);
+    }
+}
+
+// ---------------------------------------------------------------------
+// 2. 10-year soak run — sanity over a long horizon
+// ---------------------------------------------------------------------
+TEST_CASE("M3 close-out: 10-year soak run keeps every M3-mutated field inside [0, 1] with no sanity issues") {
+    TempDir td("leviathan_m3_closeout_soak");
+
+    GameState s = m311_full_m3_state();
+    const auto opts = m311_full_artefact_opts(td.path, 3652,
+                                              std::uint64_t{0x50AC500A});
+
+    const auto r = rn::run_state(s, opts);
+    REQUIRE(r.ok());
+    const auto& outcome = r.value();
+
+    // 3652 days from 1930-01-01 → 1939-12-31 with 9 leap-day-handled
+    // years; the runner reports `monthly_ticks` per crossed boundary.
+    // 12 boundaries / year × ~10 years = 120 (the off-by-one cases
+    // around year boundaries don't matter for this soak — the only
+    // assertion is "lots of monthly ticks happened").
+    CHECK(outcome.monthly_ticks >= 119);
+    CHECK(outcome.monthly_ticks <= 121);
+
+    CHECK(outcome.sanity_issues_logged == 0u);
+
+    // Every M3-mutated field still inside its [0, 1] band after ~10
+    // years of drift. This is the soak test's only real claim —
+    // unit tests pin per-tick arithmetic; this pins "no slow drift
+    // out of bounds over a long horizon".
+    for (const auto& c : s.countries) {
+        CHECK(std::isfinite(c.stability));
+        CHECK(c.stability >= 0.0);
+        CHECK(c.stability <= 1.0);
+        CHECK(std::isfinite(c.government_authority.bureaucratic_compliance));
+        CHECK(c.government_authority.bureaucratic_compliance >= 0.0);
+        CHECK(c.government_authority.bureaucratic_compliance <= 1.0);
+        CHECK(std::isfinite(c.government_authority.military_loyalty));
+        CHECK(c.government_authority.military_loyalty >= 0.0);
+        CHECK(c.government_authority.military_loyalty <= 1.0);
+    }
+    for (const auto& g : s.interest_groups) {
+        CHECK(std::isfinite(g.loyalty));
+        CHECK(g.loyalty    >= 0.0);
+        CHECK(g.loyalty    <= 1.0);
+        CHECK(std::isfinite(g.radicalism));
+        CHECK(g.radicalism >= 0.0);
+        CHECK(g.radicalism <= 1.0);
+    }
+}
+
+// ---------------------------------------------------------------------
+// 3. Save round-trip preserves the M3 surface byte-for-byte
+// ---------------------------------------------------------------------
+TEST_CASE("M3 close-out: save round-trip preserves interest_groups + government_authority across all 9 artefacts") {
+    namespace ss = leviathan::systems::save_system;
+
+    TempDir td("leviathan_m3_closeout_roundtrip");
+
+    GameState src = m311_full_m3_state();
+    const auto opts = m311_full_artefact_opts(td.path, 31,
+                                              std::uint64_t{0xCAFE5A7E});
+    REQUIRE(rn::run_state(src, opts).ok());
+
+    // Load the save back.
+    auto loaded_r = ss::load(td.path / "save.json");
+    REQUIRE(loaded_r.ok());
+    const auto loaded = loaded_r.value();
+
+    // M3.1 interest_groups round-trips entry by entry.
+    REQUIRE(loaded.interest_groups.size() == src.interest_groups.size());
+    for (std::size_t i = 0; i < src.interest_groups.size(); ++i) {
+        const auto& a = src.interest_groups[i];
+        const auto& b = loaded.interest_groups[i];
+        CHECK(a.id_code        == b.id_code);
+        CHECK(a.name           == b.name);
+        CHECK(a.kind           == b.kind);
+        CHECK(a.country.value() == b.country.value());
+        CHECK(a.influence      == doctest::Approx(b.influence));
+        CHECK(a.loyalty        == doctest::Approx(b.loyalty));
+        CHECK(a.radicalism     == doctest::Approx(b.radicalism));
+    }
+
+    // M2.16 government_authority round-trips per country, including
+    // the two fields M3.4 / M3.9 actually mutate.
+    REQUIRE(loaded.countries.size() == src.countries.size());
+    for (std::size_t i = 0; i < src.countries.size(); ++i) {
+        const auto& a = src.countries[i].government_authority;
+        const auto& b = loaded.countries[i].government_authority;
+        CHECK(a.bureaucratic_compliance ==
+              doctest::Approx(b.bureaucratic_compliance));
+        CHECK(a.military_loyalty ==
+              doctest::Approx(b.military_loyalty));
+        // The two still-inert sub-fields M3.4 / M3.9 do NOT mutate
+        // also round-trip identically.
+        CHECK(a.intelligence_capability ==
+              doctest::Approx(b.intelligence_capability));
+        CHECK(a.media_control ==
+              doctest::Approx(b.media_control));
+    }
+
+    // Re-running the same seed + same hand-built state into a
+    // second temp dir produces byte-identical 9-artefact output.
+    TempDir td_b("leviathan_m3_closeout_roundtrip_b");
+    GameState src_b = m311_full_m3_state();
+    const auto opts_b = m311_full_artefact_opts(td_b.path, 31,
+                                                std::uint64_t{0xCAFE5A7E});
+    REQUIRE(rn::run_state(src_b, opts_b).ok());
+
+    CHECK(read_file(td.path / "save.json") ==
+          read_file(td_b.path / "save.json"));
+    CHECK(read_file(td.path / "events.jsonl") ==
+          read_file(td_b.path / "events.jsonl"));
+    CHECK(read_file(td.path / "summary.csv") ==
+          read_file(td_b.path / "summary.csv"));
+    CHECK(read_file(td.path / "countries.csv") ==
+          read_file(td_b.path / "countries.csv"));
+    CHECK(read_file(td.path / "factions.csv") ==
+          read_file(td_b.path / "factions.csv"));
+    CHECK(read_file(td.path / "interest_groups.csv") ==
+          read_file(td_b.path / "interest_groups.csv"));
+    CHECK(read_file(td.path / "interest_group_country_feedback.csv") ==
+          read_file(td_b.path / "interest_group_country_feedback.csv"));
+    CHECK(read_file(td.path / "interest_group_authority_pressure.csv") ==
+          read_file(td_b.path / "interest_group_authority_pressure.csv"));
+    CHECK(read_file(td.path / "interest_group_military_pressure.csv") ==
           read_file(td_b.path / "interest_group_military_pressure.csv"));
 }
 
