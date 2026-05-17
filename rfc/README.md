@@ -217,7 +217,34 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M3（進行中）** — 內政 / 利益團體反應層。**M3.6（InterestGroup
+- **M3（進行中）** — 內政 / 利益團體反應層。**M3.7（M3 reaction-
+  loop integration checkpoint）** 是 M3 中段的 integration
+  checkpoint，**不是 exit report，M3 仍 in progress**。
+  新增 `tests/integration/m3_end_to_end_test.cpp` 三個端對端
+  測試：(1) 手建 state（單一 Bureaucracy interest group）跑一次
+  `monthly::tick_all_countries`，驗證 M3.2 / M3.3 / M3.4 三個
+  reaction system 都正確 mutate（group loyalty / radicalism、
+  country stability、country bureaucratic_compliance），三個
+  counter 與 trace vector 全部對齊；(2) 同一份 hand-built state
+  經由 `run_state` 跑 31 天跨過一個 month boundary，驗證 8 個
+  artefacts 都落地，三個 M3 CSV (`interest_groups.csv` +
+  `interest_group_country_feedback.csv` +
+  `interest_group_authority_pressure.csv`) 都有 data row（不只是
+  header）；(3) same seed + same options 跑兩次，比對全 8
+  artefacts byte-identical。同時新增
+  `docs/milestone-3-checkpoint.md` 把 M3.1–M3.6 的資料流、
+  8-artefact runner 合約、當前 M3 invariants（save format v11、
+  不寫 events / state.logs、沒 RNG、沒 AI / UI / CLI、不新增
+  `PlayerCommandKind`、M2 command gates 公式不變但
+  bureaucratic_compliance 已透過 M3.4 漂移、`end_tick` 仍非
+  atomic）、deferred items、與 M3.8 候選方向統一寫成一頁。
+  README 明確標示「M3.7 checkpoint shipped, M3 仍 in progress」
+  ── **不寫 M3 closed**。**M3.7 不做** 新 code path、新 artefact、
+  save schema 變更、formula 變更、新 InterestGroupKind、新
+  `PlayerCommandKind`、events / AI / UI / CLI / REPL、新 CLI
+  flag、command-gate 公式變更、atomic `end_tick` 寫檔、跨國
+  behaviour。3 個新 doctest cases。
+  **M3.6（InterestGroup
   feedback outcome diagnostics / CSV trace surface）** 是 M3.5
   state surface 的 outcome trace 對應，**不新增玩法、不改公式、
   不改 save schema、不新增 CLI flag**。Runner 每次執行都會無條件
