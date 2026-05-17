@@ -8,26 +8,30 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.8 — Replay CLI harness.**
-  New `--replay PATH` runner flag wires M2.7
-  `replay_with_time` into the CLI. `run()` branches: when
-  `--replay` is set (requires `--scenario` for the fresh state
-  baseline), it loads the save at PATH, optionally inherits
-  `player_country` from the loaded save (when `--player` is
-  unset), runs `begin_tick → replay_with_time(loaded.applied_commands)
-  → end_tick`, and populates a new `RunOutcome::replay_commands_replayed`
-  field. The CLI does NOT auto-compare the replayed state against
-  the source — the user diffs the two save files themselves.
-  `main()` prints two extra summary lines when active
-  (`Replay source` + `Commands replayed`). **No save format bump**
-  (still v9); no new lifecycle log; no automatic per-field state
-  comparison; no replay outside `run()`.
-- Next sub-milestone candidates: **M2.9** (further
-  `PlayerCommandKind` variants — `ChangeTaxBurden`,
-  `ToggleMartialLaw`, …; save-neutral additive enum) or
-  **M2.10** (per-field state-comparison API — programmatic
-  divergence detection for replay verification, returns a
-  list of mismatching fields; would not bump save format).
+- Latest shipped sub-milestone: **M2.10 — State comparison API.**
+  New `systems::diagnostics::compare_states(a, b, opts)` free
+  function plus `StateMismatch` / `CompareOptions` data types. The
+  function walks two `GameState`s field-by-field in canonical
+  order and returns an ordered list of mismatches; empty list =
+  match. Compared: `current_date`, `player_country`, every
+  country's identity + 13 numerics + 7 budget categories +
+  `active_policies` entries, every faction's identity + 5
+  numerics + preferred_policies count, every `applied_commands`
+  entry (date + kind + payload). **Deliberately skipped**: rng,
+  logs (begin/end_tick boilerplate noise), policies (immutable
+  templates), provinces / events (reserved-empty),
+  simulation_config (not in GameState). Floating-point tolerance
+  defaults to `1e-9` (matches M0.8 save round-trip precision);
+  customisable via `CompareOptions`. The function is library-only
+  for now — anticipated consumers include replay-equivalence
+  integration tests and a future `--verify` CLI flag.
+  **No save format bump** (still v9); no new CLI flag in this PR;
+  no new log line; no M1 system change.
+- Next sub-milestone candidates: **M2.11** (`--verify` CLI flag
+  that wires `compare_states` into `run()`'s `--replay` flow and
+  reports mismatches to stdout; save-neutral) or **M2.12**
+  (further `PlayerCommandKind` variants — `ChangeTaxBurden`,
+  `ToggleMartialLaw`, …; save-neutral additive enum).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -52,7 +56,7 @@ the round-trip.
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
-+ M2.7 + M2.8 merged. Twenty-five sub-milestones shipped:
++ M2.7 + M2.8 + M2.10 merged. Twenty-six sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -185,7 +189,16 @@ CLI. `run()` branches: with `--replay` set (requires
 runs `begin_tick → replay_with_time → end_tick`, and populates
 a new `RunOutcome::replay_commands_replayed` field. `main()`
 prints two extra summary lines. The CLI does NOT auto-compare —
-user diffs source vs target save files. No save format change.**
+user diffs source vs target save files. No save format change;
+**M2.10 State comparison API — new
+`systems::diagnostics::compare_states(a, b, opts)` free function
+returning a list of `StateMismatch` entries (field_path +
+detail). Walks gameplay-relevant fields field-by-field in
+canonical order with floating-point tolerance (default 1e-9).
+Library-only for now; consumers include replay-equivalence
+tests and a future `--verify` CLI flag. Deliberately skips rng,
+logs, policies, provinces, events, simulation_config — each
+documented with rationale. No save format change.**
 
 ## Repository layout
 
@@ -351,14 +364,23 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.8 there are **520 doctest cases**. M0 contributed 179;
+As of M2.10 there are **532 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
-10; M2.8 adds 7 covering the `--replay` CLI: parse_args plumbed,
+10; M2.8 added 7; M2.10 adds 12 covering the new
+`compare_states` API: two empty match; identical seeded match;
+`current_date` diff with both date strings in detail;
+`player_country` diff; country count → `countries.size()`
+mismatch; gdp diff on country[0] → `countries[0].gdp` path;
+tolerance — within (silent) and outside (reported);
+`active_policies` size diff caught with the array path;
+`applied_commands` size diff caught; multiple mismatches
+collected in canonical order; custom `CompareOptions` tolerance
+respected. Previously M2.8 added 7 covering the `--replay` CLI: parse_args plumbed,
 missing value rejected, default unset; run --replay without
 --scenario rejected; run --replay with single EnactPolicy
 reproduces source's `legal_tax_burden` + log; --player auto-

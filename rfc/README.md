@@ -383,6 +383,29 @@ M0 / M1 中落地，部分仍是未來工作：
   scenario、multi-save replay chain、新 state.logs lifecycle 條目、
   runner 外的 replay entry point（library primitive `replay_with_time`
   仍可獨立使用）、M1 system 變更。
+  **M2.10（State comparison API）** 為 `systems::diagnostics` 新增
+  `compare_states(a, b, opts)` free function 與 `StateMismatch` /
+  `CompareOptions` 兩個資料型別。Walks 兩個 `GameState`，依固定欄位
+  順序逐欄比對，回傳 mismatch list（空 list = match）。
+  **Compared**：`current_date`、`player_country`、每個 country 的
+  identity 字串 + 13 個 numeric（含 `last_gdp_growth_rate`）+ 7 個
+  budget 類別 + `active_policies` 條目；每個 faction 的 identity
+  字串 + 5 個 numeric + preferred_policies 計數；每個
+  `applied_commands` 條目（applied_on + kind + payload）。
+  **Deliberately skipped**（每個都在設計筆記中有 rationale）：
+  rng（M2 replay 尚未涉及 RNG）、logs（begin/end_tick boilerplate
+  幾乎一定不同）、policies（不會 mutate 的 templates）、provinces /
+  events（仍 reserved-empty）、simulation_config（不在 GameState
+  裡）。Float-point 比對採絕對 tolerance，預設 `1e-9`（對齊 M0.8
+  save round-trip 精度），可由 `CompareOptions` 覆寫。`field_path`
+  與 M0.8 / M2.4 save JSON 的定址習慣一致（`countries[0].budget.military`），
+  讓同一字串能直接用在 CLI 輸出、測試 assert、錯誤訊息。對應
+  RFC-090 §M2「玩家操作回放」family 的程序化等價檢查需求；
+  expected consumers 是 replay-equivalence integration tests 與
+  未來 M2.11 的 `--verify` CLI flag。**M2.10 不做** save schema
+  變更（仍 v9）、CLI 整合（M2.11 候選）、相對 tolerance、log /
+  rng / policy 比對、mismatch budget cap、新 state.logs 條目、
+  M1 system 變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

@@ -521,3 +521,178 @@ TEST_CASE("faction_snapshot: does NOT mutate state") {
     CHECK(s.factions[0].support   == doctest::Approx(0.45));
     CHECK(s.factions[0].resources == doctest::Approx(1.0));
 }
+
+// ---------------------------------------------------------------------
+// M2.10 - compare_states
+// ---------------------------------------------------------------------
+
+namespace {
+
+CountryState m210_country(int idx, const std::string& id_code, double gdp) {
+    CountryState c;
+    c.id          = CountryId{idx};
+    c.id_code     = id_code;
+    c.name        = id_code;
+    c.display_name = id_code;
+    c.gdp                       = gdp;
+    c.tax_revenue               = 1.0;
+    c.budget_balance            = 0.0;
+    c.legal_tax_burden          = 0.20;
+    c.fiscal_capacity           = 0.50;
+    c.administrative_efficiency = 0.50;
+    c.central_control           = 0.50;
+    c.corruption                = 0.20;
+    c.stability                 = 0.55;
+    c.legitimacy                = 0.55;
+    c.military_power            = 0.50;
+    c.threat_perception         = 0.30;
+    c.last_gdp_growth_rate      = 0.0;
+    c.budget.administration     = 0.20;
+    c.budget.military           = 0.30;
+    c.budget.education          = 0.10;
+    c.budget.welfare            = 0.10;
+    c.budget.intelligence       = 0.05;
+    c.budget.infrastructure     = 0.15;
+    c.budget.industry           = 0.10;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("compare_states: two empty GameStates match") {
+    GameState a;
+    GameState b;
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: identical seeded states match") {
+    GameState a;
+    a.current_date    = GameDate(1930, 6, 1);
+    a.player_country  = CountryId{0};
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+
+    GameState b = a;   // deep copy
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: different current_date is reported with path 'current_date'") {
+    GameState a;
+    GameState b;
+    b.current_date = GameDate(1945, 5, 8);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "current_date");
+    CHECK(m[0].detail.find("1930-01-01") != std::string::npos);
+    CHECK(m[0].detail.find("1945-05-08") != std::string::npos);
+}
+
+TEST_CASE("compare_states: different player_country is reported") {
+    GameState a;
+    GameState b;
+    b.player_country = CountryId{2};
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "player_country");
+    CHECK(m[0].detail.find("-1") != std::string::npos);
+    CHECK(m[0].detail.find("2")  != std::string::npos);
+}
+
+TEST_CASE("compare_states: different country count reported on countries.size()") {
+    GameState a;
+    GameState b;
+    b.countries.push_back(m210_country(0, "GER", 100.0));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "countries.size()");
+    CHECK(m[0].detail == "0 != 1");
+}
+
+TEST_CASE("compare_states: gdp diff on country[0] reports correct path") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries.push_back(m210_country(0, "GER", 105.5));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "countries[0].gdp");
+    CHECK(m[0].detail.find("1.000") != std::string::npos);  // 1.0e+02
+    CHECK(m[0].detail.find("1.055") != std::string::npos);  // 1.055e+02
+}
+
+TEST_CASE("compare_states: tolerance — diff within tolerance is silent") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    auto& bc = b.countries.emplace_back(m210_country(0, "GER", 100.0));
+    bc.gdp = 100.0 + 1e-12;   // well below default 1e-9 tolerance
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: tolerance — diff outside tolerance is reported") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    auto& bc = b.countries.emplace_back(m210_country(0, "GER", 100.0));
+    bc.gdp = 100.0 + 1e-6;   // above default 1e-9 tolerance
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "countries[0].gdp");
+}
+
+TEST_CASE("compare_states: active_policies size mismatch caught with array path") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries[0].active_policies.push_back(
+        {"raise_taxes", GameDate(1930, 3, 2)});
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "countries[0].active_policies.size()");
+    CHECK(m[0].detail == "0 != 1");
+}
+
+TEST_CASE("compare_states: applied_commands size mismatch caught") {
+    GameState a;
+    GameState b;
+    leviathan::core::AppliedPlayerCommand ac;
+    ac.applied_on = GameDate(1930, 1, 1);
+    ac.command.kind = leviathan::core::PlayerCommandKind::EnactPolicy;
+    ac.command.policy_id_code = "x";
+    b.applied_commands.push_back(ac);
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "applied_commands.size()");
+}
+
+TEST_CASE("compare_states: multiple mismatches collected in canonical order") {
+    GameState a;
+    GameState b;
+    // current_date diff
+    b.current_date = GameDate(1931, 1, 1);
+    // player_country diff
+    b.player_country = CountryId{0};
+    // country gdp diff
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries.push_back(m210_country(0, "GER", 200.0));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 3u);
+    CHECK(m[0].field_path == "current_date");
+    CHECK(m[1].field_path == "player_country");
+    CHECK(m[2].field_path == "countries[0].gdp");
+}
+
+TEST_CASE("compare_states: respects custom CompareOptions tolerance") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    auto& bc = b.countries.emplace_back(m210_country(0, "GER", 100.0));
+    bc.gdp = 100.0 + 1e-3;   // above 1e-9 default but below 1e-2 custom
+    dg::CompareOptions opts;
+    opts.double_tolerance = 1e-2;
+    const auto m = dg::compare_states(a, b, opts);
+    CHECK(m.empty());
+}
