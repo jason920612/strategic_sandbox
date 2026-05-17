@@ -435,4 +435,20 @@ core::Result<ReplayOutcome> replay_with_time(
     return core::Result<ReplayOutcome>::success(std::move(outcome));
 }
 
+// ===========================================================================
+// M2.21 - scripted-driver helper
+// ===========================================================================
+
+core::Result<ApplyWithReportOutcome> apply_command_script(
+        core::GameState& state,
+        const std::vector<core::PlayerCommand>& script) {
+    // The script is consumed once; build a local queue so the
+    // caller's vector is left untouched. `try_apply_pending`
+    // pops from `q.pending` as it drains; success / rejection /
+    // failure semantics inherit directly from there.
+    CommandQueue q;
+    q.pending = script;
+    return try_apply_pending(state, q);
+}
+
 }  // namespace leviathan::systems::commands

@@ -8,44 +8,39 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.20 — Command rejection
-  reporting.** Makes the M2.18 / M2.19 order-execution rejection
-  observable as structured data without changing `apply_pending`
-  semantics. New POD `commands::RejectionRecord` carries `kind`,
-  `policy_id_code` (for `EnactPolicy`), `budget_category` (for
-  `AdjustBudget`), the selected `compliance` value, `threshold`,
-  and `resistance = 1.0 - compliance`. New wrapper
-  `commands::ApplyWithReportOutcome { apply, rejection }`. New
-  free function `commands::try_apply_pending(state, queue)`
-  drains the queue exactly like `apply_pending` does — same
-  precondition, same per-command atomicity — but surfaces an
-  order-execution rejection as `Result::success` carrying a
-  populated `rejection` rather than as `Result::failure`.
-  Non-execution errors (precondition violation, NaN `budget_delta`,
-  unknown policy id_code, unknown budget_category) still return
-  `Result::failure` so genuine validation never gets swallowed.
-  Internal refactor extracts a `dispatch_one` helper in
-  `commands.cpp` (anonymous namespace) shared by both functions;
-  `apply_pending`'s legacy rejection error string is preserved
-  byte-identical via a `format_rejection_message` helper. **No
-  changes to `apply_pending` signature or behaviour**; all M2.18
-  / M2.19 tests pass unchanged. No save format change (still
-  v10); no new state field; no persistent attempted-command log;
-  no `state.logs` entry; no `RunOutcome` rejection surface (that
-  is a future PR); no CLI / replay / runner / DataLoader / M1
-  system change. Drive-by: refreshed a stale M2.18-only comment
-  in `order_execution.cpp` flagged in the PR #46 review.
-- Previously shipped: **M2.19 — AdjustBudget execution gate**.
-  **M2.18 — EnactPolicy execution gate**. **M2.17 —
-  OrderExecutionSystem skeleton**. **M2.16 —
-  GovernmentAuthorityState** (save schema bumped v9 → v10).
-- Next sub-milestone candidate: **M2.21 — Runner / RunOutcome
-  rejection surface.** Now that `RejectionRecord` exists, give a
-  CI driver a programmatic way to see "how many commands were
-  rejected during this run / replay" without parsing the failure
-  error. Save-neutral; likely a `last_rejection` and / or
-  rejection-count field on `RunOutcome` and a stdout summary
-  line in `main()`.
+- Latest shipped sub-milestone: **M2.21 — Command script driver
+  helper.** Adds a single library-only convenience function
+  `commands::apply_command_script(state, vector<PlayerCommand>)`
+  on top of M2.20's `try_apply_pending` surface. The helper
+  takes a one-shot script (a `std::vector<PlayerCommand>`),
+  builds a local `CommandQueue`, and dispatches through
+  `try_apply_pending` — so callers (future REPL / agent driver /
+  scripted tests) can get structured rejection without
+  three-line boilerplate every call site. Outcome shape reuses
+  M2.20's `ApplyWithReportOutcome`. Routing is inherited from
+  `try_apply_pending`: full drain ⇒ success with
+  `rejection == nullopt`; order-execution rejection ⇒ success
+  with rejection populated; non-execution failure
+  (precondition / NaN delta / unknown policy / unknown category)
+  ⇒ `Result::failure`. Input `script` vector is not mutated.
+  **No runner / RunOutcome / `main()` / CLI / replay / save
+  schema change.** Library-only by design; runner-level wiring
+  is deferred to a future PR when a script-input entry point
+  exists.
+- Previously shipped: **M2.20 — Command rejection reporting**
+  (new `RejectionRecord` + `ApplyWithReportOutcome` +
+  `try_apply_pending`; `apply_pending` unchanged). **M2.19 —
+  AdjustBudget execution gate**. **M2.18 — EnactPolicy
+  execution gate**. **M2.17 — OrderExecutionSystem skeleton**.
+  **M2.16 — GovernmentAuthorityState** (save schema bumped v9
+  → v10).
+- Next sub-milestone candidate: **M2.22 — Wire script driver
+  into runner / CLI.** With the library helper in place, plumb
+  it through a CLI entry point (e.g. `--script PATH` loading a
+  JSON command list) and surface structured rejection in
+  `RunOutcome` / stdout. Save-neutral. The exact shape (a new
+  flag vs. extending `--replay` vs. a separate sub-command)
+  remains to be decided.
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -71,7 +66,7 @@ the round-trip.
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
 RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5 + M2.6
 + M2.7 + M2.8 + M2.9 + M2.10 + M2.11 + M2.12 + M2.13 + M2.14 +
-M2.16 + M2.17 + M2.18 + M2.19 + M2.20 merged. Thirty-six
+M2.16 + M2.17 + M2.18 + M2.19 + M2.20 + M2.21 merged. Thirty-seven
 sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
@@ -219,6 +214,20 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M2.21 Command script driver helper — adds the library-only
+free function
+`commands::apply_command_script(state, vector<PlayerCommand>)`
+on top of M2.20's `try_apply_pending`. Takes a one-shot script,
+builds a local `CommandQueue`, dispatches through
+`try_apply_pending`. Outcome reuses M2.20's
+`ApplyWithReportOutcome` (no parallel struct). Routing inherited:
+full drain → success + nullopt rejection; gate rejection →
+success + populated record; non-execution failure (precondition
+/ NaN delta / unknown policy / unknown category) → failure. Input
+script vector not mutated. Library-only — no runner / RunOutcome
+/ `main()` / CLI / replay / save schema change. Saves three
+boilerplate lines at every REPL / scripted-test / agent-driver
+call site;
 **M2.20 Command rejection reporting — makes M2.18 / M2.19
 order-execution rejections observable as structured data without
 changing `apply_pending` semantics. New POD
@@ -579,7 +588,7 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.20 there are **616 doctest cases**. M0 contributed 179;
+As of M2.21 there are **624 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
@@ -588,7 +597,22 @@ end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
 added 8; M2.4 added 13; M2.5 added 11; M2.6 added 9; M2.7 added
 10; M2.8 added 7; M2.10 added 12; M2.11 added 5; M2.12 added 5;
 M2.13 added 8; M2.9 added 3; M2.14 added 9; M2.16 added 13;
-M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 adds 10
+M2.17 added 10; M2.18 added 10; M2.19 added 11; M2.20 added 10;
+M2.21 adds 8 covering the new
+`commands::apply_command_script` helper: empty script success;
+full success applies both `EnactPolicy("raise_taxes")` and
+`AdjustBudget("military", +0.02)` in order and logs both;
+EnactPolicy rejected at compliance 0.1 surfaces structured
+`RejectionRecord{kind, policy_id_code, compliance=0.1,
+threshold=0.3}`; AdjustBudget(military) rejected at
+military_loyalty 0.05 records `military_loyalty` as compliance
+(M2.19 selected-input contract); mid-script rejection preserves
+prior `AdjustBudget(military)` apply+log while trailing
+`AdjustBudget(welfare)` does NOT run (helper does not surface
+remaining commands); unknown policy id_code still returns
+`Result::failure`; invalid `player_country` returns failure
+naming `player_country`; input vector survives the call
+unmutated element-by-element. Previously M2.20 added 10
 covering the new `try_apply_pending` structured-rejection
 surface: full drain returns success + nullopt rejection; EnactPolicy
 rejection populates `RejectionRecord{kind, policy_id_code,
