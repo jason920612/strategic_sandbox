@@ -297,6 +297,22 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
             check_double(out, prefix + ".budget.infrastructure", ca.budget.infrastructure, cb.budget.infrastructure, tol);
             check_double(out, prefix + ".budget.industry",       ca.budget.industry,       cb.budget.industry,       tol);
 
+            // M2.16 government_authority block. Field paths mirror
+            // the save JSON shape so the same string works in CLI
+            // output and reviewer-friendly error messages.
+            check_double(out, prefix + ".government_authority.bureaucratic_compliance",
+                         ca.government_authority.bureaucratic_compliance,
+                         cb.government_authority.bureaucratic_compliance, tol);
+            check_double(out, prefix + ".government_authority.military_loyalty",
+                         ca.government_authority.military_loyalty,
+                         cb.government_authority.military_loyalty, tol);
+            check_double(out, prefix + ".government_authority.intelligence_capability",
+                         ca.government_authority.intelligence_capability,
+                         cb.government_authority.intelligence_capability, tol);
+            check_double(out, prefix + ".government_authority.media_control",
+                         ca.government_authority.media_control,
+                         cb.government_authority.media_control, tol);
+
             // active_policies block
             if (ca.active_policies.size() != cb.active_policies.size()) {
                 push_mismatch(out, prefix + ".active_policies.size()",

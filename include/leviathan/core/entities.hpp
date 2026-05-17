@@ -71,6 +71,31 @@ struct BudgetState {
     double industry        = 0.0;
 };
 
+// Per-country government authority state (M2.16).
+//
+// Four [0, 1] ratio fields, defaulting to 0.5, capturing the
+// stripped-down RFC-020 §3 "state control" surface. M2.16 only adds
+// the data shape — no system reads or writes these yet. Future
+// gameplay (RFC-020 §2-§3) will consume them as command-execution
+// resistance / information-accuracy inputs.
+//
+// Deliberately deferred from the RFC-020 §3 list and meant to land
+// in later sub-milestones: local_control (distinct from the
+// existing `CountryState::central_control`), legal_mandate,
+// leader_prestige, party_organization. `corruption` and
+// `administrative_efficiency` already live on `CountryState` (M1.1)
+// and are not duplicated here.
+//
+// Defaults are 0.5 across the board so a country file that omits
+// the block loads to a neutral starting position; scenarios that
+// want explicit values override per-field.
+struct GovernmentAuthorityState {
+    double bureaucratic_compliance  = 0.5;
+    double military_loyalty         = 0.5;
+    double intelligence_capability  = 0.5;
+    double media_control            = 0.5;
+};
+
 struct CountryState {
     // Identity
     CountryId   id;
@@ -109,6 +134,17 @@ struct CountryState {
     // Per-category budget allocation (M1.3). Loaded as a nested
     // JSON object; saved likewise.
     BudgetState budget;
+
+    // Government authority sub-state (M2.16). Four [0, 1] ratios
+    // capturing the stripped-down RFC-020 §3 "state control"
+    // surface — bureaucratic compliance, military loyalty,
+    // intelligence capability, media control. Defaults to all
+    // 0.5 so a country file that omits the block loads neutrally.
+    // M2.16 is data-only: no M1 system reads or writes these
+    // fields yet. Save format v10 makes the block required at the
+    // save-file level; DataLoader treats the block as optional in
+    // country JSON.
+    GovernmentAuthorityState government_authority;
 
     // Policies currently enacted on this country (M1.15). Appended
     // by `policy::apply_policy_effects` on each successful call;

@@ -696,3 +696,16 @@ TEST_CASE("compare_states: respects custom CompareOptions tolerance") {
     const auto m = dg::compare_states(a, b, opts);
     CHECK(m.empty());
 }
+
+TEST_CASE("compare_states: M2.16 government_authority differences are reported per sub-field") {
+    GameState a;
+    GameState b;
+    a.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries.push_back(m210_country(0, "GER", 100.0));
+    b.countries[0].government_authority.bureaucratic_compliance = 0.7;  // a stays 0.5
+    b.countries[0].government_authority.media_control           = 0.3;  // a stays 0.5
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 2u);
+    CHECK(m[0].field_path == "countries[0].government_authority.bureaucratic_compliance");
+    CHECK(m[1].field_path == "countries[0].government_authority.media_control");
+}

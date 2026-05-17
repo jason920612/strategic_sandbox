@@ -861,3 +861,92 @@ TEST_CASE("load_country: missing file names the path") {
     REQUIRE(r.failed());
     CHECK(r.error().find("does-not-exist/ger.json") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------
+// M2.16 - DataLoader government_authority handling
+//
+// The canonical country JSON deliberately omits the
+// government_authority block; M2.16 leaves DataLoader permissive so
+// existing fixtures load unchanged. Tests below pin both the default
+// fallback and the validation that engages when the block IS present.
+// ---------------------------------------------------------------------
+
+TEST_CASE("parse_country: missing government_authority block defaults to 0.5 across the board") {
+    // Canonical fixture has no government_authority key; load should
+    // succeed and every authority field should default to 0.5.
+    const auto r = dl::parse_country(kCanonicalCountryJson);
+    REQUIRE(r.ok());
+    const auto& a = r.value().government_authority;
+    CHECK(a.bureaucratic_compliance  == doctest::Approx(0.5));
+    CHECK(a.military_loyalty         == doctest::Approx(0.5));
+    CHECK(a.intelligence_capability  == doctest::Approx(0.5));
+    CHECK(a.media_control            == doctest::Approx(0.5));
+}
+
+TEST_CASE("parse_country: present government_authority block is read into runtime state") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"budget\": {",
+        "\"government_authority\": {\n"
+        "        \"bureaucratic_compliance\": 0.42,\n"
+        "        \"military_loyalty\":        0.81,\n"
+        "        \"intelligence_capability\": 0.63,\n"
+        "        \"media_control\":           0.17\n"
+        "    },\n"
+        "    \"budget\": {");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.ok());
+    const auto& a = r.value().government_authority;
+    CHECK(a.bureaucratic_compliance  == doctest::Approx(0.42));
+    CHECK(a.military_loyalty         == doctest::Approx(0.81));
+    CHECK(a.intelligence_capability  == doctest::Approx(0.63));
+    CHECK(a.media_control            == doctest::Approx(0.17));
+}
+
+TEST_CASE("parse_country: government_authority with wrong type is rejected") {
+    // A scalar (or any non-object) where an object is expected.
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"budget\": {",
+        "\"government_authority\": 0.5,\n    \"budget\": {");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("government_authority") != std::string::npos);
+    CHECK(r.error().find("JSON object")          != std::string::npos);
+}
+
+TEST_CASE("parse_country: government_authority with missing sub-field is rejected") {
+    // bureaucratic_compliance omitted: partial blocks must fail
+    // rather than silently fall back to 0.5 (which would mask typos
+    // in the present sub-fields).
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"budget\": {",
+        "\"government_authority\": {\n"
+        "        \"military_loyalty\":        0.5,\n"
+        "        \"intelligence_capability\": 0.5,\n"
+        "        \"media_control\":           0.5\n"
+        "    },\n"
+        "    \"budget\": {");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("government_authority")     != std::string::npos);
+    CHECK(r.error().find("bureaucratic_compliance")  != std::string::npos);
+}
+
+TEST_CASE("parse_country: government_authority out-of-range is rejected") {
+    const std::string text = replace_first(
+        kCanonicalCountryJson,
+        "\"budget\": {",
+        "\"government_authority\": {\n"
+        "        \"bureaucratic_compliance\": 0.5,\n"
+        "        \"military_loyalty\":        1.5,\n"
+        "        \"intelligence_capability\": 0.5,\n"
+        "        \"media_control\":           0.5\n"
+        "    },\n"
+        "    \"budget\": {");
+    const auto r = dl::parse_country(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("government_authority") != std::string::npos);
+    CHECK(r.error().find("military_loyalty")     != std::string::npos);
+}

@@ -28,6 +28,7 @@ using leviathan::systems::detail::fmt_err;
 using leviathan::systems::detail::navigate;
 using leviathan::systems::detail::require_string;
 using leviathan::systems::detail::require_number;
+using leviathan::systems::detail::require_ratio;
 using leviathan::systems::detail::require_u64;
 using leviathan::systems::detail::json;
 
@@ -121,6 +122,16 @@ json country_to_json(const core::CountryState& c) {
     budget["infrastructure"]  = c.budget.infrastructure;
     budget["industry"]        = c.budget.industry;
     j["budget"] = std::move(budget);
+
+    // M2.16 government_authority block - nested object, fixed key
+    // order. Four [0, 1] ratio fields. Save format v10 requires the
+    // block; DataLoader treats it as optional in raw country JSON.
+    json authority = json::object();
+    authority["bureaucratic_compliance"] = c.government_authority.bureaucratic_compliance;
+    authority["military_loyalty"]        = c.government_authority.military_loyalty;
+    authority["intelligence_capability"] = c.government_authority.intelligence_capability;
+    authority["media_control"]           = c.government_authority.media_control;
+    j["government_authority"] = std::move(authority);
 
     // M1.15 active_policies block - array of {policy_id_code,
     // expires_on}. May be empty. Insertion order matches the order
@@ -327,6 +338,47 @@ core::Result<core::CountryState> country_from_json(const json& j,
     if (auto r = load_budget("intelligence",    c.budget.intelligence);    !r) return r;
     if (auto r = load_budget("infrastructure",  c.budget.infrastructure);  !r) return r;
     if (auto r = load_budget("industry",        c.budget.industry);        !r) return r;
+
+    // M2.16 government_authority block. Required as of save format
+    // v10 (the version-history note in save_system.hpp covers the
+    // bump rationale). Strict in the save layer: every sub-key is
+    // required, finite, and in [0, 1] via require_ratio. The
+    // DataLoader is more permissive — a country JSON without the
+    // block defaults each field to 0.5 — but a save written from a
+    // valid in-memory state will always include and round-trip the
+    // block.
+    if (!j.contains("government_authority")) {
+        return core::Result<core::CountryState>::failure(
+            ctx + ": missing required field 'government_authority'");
+    }
+    const auto& gaj = j.at("government_authority");
+    if (!gaj.is_object()) {
+        return core::Result<core::CountryState>::failure(
+            ctx +
+            ": 'government_authority' has wrong type (expected JSON object)");
+    }
+    const std::string ga_ctx = ctx + ": government_authority";
+    auto load_authority = [&](const char* key, double& dst)
+        -> core::Result<core::CountryState> {
+        auto r = require_ratio(gaj, key, ga_ctx);
+        if (!r) {
+            return core::Result<core::CountryState>::failure(std::move(r.error()));
+        }
+        dst = r.value();
+        return core::Result<core::CountryState>::success(core::CountryState{});
+    };
+    if (auto r = load_authority("bureaucratic_compliance",
+                                c.government_authority.bureaucratic_compliance);
+        !r) return r;
+    if (auto r = load_authority("military_loyalty",
+                                c.government_authority.military_loyalty);
+        !r) return r;
+    if (auto r = load_authority("intelligence_capability",
+                                c.government_authority.intelligence_capability);
+        !r) return r;
+    if (auto r = load_authority("media_control",
+                                c.government_authority.media_control);
+        !r) return r;
 
     // M1.15 active_policies block. Required as of save format v7.
     // Empty array is fine; missing field is a hard failure (v6 saves

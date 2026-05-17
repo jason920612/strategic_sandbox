@@ -41,6 +41,16 @@ TEST_CASE("Default GameState has the documented baseline") {
     CHECK(state.applied_commands.empty());
 }
 
+TEST_CASE("Default CountryState.government_authority has the M2.16 baseline") {
+    // The block is per-country, not on GameState, so empty countries
+    // vector means no instance to inspect — construct one explicitly.
+    leviathan::core::CountryState c;
+    CHECK(c.government_authority.bureaucratic_compliance  == doctest::Approx(0.5));
+    CHECK(c.government_authority.military_loyalty         == doctest::Approx(0.5));
+    CHECK(c.government_authority.intelligence_capability  == doctest::Approx(0.5));
+    CHECK(c.government_authority.media_control            == doctest::Approx(0.5));
+}
+
 TEST_CASE("GameState fields are directly mutable (no setters needed)") {
     GameState state;
 

@@ -456,6 +456,31 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.16（GovernmentAuthorityState）** 為 `core::CountryState` 新增
+  `government_authority` 子結構，是 M2 第一個真正的 gameplay state
+  擴張，對應 RFC-020 §3「國家掌控力」的 stripped-down 子集。新型別
+  `core::GovernmentAuthorityState` 內含 4 個 `[0, 1]` ratio 欄位、
+  預設皆為 `0.5`：`bureaucratic_compliance`（官僚服從度）、
+  `military_loyalty`（軍方忠誠）、`intelligence_capability`（情報
+  能力）、`media_control`（媒體控制）。`corruption` 與
+  `administrative_efficiency` 已存在於 M1.1 不重複；`local_control`、
+  `legal_mandate`、`leader_prestige`、`party_organization` 暫時不
+  做、文件化為延期項目。**Save format bumped v9 → v10**：save 層
+  block REQUIRED（每個 sub-field 經 `require_ratio` 嚴格驗證，
+  finite + `[0, 1]`），DataLoader 對 country JSON 保持 OPTIONAL
+  策略（缺 block → 全部 default 0.5；present block → 嚴格驗證，
+  partial block 與 out-of-range 都會 reject 並把欄位名寫進錯誤
+  訊息）。`diagnostics::compare_states` 擴張到走訪 4 個 sub-field，
+  field_path 與 save JSON 結構一致
+  （`countries[0].government_authority.bureaucratic_compliance`
+  等）。**Data-only**：完全沒有 M1 system 讀或寫這幾個 field，
+  M1 monthly pipeline 與 M2 command path 行為與 byte-identical
+  determinism contract 完全不受影響。對應 RFC-090 §M2 task 2.16
+  「政府權威 state 基礎」。**M2.16 不做** OrderExecutionSystem /
+  命令執行阻力（M2.17 候選）、policy effect 對 government_authority
+  target dispatch、新 `PlayerCommandKind` variant、新 CSV 欄位、
+  scenario / country fixture 變更、新 `state.logs` 條目、M1 system
+  變更。
   **M2.14（Replay target-date CLI）** 在 runner 新增
   `--target-date YYYY-MM-DD` 旗標（須與 `--replay` 並用），把 M2.8
   的 replay flow 限縮到指定日期。一個 flag 兩個作用：log 截斷
