@@ -135,6 +135,7 @@ GameState m37_state_one_bureaucracy_group() {
     c.military_power                  = 0.45;
     c.threat_perception               = 0.30;
     c.government_authority.bureaucratic_compliance = 0.50;
+    c.government_authority.military_loyalty        = 0.50;
     // Budget categories at small non-zero values so economy::tick
     // produces a meaningful growth rate; not the focus of M3.7
     // but the monthly pipeline runs every per-country system, so
@@ -175,15 +176,30 @@ GameState m37_state_one_bureaucracy_group() {
     g.loyalty    = 0.80;     // > country.stability (0.50)
     g.radicalism = 0.30;     // != 1 - country.stability (0.50)
     s.interest_groups.push_back(g);
+
+    // M3.9: also add a Military-kind group so the new fourth global
+    // step in tick_all_countries has something to fold. Loyalty 0.75
+    // is well above the country's military_loyalty (0.50) and well
+    // below 1.0 so the post-clamp value moves visibly without
+    // saturating.
+    InterestGroupState m;
+    m.id_code    = "ger_military_ig";
+    m.name       = "German General Staff";
+    m.kind       = InterestGroupKind::Military;
+    m.country    = CountryId{0};
+    m.influence  = 0.50;
+    m.loyalty    = 0.75;
+    m.radicalism = 0.20;
+    s.interest_groups.push_back(m);
     return s;
 }
 
 }  // namespace
 
 // =====================================================================
-// A. One-month reaction loop runs all three M3 systems on the same state
+// A. One-month reaction loop runs all four M3 systems on the same state
 // =====================================================================
-TEST_CASE("M3 integration: one monthly tick runs M3.2 / M3.3 / M3.4 on the same state") {
+TEST_CASE("M3 integration: one monthly tick runs M3.2 / M3.3 / M3.4 / M3.9 on the same state") {
     GameState s = m37_state_one_bureaucracy_group();
 
     const double loyalty_before    = s.interest_groups[0].loyalty;
@@ -191,17 +207,22 @@ TEST_CASE("M3 integration: one monthly tick runs M3.2 / M3.3 / M3.4 on the same 
     const double stability_before  = s.countries[0].stability;
     const double compliance_before =
         s.countries[0].government_authority.bureaucratic_compliance;
+    const double military_loyalty_before =
+        s.countries[0].government_authority.military_loyalty;
 
     const auto r = mp::tick_all_countries(s);
     REQUIRE(r.ok());
     const auto& outcome = r.value();
 
-    // Counters: M3.2 mutates every valid group; M3.3 mutates GER
-    // because its group has positive influence; M3.4 mutates GER
-    // because its Bureaucracy group has positive influence.
-    CHECK(outcome.interest_groups_updated                    == 1);
+    // Counters: M3.2 mutates every valid group (two: bureaucracy +
+    // military); M3.3 mutates GER because at least one group has
+    // positive influence; M3.4 mutates GER because its Bureaucracy
+    // group has positive influence; M3.9 mutates GER because its
+    // Military group has positive influence.
+    CHECK(outcome.interest_groups_updated                    == 2);
     CHECK(outcome.interest_group_countries_updated           == 1);
     CHECK(outcome.interest_group_authority_countries_updated == 1);
+    CHECK(outcome.interest_group_military_countries_updated  == 1);
 
     // Group state changed (M3.2 effect).
     CHECK(s.interest_groups[0].loyalty    != doctest::Approx(loyalty_before).epsilon(1e-18));
@@ -220,18 +241,30 @@ TEST_CASE("M3 integration: one monthly tick runs M3.2 / M3.3 / M3.4 on the same 
     CHECK(s.countries[0].government_authority.bureaucratic_compliance
           != doctest::Approx(compliance_before).epsilon(1e-18));
 
-    // M3.6 trace vectors arrived through `MonthlyOutcome`.
+    // Military loyalty moved (M3.9 effect). The Military group's
+    // loyalty (post-M3.2 ~0.74) is above military_loyalty_before
+    // (0.50), so military_loyalty drifts up.
+    CHECK(s.countries[0].government_authority.military_loyalty
+          != doctest::Approx(military_loyalty_before).epsilon(1e-18));
+
+    // M3.6 trace vectors + M3.9 trace vector arrived through
+    // `MonthlyOutcome`.
     REQUIRE(outcome.interest_group_country_feedback_trace_rows.size() == 1u);
     REQUIRE(outcome.interest_group_authority_pressure_trace_rows.size() == 1u);
+    REQUIRE(outcome.interest_group_military_pressure_trace_rows.size() == 1u);
     CHECK(outcome.interest_group_country_feedback_trace_rows[0].country_id_code
           == "GER");
     CHECK(outcome.interest_group_authority_pressure_trace_rows[0].country_id_code
+          == "GER");
+    CHECK(outcome.interest_group_military_pressure_trace_rows[0].country_id_code
           == "GER");
     // Trace `*_after` reflects the just-clamped value.
     CHECK(outcome.interest_group_country_feedback_trace_rows[0].stability_after
           == doctest::Approx(s.countries[0].stability));
     CHECK(outcome.interest_group_authority_pressure_trace_rows[0].bureaucratic_compliance_after
           == doctest::Approx(s.countries[0].government_authority.bureaucratic_compliance));
+    CHECK(outcome.interest_group_military_pressure_trace_rows[0].military_loyalty_after
+          == doctest::Approx(s.countries[0].government_authority.military_loyalty));
 }
 
 #ifdef LEVIATHAN_TEST_DATA_DIR
@@ -279,9 +312,12 @@ TEST_CASE("M3 integration: runner emits all 8 artefacts and the three M3 CSVs ar
     const std::string ap_text = read_file(authority_pressure);
 
     // interest_groups.csv: M3.5 snapshots at start, each month
-    // boundary, and end -> 3 data rows for one group.
-    CHECK(ig_text.find("ger_bureaucracy") != std::string::npos);
-    CHECK(r.value().interest_groups_csv_rows == 3u);
+    // boundary, and end -> 3 snapshot points × 2 groups (the
+    // Bureaucracy group + the Military group added for M3.9) = 6
+    // data rows.
+    CHECK(ig_text.find("ger_bureaucracy")    != std::string::npos);
+    CHECK(ig_text.find("ger_military_ig")    != std::string::npos);
+    CHECK(r.value().interest_groups_csv_rows == 6u);
 
     // M3.6 trace CSVs: one mutation per month boundary, and 31
     // days crosses one boundary -> exactly one data row each.

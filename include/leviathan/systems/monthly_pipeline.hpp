@@ -47,6 +47,20 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
+// M3.9 adds a fourth global step run AFTER M3.4:
+//
+//   7.  interest_group::military_pressure (state)
+//
+// `military_pressure` is a sibling of `authority_pressure`. It
+// reads Military-kind `group.loyalty` (post-M3.2) and applies an
+// influence-weighted aggregate to each country's
+// `government_authority.military_loyalty` at the same rate (0.01)
+// — M3.4 and M3.9 are siblings on the authority layer, not nested.
+// `military_pressure` mutates ONLY
+// `government_authority.military_loyalty`. The `intelligence_capability`
+// and `media_control` sub-fields stay inert until their own
+// sibling channels land in future PRs.
+//
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
 // `economy::tick`'s political-instability drag reads the stability
@@ -143,16 +157,27 @@ struct CountryMonthlyOutcome {
 // persisted: they are a runtime observability surface consumed
 // by the runner's CSV writers and discarded once `end_tick`
 // has emitted them.
+//
+// M3.9: the new `military_pressure` step adds a counter and a
+// trace vector that mirror the M3.4 pair. The runner does NOT
+// currently emit a CSV for these trace rows (deliberately
+// deferred — M3.4's CSV came in the M3.6 retrofit, and the M3.9
+// CSV is a future M3.X candidate); the trace vector still
+// surfaces through `MonthlyOutcome` so tests and a future
+// runner extension can consume it.
 struct MonthlyOutcome {
     int countries_processed = 0;
     std::vector<CountryMonthlyOutcome> countries;
     int interest_groups_updated                    = 0;
     int interest_group_countries_updated           = 0;
     int interest_group_authority_countries_updated = 0;
+    int interest_group_military_countries_updated  = 0;
     std::vector<interest_group::CountryFeedbackTraceRow>
         interest_group_country_feedback_trace_rows;
     std::vector<interest_group::AuthorityPressureTraceRow>
         interest_group_authority_pressure_trace_rows;
+    std::vector<interest_group::MilitaryPressureTraceRow>
+        interest_group_military_pressure_trace_rows;
 };
 
 // Run one month-boundary pipeline for a single country in the

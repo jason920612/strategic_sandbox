@@ -1138,3 +1138,352 @@ TEST_CASE("authority_pressure: null vs non-null trace are byte-identical when ev
     CHECK(dg::compare_states(s_null, s_trace, opts).empty());
     CHECK(trace.empty());
 }
+
+// =====================================================================
+// M3.9 - military_pressure (sibling of M3.4 authority_pressure)
+//
+// Sibling layer of M3.4. Same shape, different kind filter
+// (Military), different output field (military_loyalty). The
+// tests below mirror the M3.4 + M3.6 + M3.8 patterns so the
+// regression surface lines up.
+// =====================================================================
+
+namespace {
+
+// Build a country whose four government_authority sub-fields all
+// start at 0.5; override military_loyalty to a chosen value so the
+// formula has visible room to move. The other three sub-fields
+// (bureaucratic_compliance / intelligence_capability /
+// media_control) stay at 0.5 — M3.9 must NOT touch them.
+CountryState country_with_military_loyalty(double military_loyalty,
+                                           const std::string& id_code) {
+    CountryState c = country_at_stability(0.5, id_code);
+    c.government_authority.military_loyalty = military_loyalty;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("military_pressure: empty state succeeds with zero updates") {
+    GameState state;
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+}
+
+TEST_CASE("military_pressure: country with no Military group is skipped") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    const double before =
+        state.countries[0].government_authority.military_loyalty;
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(before));
+}
+
+TEST_CASE("military_pressure: non-Military groups are ignored") {
+    // Bureaucracy + Workers groups must NOT contribute to the
+    // Military aggregate.
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.1, 0.6,
+                 InterestGroupKind::Bureaucracy, "ger_bureaucracy"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.2, 0.4,
+                 InterestGroupKind::Workers, "ger_workers"));
+    const double before =
+        state.countries[0].government_authority.military_loyalty;
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(before));
+}
+
+TEST_CASE("military_pressure: single Military group drifts military_loyalty toward weighted loyalty") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.9, /*radicalism=*/0.5,
+                 /*influence=*/0.6,
+                 InterestGroupKind::Military, "ger_military"));
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    // target = 0.9; before = 0.4; rate = 0.01
+    // after  = 0.4 + (0.9 - 0.4) * 0.01 = 0.405
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(0.405));
+}
+
+TEST_CASE("military_pressure: influence-weighted across multiple Military groups") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.5, "GER"));
+    // Two Military groups: loyalty 0.9 weight 0.6, loyalty 0.3 weight 0.4.
+    // weighted = (0.6 * 0.9 + 0.4 * 0.3) / (0.6 + 0.4) = 0.66
+    // after    = 0.5 + (0.66 - 0.5) * 0.01 = 0.5016
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.2, 0.6,
+                 InterestGroupKind::Military, "ger_army"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.3, 0.6, 0.4,
+                 InterestGroupKind::Military, "ger_navy"));
+
+    REQUIRE(ig::military_pressure(state).ok());
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(0.5016));
+}
+
+TEST_CASE("military_pressure: zero-influence Military group is skipped") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.0, /*influence=*/0.0,
+                 InterestGroupKind::Military, "ger_paper_army"));
+    const double before =
+        state.countries[0].government_authority.military_loyalty;
+
+    REQUIRE(ig::military_pressure(state).ok());
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(before));
+}
+
+TEST_CASE("military_pressure: out-of-range group country index fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{99}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military));
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country is not a valid index") != std::string::npos);
+}
+
+TEST_CASE("military_pressure: non-finite group loyalty fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military);
+    g.loyalty = std::nan("");
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("loyalty") != std::string::npos);
+}
+
+TEST_CASE("military_pressure: out-of-range group influence fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    InterestGroupState g =
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military);
+    g.influence = 1.5;
+    state.interest_groups.push_back(g);
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("influence") != std::string::npos);
+}
+
+TEST_CASE("military_pressure: non-finite military_loyalty fails preflight") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.5, "GER"));
+    state.countries[0].government_authority.military_loyalty =
+        std::nan("");
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military));
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("military_loyalty") != std::string::npos);
+}
+
+TEST_CASE("military_pressure: preflight failure leaves every country untouched (atomicity)") {
+    // Country 0 has a valid Military group; country 1 owns a group
+    // with bad influence. Country 0 must NOT mutate.
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.countries.push_back(country_with_military_loyalty(0.6, "FRA"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.1, 0.5,
+                 InterestGroupKind::Military, "ger_army"));
+    InterestGroupState bad =
+        group_at(CountryId{1}, 0.5, 0.5, 1.0,
+                 InterestGroupKind::Military, "fra_army");
+    bad.influence = 1.5;  // invalid
+    state.interest_groups.push_back(bad);
+
+    const double ger_before =
+        state.countries[0].government_authority.military_loyalty;
+    const double fra_before =
+        state.countries[1].government_authority.military_loyalty;
+
+    const auto r = ig::military_pressure(state);
+    REQUIRE(r.failed());
+    CHECK(state.countries[0].government_authority.military_loyalty
+          == doctest::Approx(ger_before));
+    CHECK(state.countries[1].government_authority.military_loyalty
+          == doctest::Approx(fra_before));
+}
+
+TEST_CASE("military_pressure: clamp keeps military_loyalty inside [0, 1]") {
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(1.0, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/1.0, 0.5, 1.0,
+                 InterestGroupKind::Military));
+
+    REQUIRE(ig::military_pressure(state).ok());
+    CHECK(state.countries[0].government_authority.military_loyalty >= 0.0);
+    CHECK(state.countries[0].government_authority.military_loyalty <= 1.0);
+}
+
+TEST_CASE("military_pressure: M3.4 sibling fields stay byte-identical") {
+    // M3.9 mutation surface is military_loyalty ONLY. The other
+    // three authority sub-fields must NOT move.
+    GameState state;
+    state.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    state.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.1, 0.7,
+                 InterestGroupKind::Military, "ger_army"));
+
+    const double bc_before =
+        state.countries[0].government_authority.bureaucratic_compliance;
+    const double ic_before =
+        state.countries[0].government_authority.intelligence_capability;
+    const double mc_before =
+        state.countries[0].government_authority.media_control;
+
+    REQUIRE(ig::military_pressure(state).ok());
+
+    CHECK(state.countries[0].government_authority.bureaucratic_compliance
+          == doctest::Approx(bc_before));
+    CHECK(state.countries[0].government_authority.intelligence_capability
+          == doctest::Approx(ic_before));
+    CHECK(state.countries[0].government_authority.media_control
+          == doctest::Approx(mc_before));
+}
+
+TEST_CASE("military_pressure: trace pointer emits one row per updated country") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 1, 31);
+    s.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    // One Military + one Workers group; only Military feeds.
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, /*loyalty=*/0.9, /*radicalism=*/0.2,
+                 /*influence=*/0.6,
+                 InterestGroupKind::Military, "ger_army"));
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.4, 0.6, 0.4,
+                 InterestGroupKind::Workers, "ger_workers"));
+
+    std::vector<ig::MilitaryPressureTraceRow> trace;
+    const auto r = ig::military_pressure(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 1);
+    REQUIRE(trace.size() == 1u);
+
+    const auto& row = trace[0];
+    CHECK(row.date            == leviathan::core::GameDate(1930, 1, 31));
+    CHECK(row.country_id      == 0);
+    CHECK(row.country_id_code == "GER");
+    CHECK(row.matched_groups  == 1);
+    // weight_sum = 0.6 (only Military counts).
+    CHECK(row.weight_sum == doctest::Approx(0.6));
+    // weighted_military_loyalty = (0.6 * 0.9) / 0.6 = 0.9
+    CHECK(row.weighted_military_loyalty == doctest::Approx(0.9));
+    CHECK(row.target_military_loyalty ==
+          doctest::Approx(row.weighted_military_loyalty));
+    CHECK(row.military_loyalty_before == doctest::Approx(0.4));
+    CHECK(row.military_loyalty_after  == doctest::Approx(0.405));
+    CHECK(row.military_loyalty_delta  == doctest::Approx(0.005));
+}
+
+TEST_CASE("military_pressure: trace pointer adds no row for skipped country") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_with_military_loyalty(0.5, "GER"));
+    // Bureaucracy-only group → M3.9 skips.
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.1, 0.6,
+                 InterestGroupKind::Bureaucracy));
+
+    std::vector<ig::MilitaryPressureTraceRow> trace;
+    const auto r = ig::military_pressure(s, &trace);
+    REQUIRE(r.ok());
+    CHECK(r.value().countries_updated == 0);
+    CHECK(trace.empty());
+}
+
+TEST_CASE("military_pressure: trace pointer adds no partial rows on preflight failure") {
+    GameState s;
+    s.current_date = leviathan::core::GameDate(1930, 6, 1);
+    s.countries.push_back(country_with_military_loyalty(0.5, "GER"));
+    s.interest_groups.push_back(
+        group_at(CountryId{0}, 0.7, 0.3, 0.5,
+                 InterestGroupKind::Military, "g1"));
+    s.interest_groups.push_back(
+        group_at(CountryId{99}, 0.5, 0.5, 0.5,
+                 InterestGroupKind::Military, "g2"));
+
+    std::vector<ig::MilitaryPressureTraceRow> trace;
+    const auto r = ig::military_pressure(s, &trace);
+    REQUIRE(r.failed());
+    CHECK(trace.empty());
+}
+
+TEST_CASE("military_pressure: null vs non-null trace produce byte-identical state (single group)") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base;
+    base.current_date = leviathan::core::GameDate(1930, 1, 31);
+    base.countries.push_back(country_with_military_loyalty(0.4, "GER"));
+    base.interest_groups.push_back(
+        group_at(CountryId{0}, 0.9, 0.1, 0.6,
+                 InterestGroupKind::Military, "ger_army"));
+
+    GameState s_null  = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::military_pressure(s_null,  nullptr).ok());
+    std::vector<ig::MilitaryPressureTraceRow> trace;
+    REQUIRE(ig::military_pressure(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    CHECK(dg::compare_states(s_null, s_trace, opts).empty());
+    CHECK(s_null.countries[0].government_authority.military_loyalty
+          == s_trace.countries[0].government_authority.military_loyalty);
+    REQUIRE(trace.size() == 1u);
+}
+
+TEST_CASE("military_pressure: null vs non-null trace are byte-identical when every country is skipped") {
+    namespace dg = leviathan::systems::diagnostics;
+
+    GameState base;
+    base.countries.push_back(country_with_military_loyalty(0.5, "GER"));
+    base.interest_groups.push_back(
+        group_at(CountryId{0}, 0.7, 0.3, 0.5,
+                 InterestGroupKind::Workers, "ger_workers"));
+
+    GameState s_null  = base;
+    GameState s_trace = base;
+
+    REQUIRE(ig::military_pressure(s_null,  nullptr).ok());
+    std::vector<ig::MilitaryPressureTraceRow> trace;
+    REQUIRE(ig::military_pressure(s_trace, &trace).ok());
+
+    dg::CompareOptions opts;
+    opts.double_tolerance = 0.0;
+    CHECK(dg::compare_states(s_null, s_trace, opts).empty());
+    CHECK(trace.empty());
+}

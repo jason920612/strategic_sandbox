@@ -11,7 +11,56 @@
   opens with M3.1 introducing the political-actor data
   layer. See `docs/milestone-2-result.md` for the M2 exit
   report.
-- Latest shipped sub-milestone: **M3.8 — null-trace baseline
+- Latest shipped sub-milestone: **M3.9 — InterestGroup-
+  derived `military_loyalty` pressure (sibling of M3.4).**
+  Adds the second authority-layer pressure channel:
+  Military-kind interest groups' influence-weighted loyalty
+  drifts each country's `government_authority.military_loyalty`
+  toward that target at rate
+  `kInterestGroupMilitaryPressureRate = 0.01` (same value as
+  M3.4 — the two authority channels are siblings, not
+  nested). New `military_pressure(state, trace_out = nullptr)`
+  free function alongside the existing `authority_pressure`,
+  formula-line-for-line mirrored but with `kind == Military`
+  filter and writing `military_loyalty` instead of
+  `bureaucratic_compliance`. New `MilitaryPressureOutcome` +
+  `MilitaryPressureTraceRow` POD types follow the M3.6 trace
+  shape. Wired into `tick_all_countries` as the FOURTH global
+  step AFTER `authority_pressure`. `MonthlyOutcome` gains
+  `interest_group_military_countries_updated` counter +
+  `interest_group_military_pressure_trace_rows` vector.
+  Strict preflight on every input the step actually reads
+  (group.country / group.influence / group.loyalty /
+  country.military_loyalty, all finite + `[0, 1]`); a single
+  bad entry leaves every country byte-identical. Skip rules
+  identical to M3.4 (no Military group → no mutation, zero
+  total Military influence → no mutation). The other three
+  `government_authority` sub-fields (M3.4's
+  `bureaucratic_compliance`, plus the still-inert
+  `intelligence_capability` and `media_control`) are
+  byte-identical before / after the call — pinned by a
+  dedicated unit test. Trace pointer semantics inherited
+  from the M3.6 / M3.8 pattern (null-vs-non-null
+  byte-identical state). **No save schema bump (still v11)**;
+  the M3.9 mutation surface (`government_authority.military_loyalty`)
+  has been a save-schema-required field since M2.16's v10
+  bump. **No new artefact (still 8 files)**: the trace
+  vector surfaces through `MonthlyOutcome` but the runner
+  does not write a per-system CSV yet — that's an M3.10
+  candidate, mirroring how M3.4 originally shipped before
+  M3.6 retrofitted CSVs for the M3.3 / M3.4 pair. **No
+  formula change to M3.2 / M3.3 / M3.4, no new
+  `InterestGroupKind` variants, no new
+  `PlayerCommandKind`, no events / AI / UI / CLI / REPL,
+  no command-gate integration, no
+  `intelligence_capability` / `media_control` channel
+  (each its own future PR), no atomic `end_tick` writes,
+  no per-kind balancing change.** 18 new doctest cases.
+  M3 integration test extended (the helper state now carries
+  one Military-kind group so test A asserts all FOUR M3
+  reaction systems mutate as expected and surface all
+  THREE trace vectors).
+- Previously shipped: **M3.8 — null-trace baseline
   strengthened to byte-for-byte equivalence.** Tests-only
   follow-up to M3.6. Closes the PR #55 reviewer non-blocker
   nit: the pre-M3.8 baseline tests only proved "a mutation
@@ -270,22 +319,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M3.8): **M3.9** — open.
-  With four reaction-loop legs (M3.2 / M3.3 / M3.4), the
-  M3.5 state-surface CSV, the M3.6 outcome-trace CSVs, the
-  M3.7 integration checkpoint, and the M3.8 null-trace
-  byte-for-byte baseline all in place, natural next steps
-  include (a) a sibling authority channel (e.g. Military
-  loyalty → `military_loyalty`), (b) interest-group
-  integration into the M2.18 / M2.19 command-execution
-  gate, (c) influence drift driven by event / policy
-  outcomes, (d) a second feedback input weighting loyalty
-  alongside radicalism for the stability channel, (e) M3.2
-  `react` per-mutation trace as a third trace CSV. None
-  committed.
+- Next sub-milestone candidate (post-M3.9): **M3.10** — open.
+  Natural candidates after the second authority sibling
+  shipped: (a) per-system CSV file for `military_pressure`
+  — `interest_group_military_pressure.csv`, smallest
+  possible follow-up mirroring the M3.6 retrofit; (b) the
+  third sibling authority channel (`intelligence_capability`
+  or `media_control`); (c) interest-group integration into
+  the M2.18 / M2.19 command-execution gate; (d) influence
+  drift driven by event / policy outcomes; (e) a second
+  feedback input weighting loyalty alongside radicalism for
+  the stability channel; (f) M3.2 `react` per-mutation
+  trace as a third trace CSV. None committed.
 - M0 closed. M1 closed. M2 closed. M3 in progress (M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8
-  shipped). See `docs/milestone-0-result.md`,
+  + M3.9 shipped). See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, and
   `docs/milestone-2-result.md` for the exit reports;
   `docs/milestone-3-checkpoint.md` for the M3 mid-milestone
@@ -314,9 +362,9 @@ RFC-090 §M1) is complete; **Milestone 2** (player-operation
 prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is in progress with M3.1 + M3.2
-+ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 shipped
-(M3 NOT closed — see `docs/milestone-3-checkpoint.md`).
-Forty-six sub-milestones shipped:
++ M3.3 + M3.4 + M3.5 + M3.6 + M3.7 checkpoint + M3.8 + M3.9
+shipped (M3 NOT closed — see `docs/milestone-3-checkpoint.md`).
+Forty-seven sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -463,6 +511,28 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M3.9 InterestGroup-derived military_loyalty pressure
+(sibling of M3.4) — second authority-layer pressure
+channel: Military-kind influence-weighted loyalty drifts
+`country.government_authority.military_loyalty` at the
+same 0.01 rate as M3.4 (siblings, not nested). New
+`military_pressure(state, trace_out = nullptr)` free
+function, `MilitaryPressureOutcome` counter, and
+`MilitaryPressureTraceRow` (10 fields mirroring
+`AuthorityPressureTraceRow`). Wired into
+`tick_all_countries` as the fourth global step AFTER
+`authority_pressure`. `MonthlyOutcome` gains a counter +
+trace vector. Strict preflight on every input the step
+actually reads. Skip rules identical to M3.4. The other
+three `government_authority` sub-fields are byte-
+identical. Trace pointer follows the M3.6 / M3.8 pattern
+(null-vs-non-null byte-identical state). **No save
+schema bump (still v11), no new artefact (still 8 —
+per-system CSV deferred to M3.10), no formula change to
+M3.2 / M3.3 / M3.4, no events / AI / UI / CLI / REPL,
+no command-gate integration, no `intelligence_capability`
+/ `media_control` channel.** 18 new doctest cases.
+Doctest count 748 → 766;
 **M3.8 null-trace baseline strengthened to byte-for-byte
 equivalence — tests-only follow-up to M3.6 closing PR #55
 reviewer non-blocker. Six new doctest cases prove that
