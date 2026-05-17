@@ -27,14 +27,27 @@ enum class PlayerCommandKind {
     // M1.5 atomicity, M1.15 active_policies tracking, and the
     // M1.15 `kMaxTrackedPolicyDurationDays` cap all apply.
     EnactPolicy,
+
+    // M2.5: adjust one budget category on the player country by a
+    // delta. `budget_category` must name one of the seven
+    // `BudgetState` fields (administration, military, education,
+    // welfare, intelligence, infrastructure, industry).
+    // `budget_delta` must be finite (NaN / Inf rejected at apply
+    // time). The resulting value is clamped to [0, 1] post-add,
+    // matching M1.5's clamp policy for ratio fields.
+    AdjustBudget,
 };
 
 struct PlayerCommand {
     PlayerCommandKind kind = PlayerCommandKind::EnactPolicy;
 
-    // EnactPolicy payload: the policy's `id_code`. Unused for other
-    // kinds; future variants may carry additional fields.
+    // EnactPolicy payload: the policy's `id_code`. Unused for
+    // AdjustBudget.
     std::string policy_id_code;
+
+    // AdjustBudget payload (M2.5). Unused for EnactPolicy.
+    std::string budget_category;
+    double      budget_delta = 0.0;
 };
 
 // One entry of the player command log (M2.4).

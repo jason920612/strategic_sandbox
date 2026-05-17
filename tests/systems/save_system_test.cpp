@@ -940,6 +940,66 @@ TEST_CASE("deserialize: v9 applied_commands entry missing policy_id_code is reje
     CHECK(r.error().find("policy_id_code")      != std::string::npos);
 }
 
+TEST_CASE("save + load: AdjustBudget applied_commands entry round-trips (M2.5)") {
+    TempFile tmp("leviathan_test_save_adjust_budget_log.json");
+    GameState before = build_seeded_state();
+    leviathan::core::AppliedPlayerCommand a;
+    a.applied_on = GameDate(1930, 5, 1);
+    a.command.kind            = leviathan::core::PlayerCommandKind::AdjustBudget;
+    a.command.budget_category = "military";
+    a.command.budget_delta    = 0.04;
+    before.applied_commands.push_back(a);
+    REQUIRE(ss::save(before, tmp.path).ok());
+
+    const auto r = ss::load(tmp.path);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().applied_commands.size() == 1u);
+    const auto& entry = r.value().applied_commands[0];
+    CHECK(entry.applied_on            == GameDate(1930, 5, 1));
+    CHECK(entry.command.kind          ==
+          leviathan::core::PlayerCommandKind::AdjustBudget);
+    CHECK(entry.command.budget_category == "military");
+    CHECK(entry.command.budget_delta    == doctest::Approx(0.04));
+}
+
+TEST_CASE("deserialize: v9 AdjustBudget entry missing budget_category is rejected") {
+    const std::string text = R"({
+        "save_version": 9,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "player_country": -1,
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [], "logs": [],
+        "applied_commands": [
+            { "applied_on": "1930-05-01",
+              "command": { "kind": "AdjustBudget", "budget_delta": 0.04 } }
+        ]
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("applied_commands[0]") != std::string::npos);
+    CHECK(r.error().find("budget_category")     != std::string::npos);
+}
+
+TEST_CASE("deserialize: v9 AdjustBudget entry missing budget_delta is rejected") {
+    const std::string text = R"({
+        "save_version": 9,
+        "rng_algorithm_version": 1,
+        "current_date": "1930-01-01",
+        "player_country": -1,
+        "rng": {"seed": 0, "counter": 0},
+        "countries": [], "logs": [],
+        "applied_commands": [
+            { "applied_on": "1930-05-01",
+              "command": { "kind": "AdjustBudget", "budget_category": "military" } }
+        ]
+    })";
+    const auto r = ss::deserialize(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("applied_commands[0]") != std::string::npos);
+    CHECK(r.error().find("budget_delta")        != std::string::npos);
+}
+
 TEST_CASE("deserialize: v9 applied_commands entry missing command sub-object is rejected") {
     const std::string text = R"({
         "save_version": 9,

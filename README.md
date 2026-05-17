@@ -8,28 +8,29 @@
 
 - Phase: **Milestone 2 — player-operation prototype (in progress).**
   M1 single-country internal-politics prototype is closed.
-- Latest shipped sub-milestone: **M2.4 — Player command log.** New
-  `core::AppliedPlayerCommand{applied_on, command}` type and new
-  `GameState::applied_commands` vector. `systems::commands::apply_pending`
-  now appends one log entry per successful per-command dispatch,
-  AFTER the M1.5 / M1.15 mutations land — so per-command
-  atomicity covers the log too (failed commands stay in the queue
-  and do NOT log). `applied_on` captures `state.current_date` at
-  apply time. **Save format bumped v8 → v9** with
-  `"applied_commands"` as a required root-level array of
-  `{applied_on, command:{kind, policy_id_code}}` objects. v8 saves
-  rejected loudly; missing field / malformed date / unknown kind /
-  missing `policy_id_code` / missing `command` sub-object all
-  rejected with `applied_commands[N]` in the error message.
-  Foundation for future deterministic replay (RFC-050 §8). M1
-  systems and M1.17's 5-artefact byte-identical determinism
-  contract are unchanged — no simulation system reads
-  `applied_commands`.
-- Next sub-milestone candidates: **M2.5** (additional
-  `PlayerCommandKind` variants — `AdjustBudget`, `ChangeTaxBurden`,
-  etc.; save-neutral) or **M2.6** (deterministic replay primitive
-  — re-issue logged commands against a fresh-loaded scenario and
-  verify state convergence).
+- Latest shipped sub-milestone: **M2.5 — `AdjustBudget` player
+  command.** Extends `PlayerCommandKind` with one new variant and
+  `PlayerCommand` with two new payload fields (`budget_category`
+  string + `budget_delta` double). `systems::commands::apply_pending`
+  gains a new switch arm: validates the category against the 7
+  `BudgetState` field names + the delta is finite, applies
+  `budget.<category> += delta` and clamps to `[0, 1]`. Per-command
+  atomicity (M2.3) and log-on-success (M2.4) automatically apply.
+  `save_system` kind ↔ string mapping grows to handle
+  `"AdjustBudget"`; per-kind JSON shape emits only the relevant
+  payload fields. **No save format bump** (still v9) — the array
+  shape is unchanged, only the kind-string set grew, and the
+  existing strict-required-fields-per-kind validator already
+  provides loud rejection on old binaries. Drive-by: PR #32
+  reviewer nit addressed by changing the `to_string` fallback to
+  `"UnknownPlayerCommandKind"` (sentinel) so an unhandled-enum
+  bug surfaces in saves rather than silently masquerading as
+  `EnactPolicy`.
+- Next sub-milestone candidates: **M2.6** (deterministic replay
+  primitive — re-issue every entry of a save's `applied_commands`
+  against a fresh-loaded scenario and verify state convergence;
+  save-neutral) or **M2.7** (further `PlayerCommandKind` variants,
+  e.g. `ChangeTaxBurden`, `ToggleMartialLaw`).
 - M0 closed. M1 closed. See `docs/milestone-0-result.md` for the
   M0 exit report, `docs/milestone-1-result.md` for the M1 exit
   report, and `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -53,8 +54,8 @@ the round-trip.
 
 **Milestone 1** (single-country internal politics prototype,
 RFC-090 §M1) is complete; **Milestone 2** (player-operation prototype,
-RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 merged.
-Twenty-one sub-milestones shipped:
+RFC-090 §M2) has begun with M2.1 + M2.2 + M2.3 + M2.4 + M2.5
+merged. Twenty-two sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -145,7 +146,17 @@ format bumped v8 → v9** with `"applied_commands"` as a required
 root-level array; v8 saves rejected loudly; malformed entries
 all rejected with `applied_commands[N]` in the error. Foundation
 for future deterministic replay (RFC-050 §8). No M1 system
-behaviour change.**
+behaviour change; **M2.5 AdjustBudget player command — extends
+`PlayerCommandKind` + `PlayerCommand` (new `budget_category` +
+`budget_delta` fields). `apply_pending` gains a new switch arm
+that validates the 7-category whitelist + finite delta, then
+applies `budget.<category> += delta` and clamps to `[0, 1]`.
+Per-command atomicity (M2.3) and log-on-success (M2.4) shared
+unchanged. Save kind mapping grows to handle `"AdjustBudget"`
+with per-kind JSON shape. No save format bump (still v9). Drive-
+by: `player_command_kind_to_string` fallback now returns
+`"UnknownPlayerCommandKind"` sentinel rather than a real kind
+string, addressing the PR #32 reviewer nit.**
 
 ## Repository layout
 
@@ -300,13 +311,22 @@ For multi-config generators (Visual Studio, Xcode):
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-As of M2.4 there are **483 doctest cases**. M0 contributed 179;
+As of M2.5 there are **494 doctest cases**. M0 contributed 179;
 M1.1 added 9; M1.2 added 17; M1.3 added 9; M1.4 added 17; M1.5
 added 24; M1.6 added 17; M1.7 added 16; M1.8 added 19; M1.9 added
 11; M1.10 added 9; M1.11 added 25; M1.12 added 15; M1.13 added 15;
 M1.14 added 17; M1.15 added 15; M1.16 added 18; M1.17 added 3
 end-to-end integration tests; M2.1 added 17; M2.2 added 10; M2.3
-added 8; M2.4 adds 13 covering player command log: 5
+added 8; M2.4 added 13; M2.5 adds 11 covering the AdjustBudget
+kind: 8 commands_test cases (delta mutates target field; negative
+delta shrinks; overshoot clamps to 1.0; undershoot clamps to 0.0;
+unknown `budget_category` rejected with no mutation; non-finite
+`budget_delta` rejected; AdjustBudget log entry carries correct
+category + delta; mixed-kind queue applies both in insertion order
+with both kinds logged) and 3 save_system_test cases (AdjustBudget
+log entry round-trips category + delta; v9 entry missing
+`budget_category` rejected; v9 entry missing `budget_delta`
+rejected). Previously M2.4 added 13 covering player command log: 5
 commands_test cases (successful enact appends one entry; multiple
 successes append in insertion order; failed command does NOT log
 (per-command atomicity); `applied_on` captures `state.current_date`
