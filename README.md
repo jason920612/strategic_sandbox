@@ -14,7 +14,56 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.6 — HTML viewer
+- Latest shipped sub-milestone: **M4.7 — HTML legend
+  skeleton.** Adds a static `<ul class="legend">` to
+  `map.html` immediately after the inline SVG so a viewer
+  can decode which palette colour belongs to which country.
+  One `<li data-owner="N">` per `state.countries[i]`, in
+  vector order; content is `<svg class="swatch"
+  viewBox="0 0 16 16">...<circle ... fill="<palette>"/>
+  </svg>` + `"id_code &mdash; name"` text. The per-row
+  swatch is a tiny inline SVG (not an HTML element with
+  `background-color`), so the M4.6 "no inline `style="..."`
+  on individual elements" constraint stays unbroken — the
+  `fill` attribute on `<circle>` is an SVG presentation
+  attribute, not an HTML inline style. Three new CSS rules
+  join the M4.6 block: `.legend { list-style: none;
+  padding: 0; margin: 20px auto; max-width: 1000px;
+  font-family: sans-serif; }`, `.legend li { display: flex;
+  align-items: center; margin: 4px 0; }`, `.legend .swatch
+  { width: 16px; height: 16px; margin-right: 8px;
+  flex-shrink: 0; }`. Text content XML-text-escaped via the
+  M4.4 `xml_text_escape` helper. Empty `state.countries`
+  produces an empty `<ul>` (always-present-file contract
+  preserved). **`provinces.svg` byte output unchanged** —
+  the legend lives only in the HTML wrapper; the standalone
+  SVG path stays CSS-free, legend-free for downstream
+  consumers (SVG-to-PNG pipelines, vector tools). All M4.5
+  / M4.6 nots preserved: no JavaScript, no `<script>`, no
+  `<link>`, no inline event attributes, no inline `style="..."`
+  per element, no `<meta name="viewport">`, no CSS
+  animations / transitions / media queries / `@import` /
+  `@font-face`. M4.4 `<text>` font-family / font-size
+  contract on the elements themselves preserved. Artefact
+  set unchanged (still 10). Save format unchanged (still
+  v12). M1.17 / M2.22 / M3.7 byte-identical determinism
+  contracts continue to pass by construction. 9 new doctest
+  cases (8 svg_export + 1 runner; 819 total). **M4 in
+  progress.** **No JavaScript / `<script>`, no `<link>`
+  external stylesheet, no inline event attributes, no
+  inline `style="..."`, no `<meta name="viewport">`, no CSS
+  animations / transitions / media queries / `@import` /
+  `@font-face`, no click handlers, no clickable UI, no
+  hover state, no tooltips, no state mutation from the
+  viewer, no font-family / font-size on the SVG `<text>`
+  elements themselves, no ownership dynamics, no neighbour
+  / adjacency edges, no terrain / resources / population
+  overlays, no events, no AI, no command integration, no
+  new `PlayerCommandKind`, no runner CLI flag, no new
+  artefact (still 10), no save schema bump (still v12), no
+  new state field, no new gameplay, no atomic `end_tick`
+  writes, no change to `provinces.svg` bytes.**
+- Previously shipped: **M4.6 — HTML viewer
   minimal CSS skeleton.** Adds the smallest possible
   inline `<style>` block to the M4.5 HTML wrapper — three
   CSS selectors that centre the SVG card on a neutral page,
@@ -545,24 +594,24 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.6): **M4.7** — open.
+- Next sub-milestone candidate (post-M4.7): **M4.8** — open.
   M4.1 shipped the data layer, M4.2 the first SVG renderer,
   M4.3 the owner-keyed palette, M4.4 the per-node labels,
-  M4.5 the HTML viewer wrapper, M4.6 the minimal CSS;
-  natural next steps include (a) a clickable map /
-  country-panel surface, (b) a legend mapping owner indices
-  to country id_codes inside the viewer, (c) hover state /
-  tooltips, (d) richer node fields (neighbour adjacency,
+  M4.5 the HTML viewer wrapper, M4.6 the minimal CSS,
+  M4.7 the legend; natural next steps include (a) a
+  clickable map / country-panel surface, (b) hover state /
+  tooltips, (c) richer node fields (neighbour adjacency,
   terrain, population) once a renderer needs them,
-  (e) `<meta name="viewport">` + media queries for
+  (d) `<meta name="viewport">` + media queries for
   responsive sizing. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 shipped. See `docs/milestone-0-result.md`,
-  `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
-  and `docs/milestone-3-result.md` for the exit reports, and
-  `rfc/RFC-090-roadmap.md` for the full milestone map.
+  M4.4 + M4.5 + M4.6 + M4.7 shipped. See
+  `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
+  `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
+  for the exit reports, and `rfc/RFC-090-roadmap.md` for
+  the full milestone map.
 
 `GameState` is a passive container. Systems shipped in M0:
 `leviathan::systems::time` (date advance + boundary detection);
@@ -588,7 +637,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 shipped. Fifty-three sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 shipped. Fifty-four sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -735,6 +784,48 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.7 HTML legend skeleton — adds a static
+`<ul class="legend">` to `map.html` immediately after the
+inline SVG so a viewer can decode which palette colour
+belongs to which country. One `<li data-owner="N">` per
+`state.countries[i]`, in vector order; row content is a
+tiny 16x16 inline SVG swatch (coloured via
+`color_for_owner(CountryId{i})`) followed by `"id_code
+&mdash; name"` text. Per-row swatch is inline SVG (not an
+HTML `<span>` with `background-color`) so the M4.6 "no
+inline `style="..."` per element" constraint stays
+unbroken — `fill` on `<circle>` is an SVG presentation
+attribute, not an HTML inline style. Three new CSS rules
+(`.legend`, `.legend li`, `.legend .swatch`) join the M4.6
+block for layout (list-style removal, centred `max-width:
+1000px`, flex layout for swatch + text, fixed swatch size).
+Legend text XML-text-escaped via the M4.4 helper. Empty
+`state.countries` produces an empty `<ul>` (always-present
+file contract preserved). **`provinces.svg` byte output
+unchanged** — legend lives only in HTML wrapper;
+standalone-SVG path stays CSS-free / legend-free for
+downstream consumers. All M4.5 / M4.6 nots preserved: no
+JavaScript, no `<script>`, no `<link>`, no inline event
+attributes, no inline `style="..."` per element, no
+`<meta name="viewport">`, no CSS animations / transitions
+/ media queries / `@import` / `@font-face`. **Artefact set
+unchanged (still 10); save format unchanged (still v12);**
+M1.17 / M2.22 / M3.7 byte-identical determinism contracts
+continue to pass by construction. 9 new doctest cases (8
+svg_export + 1 runner; 819 total). **M4 in progress.**
+**No JavaScript / `<script>`, no `<link>` external
+stylesheet, no inline event attributes, no inline
+`style="..."`, no `<meta name="viewport">`, no CSS
+animations / transitions / media queries / `@import` /
+`@font-face`, no click handlers, no clickable UI, no
+hover state, no tooltips, no state mutation from the
+viewer, no font-family / font-size on the SVG `<text>`
+elements themselves, no ownership dynamics, no neighbour /
+adjacency edges, no terrain / resources / population
+overlays, no events, no AI, no command integration, no new
+`PlayerCommandKind`, no runner CLI flag, no save schema
+bump, no new state field, no new gameplay, no atomic
+`end_tick` writes, no change to `provinces.svg` bytes.**;
 **M4.6 HTML viewer minimal CSS skeleton — adds the smallest
 possible inline `<style>` block to the M4.5 HTML wrapper.
 Three CSS selectors: `body { margin: 0; padding: 20px;
