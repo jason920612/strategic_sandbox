@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace leviathan::systems::svg_export {
@@ -19,6 +20,31 @@ std::string fmt_coord(double v) {
     oss.precision(2);
     oss << v;
     return oss.str();
+}
+
+// XML attribute-value escaping. `ProvinceNode::id_code` only
+// guarantees non-empty string; the M3.1 / M4.1 save + scenario
+// loader do NOT restrict the character set, so the renderer
+// MUST escape `&`, `<`, `>`, `"`, `'` to keep the output valid
+// XML and prevent attribute injection (an id_code containing
+// `"` would otherwise close the attribute early). Numeric fields
+// (`data-owner` from `CountryId::value()`, the coord doubles)
+// are emitted via integer / fixed-precision formatters and
+// don't need escaping.
+std::string xml_attr_escape(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        switch (ch) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '"':  out += "&quot;"; break;
+            case '\'': out += "&apos;"; break;
+            default:   out += ch;       break;
+        }
+    }
+    return out;
 }
 
 }  // namespace
@@ -42,7 +68,7 @@ std::string render_provinces(const core::GameState& state) {
                " cy=\"" << cy << "\""
                " r=\"8\""
                " fill=\"black\""
-               " data-id=\"" << p.id_code << "\""
+               " data-id=\"" << xml_attr_escape(p.id_code) << "\""
                " data-owner=\"" << p.owner.value() << "\""
                "/>\n";
     }

@@ -148,3 +148,29 @@ TEST_CASE("write_provinces: empty state still writes a valid SVG file") {
     CHECK(body.find("</svg>") != std::string::npos);
     CHECK(body.find("<circle") == std::string::npos);
 }
+
+TEST_CASE("render_provinces: escapes XML attribute values") {
+    // ProvinceNode::id_code is only required to be non-empty by the
+    // M3.1 / M4.1 save + scenario loader; nothing restricts the
+    // character set. An id_code containing `"` would otherwise close
+    // the attribute early and inject arbitrary content into the
+    // rendered SVG. All five XML attribute-value metacharacters
+    // (& < > " ') must be escaped to their named entities.
+    GameState state;
+    state.provinces.push_back(
+        node("a&b\"c<d>e'f", 0, 0.5, 0.5, "Trouble"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Every metacharacter is replaced by its entity form.
+    CHECK(svg_text.find("a&amp;b&quot;c&lt;d&gt;e&apos;f")
+          != std::string::npos);
+
+    // The raw unescaped sequence MUST NOT appear anywhere in the
+    // output (would mean we emitted literal closing-quote / tag
+    // characters in the attribute body).
+    CHECK(svg_text.find("a&b\"c<d>e'f") == std::string::npos);
+    // Specifically the early-close attack form (a literal
+    // double-quote inside the attribute) MUST NOT appear.
+    CHECK(svg_text.find("data-id=\"a&b\"")
+          == std::string::npos);
+}
