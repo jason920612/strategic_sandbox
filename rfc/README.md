@@ -217,8 +217,45 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.4（SVG
-  labels skeleton）** 在 `provinces.svg` 為每個 `<circle>`
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.5（HTML
+  viewer skeleton）** 把 M4.2–M4.4 的 SVG body 包進一個最小
+  HTML5 document（`map.html`），讓地圖在瀏覽器打開時不再
+  被當成 raw XML。新公開函式
+  `render_map_html(state) → std::string` 與
+  `write_map_html(state, path) → Result<bool>`。內部 refactor
+  抽出 `render_svg_root` helper，讓 `render_provinces` 保持
+  byte-identical（既有 M4.x tests 無需修改就繼續綠燈）。
+  HTML 形狀：`<!DOCTYPE html>` + `<html lang="en">` + 最小
+  `<head>`（`<meta charset="UTF-8">` + `<title>Leviathan
+  Map</title>`）+ `<body>` 內聯 `<svg>` body（不含 XML
+  prolog ── 那行在 HTML 裡是 invalid）。沒有 CSS / 沒有
+  JavaScript / 沒有 `<style>` / 沒有 `<script>` / 沒有
+  `<link>` / 沒有 inline event handler ── M4.5 只做最小
+  wrapper。Inline embed（非 external reference），檔案自成
+  一格，沒有 `file://` vs `http://` CORS 雷區。`end_tick`
+  無條件寫 `map.html`，成為 **第 10 個 artefact**（沿用
+  M3.5 / M3.6 / M4.2 unconditional pattern；第二次滿足
+  `milestone-3-result.md` §5「增加 artefact 需要獨立
+  sub-milestone」規則）。`RunnerOptions::map_html_path`
+  optional override（**沒有 CLI flag**），預設
+  `<output_dir>/map.html`；`RunOutcome::map_html_path` 記錄
+  解析後的 path。M2.9 pre-`end_tick` no-artefact contract
+  自然延伸；M3.6 mid-`end_tick` non-transactional 警語也
+  延伸（仍是 deferred）。M1 / M2 / M3 integration
+  byte-identical determinism contracts 從 9 個 artefact
+  延伸到 10 個。**Artefact 數量現在 10；save 格式不變（仍
+  v12）；`provinces.svg` bytes 與 M4.4 完全相同。**
+  12 個新 doctest cases（7 svg_export + 5 runner；共 804）。
+  **M4 in progress.** **M4.5 不做** click handler / clickable
+  UI / event handler / hover / tooltip / viewer 寫回 state /
+  legend / CSS / `<style>` / JavaScript / `<script>` /
+  `<link>` / inline event attribute / `<meta name="viewport">`
+  / `<text>` 的 font-family / font-size / ownership
+  dynamics / 鄰接 edge / terrain / events / AI / command
+  integration / 新 `PlayerCommandKind` / runner CLI flag /
+  save schema bump / 新 state field / 新 gameplay / atomic
+  `end_tick`。
+  **M4.4（SVG labels skeleton）** 在 `provinces.svg` 為每個 `<circle>`
   加上一個 `<text>` label。Label 位置為
   `(cx, cy + kLabelYOffset)`（新公開常數，22.0），
   `text-anchor="middle"`，內容為 XML-text-escape 過的

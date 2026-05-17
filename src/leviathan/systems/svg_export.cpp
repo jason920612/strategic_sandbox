@@ -71,30 +71,24 @@ std::string xml_text_escape(std::string_view s) {
     return out;
 }
 
-}  // namespace
-
-std::string_view color_for_owner(core::CountryId owner) {
-    const auto v = owner.value();
-    if (v < 0) {
-        return kOwnerFallbackFill;
-    }
-    // The modulo wraps the index back into [0, kOwnerPaletteSize)
-    // so very large scenarios reuse colours rather than over-run
-    // the table. Two countries with `owner.value() % size`
-    // congruent will collide on colour; future sub-milestones
-    // can extend the table or swap strategies if the collision
-    // becomes a real-world UX problem.
-    const auto idx =
-        static_cast<std::size_t>(v) % kOwnerPaletteSize;
-    return kOwnerPalette[idx];
-}
-
-std::string render_provinces(const core::GameState& state) {
+// M4.5: render just the `<svg>...</svg>` element body of the
+// scene — no XML prolog, no HTML wrapper. Shared by:
+//
+//   * `render_provinces` (M4.2 standalone-SVG path), which
+//     prepends the `<?xml ...?>` declaration so the output is
+//     a self-contained SVG document on disk.
+//   * `render_map_html` (M4.5 HTML wrapper), which inlines
+//     this body inside an HTML5 `<body>` element — the XML
+//     declaration is invalid inside an HTML document, so the
+//     helper must NOT emit it.
+//
+// The byte stream produced here is byte-identical regardless
+// of caller (same `state` → same bytes), which is what keeps
+// the M1.17 / M2.22 / M3.7 byte-identical determinism
+// contracts valid for both `provinces.svg` and `map.html`.
+std::string render_svg_root(const core::GameState& state) {
     std::ostringstream out;
 
-    // Header. Always written, even when state.provinces is
-    // empty, so the artefact-on-disk contract is consistent.
-    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     out << "<svg xmlns=\"http://www.w3.org/2000/svg\""
            " viewBox=\"0 0 1000 1000\""
            " width=\"1000\" height=\"1000\">\n";
@@ -132,10 +126,12 @@ std::string render_provinces(const core::GameState& state) {
     return out.str();
 }
 
-core::Result<bool> write_provinces(const core::GameState& state,
+// Write `body` to `path`. Creates parent directories as
+// needed. Used by both `write_provinces` (M4.2) and
+// `write_map_html` (M4.5) so the file-creation contract is
+// identical for both artefacts.
+core::Result<bool> write_string_to(const std::string& body,
                                    const std::filesystem::path& path) {
-    const std::string body = render_provinces(state);
-
     if (path.has_parent_path()) {
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
@@ -157,6 +153,66 @@ core::Result<bool> write_provinces(const core::GameState& state,
             path.string() + ": write failed");
     }
     return core::Result<bool>::success(true);
+}
+
+}  // namespace
+
+std::string_view color_for_owner(core::CountryId owner) {
+    const auto v = owner.value();
+    if (v < 0) {
+        return kOwnerFallbackFill;
+    }
+    // The modulo wraps the index back into [0, kOwnerPaletteSize)
+    // so very large scenarios reuse colours rather than over-run
+    // the table. Two countries with `owner.value() % size`
+    // congruent will collide on colour; future sub-milestones
+    // can extend the table or swap strategies if the collision
+    // becomes a real-world UX problem.
+    const auto idx =
+        static_cast<std::size_t>(v) % kOwnerPaletteSize;
+    return kOwnerPalette[idx];
+}
+
+std::string render_provinces(const core::GameState& state) {
+    // Standalone SVG document: XML prolog + <svg> root. The
+    // prolog is invalid inside an HTML document, which is
+    // why render_map_html calls render_svg_root directly
+    // instead of stripping the prolog from render_provinces's
+    // output.
+    return std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n") +
+           render_svg_root(state);
+}
+
+core::Result<bool> write_provinces(const core::GameState& state,
+                                   const std::filesystem::path& path) {
+    return write_string_to(render_provinces(state), path);
+}
+
+std::string render_map_html(const core::GameState& state) {
+    // Minimal HTML5 wrapper around the inline SVG body. No
+    // CSS, no JavaScript, no `<meta name="viewport">`, no
+    // `<link>`, no event handlers. The wrapper exists purely
+    // so the SVG opens in a browser without the "raw XML"
+    // chrome browsers attach to standalone .svg files. M4.5
+    // ships the minimum viewer; presentation styling is a
+    // future sub-milestone.
+    std::ostringstream out;
+    out << "<!DOCTYPE html>\n";
+    out << "<html lang=\"en\">\n";
+    out << "<head>\n";
+    out << "  <meta charset=\"UTF-8\">\n";
+    out << "  <title>Leviathan Map</title>\n";
+    out << "</head>\n";
+    out << "<body>\n";
+    out << render_svg_root(state);
+    out << "</body>\n";
+    out << "</html>\n";
+    return out.str();
+}
+
+core::Result<bool> write_map_html(const core::GameState& state,
+                                  const std::filesystem::path& path) {
+    return write_string_to(render_map_html(state), path);
 }
 
 }  // namespace leviathan::systems::svg_export

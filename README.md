@@ -14,7 +14,54 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.4 — SVG labels
+- Latest shipped sub-milestone: **M4.5 — HTML viewer
+  skeleton.** Wraps the existing SVG body in a minimal
+  HTML5 document so the map opens cleanly in a browser
+  without the raw-XML chrome standalone `.svg` files
+  attract. New public functions on
+  `leviathan::systems::svg_export`:
+  `render_map_html(state) → std::string` (pure transform)
+  and `write_map_html(state, path) → Result<bool>` (render +
+  file write). Internal refactor extracted a shared
+  `render_svg_root` helper so `render_provinces` continues
+  to emit exactly the same bytes (verified by existing M4.x
+  tests staying green without modification). HTML shape:
+  `<!DOCTYPE html>` + `<html lang="en">` + minimal `<head>`
+  (`<meta charset="UTF-8">` + `<title>Leviathan Map</title>`)
+  + `<body>` containing the inline `<svg>` body (no XML
+  prolog — that line is invalid inside HTML). No CSS / no
+  JavaScript / no `<style>` / no `<script>` / no `<link>` /
+  no inline event handlers — M4.5 ships the minimum
+  wrapper. Inline (not external-reference) embedding chosen
+  so the file is self-contained: no `file://` vs `http://`
+  CORS pitfalls, can be emailed / shared standalone. `end_tick`
+  writes `map.html` UNCONDITIONALLY as the **10th artefact**
+  (mirrors the M3.5 / M3.6 / M4.2 unconditional-artefact
+  pattern; satisfies the M3-exit-report §5 "growing the set
+  needs its own sub-milestone with the contracts documented"
+  rule for the second time). `RunnerOptions::map_html_path`
+  optional override (no CLI flag); default
+  `<output_dir>/map.html`; `RunOutcome::map_html_path` carries
+  the resolved path. M2.9 pre-`end_tick` no-artefact contract
+  extends automatically; M3.6 mid-`end_tick` non-transactional
+  caveat extends similarly (still a deferred item). M1.17 /
+  M2.22 / M3.7 byte-identical determinism contracts extended
+  from 9 to 10 artefacts. Save format unchanged (still v12).
+  `provinces.svg` byte output unchanged from M4.4. 12 new
+  doctest cases (7 svg_export + 5 runner; 804 total).
+  **M4 in progress.** **No click handlers, no clickable UI,
+  no event handlers, no hover state, no tooltips, no state
+  mutation from the viewer, no legend / colour key, no CSS
+  / JavaScript / `<style>` / `<script>` / `<link>` / inline
+  event attributes, no `<meta name="viewport">`, no
+  font-family / font-size on `<text>`, no ownership
+  dynamics, no neighbour / adjacency edges, no terrain /
+  resources / population overlays, no events, no AI, no
+  command integration, no new `PlayerCommandKind`, no
+  runner CLI flag, no save schema bump (still v12), no
+  new state field, no new gameplay, no atomic `end_tick`
+  writes.**
+- Previously shipped: **M4.4 — SVG labels
   skeleton.** Adds one `<text>` label per `<circle>` in
   `provinces.svg`. Each label is positioned at `(cx, cy +
   kLabelYOffset)` with `text-anchor="middle"`, content set
@@ -453,19 +500,20 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.4): **M4.5** — open.
+- Next sub-milestone candidate (post-M4.5): **M4.6** — open.
   M4.1 shipped the data layer, M4.2 the first SVG renderer,
-  M4.3 the owner-keyed palette, M4.4 the per-node labels;
-  natural next steps include (a) an HTML viewer wrapped
-  around the SVG, (b) a clickable map / country-panel
-  surface, (c) a legend mapping owner indices to country
-  id_codes, (d) richer node fields (neighbour adjacency,
-  terrain, population) once a renderer needs them. None
-  committed; reviewer chooses.
+  M4.3 the owner-keyed palette, M4.4 the per-node labels,
+  M4.5 the HTML viewer wrapper; natural next steps include
+  (a) a clickable map / country-panel surface, (b) a legend
+  mapping owner indices to country id_codes inside the
+  viewer, (c) hover state / tooltips, (d) per-`<text>`
+  font sizing for label readability, (e) richer node fields
+  (neighbour adjacency, terrain, population) once a
+  renderer needs them. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 shipped. See `docs/milestone-0-result.md`,
+  M4.4 + M4.5 shipped. See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
   and `docs/milestone-3-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -494,7 +542,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 shipped. Fifty-one sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 shipped. Fifty-two sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -641,6 +689,48 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.5 HTML viewer skeleton — wraps the existing SVG body in
+a minimal HTML5 document so the map opens cleanly in a
+browser without the raw-XML chrome standalone `.svg` files
+attract. New public functions on
+`leviathan::systems::svg_export`:
+`render_map_html(state) → std::string` and
+`write_map_html(state, path) → Result<bool>`. Internal
+refactor extracted a shared `render_svg_root` helper so
+`render_provinces` continues to emit exactly the same bytes
+(existing M4.x tests stay green without modification). HTML
+shape: `<!DOCTYPE html>` + `<html lang="en">` + minimal
+`<head>` (`<meta charset="UTF-8">` + `<title>Leviathan
+Map</title>`) + `<body>` with inline `<svg>` body (no XML
+prolog — invalid inside HTML). No CSS / no JavaScript / no
+`<style>` / no `<script>` / no `<link>` / no inline event
+handlers. Inline (not external-reference) embedding so the
+file is self-contained — no `file://` vs `http://` CORS
+pitfalls. `end_tick` writes `map.html` UNCONDITIONALLY as
+the **10th artefact** (mirrors M3.5 / M3.6 / M4.2 pattern;
+satisfies the M3-exit-report §5 "growing the set needs its
+own sub-milestone" rule for the second time).
+`RunnerOptions::map_html_path` optional override (no CLI
+flag); default `<output_dir>/map.html`;
+`RunOutcome::map_html_path` carries resolution. M2.9
+pre-`end_tick` no-artefact contract extends automatically;
+M3.6 mid-`end_tick` non-transactional caveat extends
+similarly. M1.17 / M2.22 / M3.7 byte-identical determinism
+contracts extended from 9 to 10 artefacts. **Artefact set
+now 10; save format unchanged (still v12); `provinces.svg`
+bytes unchanged from M4.4.** 12 new doctest cases (7
+svg_export + 5 runner; 804 total). **M4 in progress.** **No
+click handlers, no clickable UI, no event handlers, no
+hover state, no tooltips, no state mutation from the
+viewer, no legend / colour key, no CSS / JavaScript /
+`<style>` / `<script>` / `<link>` / inline event
+attributes, no `<meta name="viewport">`, no font-family /
+font-size on `<text>`, no ownership dynamics, no neighbour /
+adjacency edges, no terrain / resources / population
+overlays, no events, no AI, no command integration, no new
+`PlayerCommandKind`, no runner CLI flag, no save schema
+bump, no new state field, no new gameplay, no atomic
+`end_tick` writes.**;
 **M4.4 SVG labels skeleton — adds one `<text>` per `<circle>`
 in `provinces.svg`. Each label positioned at `(cx, cy +
 kLabelYOffset)` with `text-anchor="middle"`, content set to
