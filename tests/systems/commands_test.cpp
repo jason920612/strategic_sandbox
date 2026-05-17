@@ -1305,3 +1305,182 @@ TEST_CASE("M2.19 apply_pending: rejected AdjustBudget stops a mid-list queue") {
     CHECK(q.pending[1].kind            == PlayerCommandKind::EnactPolicy);
     CHECK(q.pending[1].policy_id_code  == "raise_taxes");
 }
+
+// =====================================================================
+// M2.21 - apply_command_script: library-only scripted driver helper
+// =====================================================================
+
+TEST_CASE("M2.21 apply_command_script: empty script is a success no-op") {
+    GameState s = ger_state_with_player_selected();
+    std::vector<PlayerCommand> script;
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.ok());
+    CHECK(r.value().apply.commands_applied == 0);
+    CHECK_FALSE(r.value().rejection.has_value());
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.21 apply_command_script: full success script applies every command + logs") {
+    GameState s = ger_state_with_player_selected();
+    const double tax_before  = s.countries[0].legal_tax_burden;
+    const double mil_before  = s.countries[0].budget.military;
+
+    PlayerCommand enact;
+    enact.kind            = PlayerCommandKind::EnactPolicy;
+    enact.policy_id_code = "raise_taxes";
+
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.02;
+
+    const std::vector<PlayerCommand> script{enact, adjust};
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.ok());
+    CHECK(r.value().apply.commands_applied == 2);
+    CHECK_FALSE(r.value().rejection.has_value());
+
+    // Both effects landed.
+    CHECK(s.countries[0].legal_tax_burden > tax_before);
+    CHECK(s.countries[0].budget.military ==
+          doctest::Approx(mil_before + 0.02));
+    // Both commands logged in order.
+    REQUIRE(s.applied_commands.size() == 2u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(s.applied_commands[1].command.kind ==
+          PlayerCommandKind::AdjustBudget);
+}
+
+TEST_CASE("M2.21 apply_command_script: EnactPolicy rejected surfaces a structured record") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.1;
+
+    PlayerCommand enact;
+    enact.kind            = PlayerCommandKind::EnactPolicy;
+    enact.policy_id_code = "raise_taxes";
+    const std::vector<PlayerCommand> script{enact};
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    const auto& rj = r.value().rejection.value();
+    CHECK(rj.kind            == PlayerCommandKind::EnactPolicy);
+    CHECK(rj.policy_id_code  == "raise_taxes");
+    CHECK(rj.compliance      == doctest::Approx(0.1));
+    CHECK(rj.threshold       == doctest::Approx(0.3));
+    CHECK(r.value().apply.commands_applied == 0);
+    CHECK(s.applied_commands.empty());
+}
+
+TEST_CASE("M2.21 apply_command_script: AdjustBudget(military) rejection records military_loyalty") {
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.military_loyalty = 0.05;
+
+    PlayerCommand adjust;
+    adjust.kind            = PlayerCommandKind::AdjustBudget;
+    adjust.budget_category = "military";
+    adjust.budget_delta    = 0.03;
+    const std::vector<PlayerCommand> script{adjust};
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    CHECK(r.value().rejection.value().kind ==
+          PlayerCommandKind::AdjustBudget);
+    CHECK(r.value().rejection.value().budget_category == "military");
+    CHECK(r.value().rejection.value().compliance ==
+          doctest::Approx(0.05));   // military_loyalty
+}
+
+TEST_CASE("M2.21 apply_command_script: mid-script rejection preserves prior success") {
+    // First command applies; second is rejected; third never runs.
+    GameState s = ger_state_with_player_selected();
+    s.countries[0].government_authority.bureaucratic_compliance = 0.05;
+    s.countries[0].government_authority.military_loyalty        = 0.9;
+
+    PlayerCommand mil;
+    mil.kind            = PlayerCommandKind::AdjustBudget;
+    mil.budget_category = "military";
+    mil.budget_delta    = 0.03;
+
+    PlayerCommand enact;
+    enact.kind            = PlayerCommandKind::EnactPolicy;
+    enact.policy_id_code = "raise_taxes";   // bureaucratic 0.05 -> rejected.
+
+    PlayerCommand wel;
+    wel.kind            = PlayerCommandKind::AdjustBudget;
+    wel.budget_category = "welfare";
+    wel.budget_delta    = 0.05;
+
+    const std::vector<PlayerCommand> script{mil, enact, wel};
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.ok());
+    REQUIRE(r.value().rejection.has_value());
+    CHECK(r.value().rejection.value().kind ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(r.value().rejection.value().policy_id_code == "raise_taxes");
+    CHECK(r.value().apply.commands_applied == 1);
+
+    // Prior AdjustBudget(military) applied + logged.
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::AdjustBudget);
+    // Trailing AdjustBudget(welfare) was NOT applied. The script
+    // helper does not surface remaining commands by design.
+    CHECK(s.countries[0].budget.welfare == doctest::Approx(0.10));
+}
+
+TEST_CASE("M2.21 apply_command_script: unknown policy id_code returns failure") {
+    GameState s = ger_state_with_player_selected();
+
+    PlayerCommand enact;
+    enact.kind            = PlayerCommandKind::EnactPolicy;
+    enact.policy_id_code = "no_such_policy";
+    const std::vector<PlayerCommand> script{enact};
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("unknown policy id_code") != std::string::npos);
+}
+
+TEST_CASE("M2.21 apply_command_script: invalid player_country returns failure") {
+    GameState s;   // no countries, no player.
+    PlayerCommand enact;
+    enact.kind            = PlayerCommandKind::EnactPolicy;
+    enact.policy_id_code = "raise_taxes";
+    const std::vector<PlayerCommand> script{enact};
+
+    const auto r = cmd::apply_command_script(s, script);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("player_country") != std::string::npos);
+}
+
+TEST_CASE("M2.21 apply_command_script: input vector is not mutated") {
+    // The helper builds a local CommandQueue and drains that;
+    // the caller's vector must be left exactly as it was.
+    GameState s = ger_state_with_player_selected();
+
+    PlayerCommand a;
+    a.kind            = PlayerCommandKind::EnactPolicy;
+    a.policy_id_code = "raise_taxes";
+    PlayerCommand b;
+    b.kind            = PlayerCommandKind::AdjustBudget;
+    b.budget_category = "military";
+    b.budget_delta    = 0.01;
+
+    const std::vector<PlayerCommand> script_before{a, b};
+    std::vector<PlayerCommand> script = script_before;
+
+    REQUIRE(cmd::apply_command_script(s, script).ok());
+
+    REQUIRE(script.size() == script_before.size());
+    CHECK(script[0].kind            == script_before[0].kind);
+    CHECK(script[0].policy_id_code  == script_before[0].policy_id_code);
+    CHECK(script[1].kind            == script_before[1].kind);
+    CHECK(script[1].budget_category == script_before[1].budget_category);
+    CHECK(script[1].budget_delta    == script_before[1].budget_delta);
+}

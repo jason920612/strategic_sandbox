@@ -456,6 +456,33 @@ M0 / M1 中落地，部分仍是未來工作：
   **M2.13 不做** save schema 變更（仍 v9）、library 行為變更
   （只是把使用者輸入轉手傳進去）、relative tolerance、per-field
   tolerance、新 gameplay、新 state.logs 條目、M1 system 變更。
+  **M2.21（Command script driver helper）** 在 M2.20 `try_apply_pending`
+  surface 之上新增 library-only convenience function
+  `commands::apply_command_script(state, vector<PlayerCommand>)`。
+  helper 接受一次性 command script（`std::vector<core::PlayerCommand>`），
+  內部建立 local `CommandQueue`、把 script 複製進去、呼叫
+  `try_apply_pending`。Outcome shape 直接重用 M2.20 的
+  `ApplyWithReportOutcome`，沒有新增 parallel struct。Routing
+  完全繼承自 `try_apply_pending`：empty script ⇒ success +
+  `rejection == nullopt`；full drain ⇒ success +
+  `commands_applied == script.size()`；order-execution gate
+  rejection ⇒ success + RejectionRecord；非 execution 錯誤
+  （precondition / NaN delta / unknown policy / unknown category）
+  ⇒ `Result::failure`。Input vector 完全不 mutate（helper copy
+  進 local queue 才 drain）。實作只有三行：建 local queue、copy
+  script、call try_apply_pending。**完全沒有 runner / RunOutcome
+  / main.cpp / CLI / replay / save schema 變更**——刻意維持
+  library-only，runner-level entry point 留給未來 PR（M2.22 候選）
+  在實際有 script input 需求時再做。Helper 主要目的：給未來
+  REPL / scripted test / agent driver / UI 一個乾淨入口，不要在
+  每個 call site 重複 build-queue-then-drain 樣板。對應 RFC-020 §2
+  命令阻力 surface 的「程式化讀取入口」需求。**M2.21 不做** runner
+  / RunOutcome / main.cpp 變更、`--script PATH` CLI flag、
+  remaining-queue surface（rejected 後的 trailing commands 不
+  surface）、persistent attempted command log、`state.logs` 條目、
+  save format 變更（仍 v10）、DataLoader / policy effect / replay
+  primitive 變更、新 `PlayerCommandKind`、新 CSV 欄位、threshold
+  / formula 調整、M1 system 變更、AI / events / scheduler。
   **M2.20（Command rejection reporting）** 把 M2.18 / M2.19 的
   order-execution rejection 做成 **可程式化讀取的結構化結果**，
   完全不動 `apply_pending` 既有 semantics。新增 POD

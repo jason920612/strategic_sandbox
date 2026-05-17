@@ -171,6 +171,44 @@ core::Result<ApplyWithReportOutcome> try_apply_pending(
     core::GameState& state, CommandQueue& q);
 
 // ===========================================================================
+// M2.21 - scripted-driver helper.
+//
+// `apply_command_script` is a thin wrapper over
+// `try_apply_pending` for callers that already have a one-shot
+// list of commands (a "script") rather than a long-lived queue.
+// Internally it copies `script` into a local `CommandQueue` and
+// dispatches through the same per-command pipeline; semantics
+// inherit directly from `try_apply_pending`:
+//
+//   * Empty `script` -> Result::success with
+//     `apply.commands_applied == 0` and
+//     `rejection == std::nullopt`.
+//   * Full drain -> Result::success with
+//     `apply.commands_applied == script.size()` and
+//     `rejection == std::nullopt`.
+//   * Order-execution gate rejection -> Result::success with
+//     `apply.commands_applied` counting the strictly prior
+//     successes and `rejection` populated for the first
+//     rejected command. The rejected command and any commands
+//     behind it are NOT surfaced through the return value —
+//     M2.21 deliberately keeps the API minimal. Callers that
+//     need access to the trailing tail should build a
+//     `CommandQueue` directly and call `try_apply_pending`.
+//   * Non-execution failure (precondition / NaN delta /
+//     unknown policy id_code / unknown budget_category /
+//     policy-effect resolution failure) -> Result::failure
+//     with the same message shape `try_apply_pending` produces.
+//
+// The input `script` vector is NOT mutated: the helper copies
+// elements into the local queue and drains the queue, not the
+// caller's vector. `state` and `state.applied_commands` follow
+// the same atomicity rule as `apply_pending` / `try_apply_pending`:
+// only successful commands mutate state and append to the log.
+core::Result<ApplyWithReportOutcome> apply_command_script(
+    core::GameState& state,
+    const std::vector<core::PlayerCommand>& script);
+
+// ===========================================================================
 // M2.6: replay an applied-command log into a target state.
 // ===========================================================================
 
