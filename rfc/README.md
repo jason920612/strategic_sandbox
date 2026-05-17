@@ -217,9 +217,47 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.8（HTML
-  static province data attributes skeleton）** 把 SVG body
-  裡的 identity surface 加寬：每個 `<circle>` 和每個
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.9（HTML
+  DOM contract checkpoint）** 對應 M3.7 在 M3 反應 loop
+  的角色：**零新行為**，只新增三個 integration tests
+  （`tests/integration/m4_dom_contract_test.cpp`）和一份
+  單頁 snapshot（`docs/milestone-4-checkpoint.md`），正式
+  釘住 M4.2–M4.8 累積出來的 SVG / HTML DOM contract，
+  作為未來 clickable UI sub-milestone 之前的 checkpoint。
+  三條 end-to-end test：(1) 每個 canonical province 在
+  `provinces.svg` 與 `map.html` 兩個 artefact 裡的
+  `<circle>` 與 `<text>` 上都帶齊四個 data-* 屬性；
+  (2) `map.html` legend 與 `state.countries` 一對一對應，
+  每行 `<li data-owner="N">` body 內含該國的 id_code；
+  (3) no-interactivity invariant ── 兩個 artefact 都沒有
+  `<script>` / `<link>` / inline event attribute /
+  per-element `style="..."`，而且 `provinces.svg` 額外
+  保證沒有 `<style>` block 與 `font-family`。snapshot
+  doc 把 artefact 集合、SVG body shape、HTML wrapper
+  shape、identity-surface DOM lookups、未來 M4.x 必須
+  保留的 invariants、deferred items 全部寫在一個地方，
+  讓未來 clickable UI sub-milestone 可以一次看到「現在的
+  contract 長什麼樣」，不必拼湊八份 per-sub-milestone
+  note。**M4 仍在 in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.9 是 checkpoint 不是
+  exit report。renderer bytes 與 M4.8 完全相同 ── 這次
+  只新增 tests + docs。**Artefact 數量不變（仍 10）；
+  save 格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 仍 by construction
+  通過。3 個新 doctest cases（共 830）。**M4 in progress.**
+  **M4.9 不做** 新 system / 新 formula / 新 artefact /
+  save schema bump / 新 state field / 新 fixture /
+  JavaScript / `<script>` / `<link>` / inline event
+  attribute / per-element inline `style="..."` /
+  `<meta name="viewport">` / CSS animation / transition /
+  media query / `@import` / `@font-face` / click handler /
+  clickable UI / hover / tooltip / state mutation / 鄰接
+  edge / terrain / events / AI / command integration /
+  runner CLI flag / atomic `end_tick` / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣 / 動
+  `provinces.svg` 或 `map.html` bytes。
+  **M4.8（HTML static province data attributes skeleton）**
+  把 SVG body 裡的 identity surface 加寬：每個 `<circle>` 和每個
   `<text>` 都會帶相同四個 read-only `data-*` 屬性
   （`data-id`、`data-owner`、`data-owner-code`、
   `data-name`），未來 clickable UI / DOM script 可以對兩個
