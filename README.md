@@ -14,7 +14,52 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.5 — HTML viewer
+- Latest shipped sub-milestone: **M4.6 — HTML viewer
+  minimal CSS skeleton.** Adds the smallest possible
+  inline `<style>` block to the M4.5 HTML wrapper — three
+  CSS selectors that centre the SVG card on a neutral page,
+  give it a thin border so the white-fill body pops, and
+  switch the labels to a sans-serif font so they're more
+  readable than the browser's serif default for SVG
+  `<text>`. Selectors: `body { margin: 0; padding: 20px;
+  background-color: #f0f0f0; }`, `svg { display: block;
+  margin: 0 auto; border: 1px solid #888; background-color:
+  #ffffff; }`, `svg text { font-family: sans-serif; }`. The
+  `<style>` block sits at 2-space indent inside `<head>`
+  alongside the existing `<meta>` and `<title>`. `provinces.svg`
+  byte output is **unchanged** — the CSS lives only in the
+  HTML wrapper; the standalone-SVG path stays CSS-free for
+  downstream consumers (SVG-to-PNG pipelines, vector tools).
+  All M4.5 nots preserved: no JavaScript, no `<script>`, no
+  `<link>` to external stylesheet, no inline event
+  attributes (`onclick` / `onmouseover` / `onload` / ...),
+  no `<meta name="viewport">`, no inline `style="..."` on
+  individual elements. M4.4 `<text>` font-family / font-size
+  contract preserved on the elements themselves — only the
+  CSS selector `svg text` sets the font, which applies only
+  to the HTML viewer. M1.17 / M2.22 / M3.7 byte-identical
+  determinism contracts continue to pass by construction.
+  Artefact set unchanged (still 10). Save format unchanged
+  (still v12). 6 new doctest cases (5 svg_export + 1 runner;
+  the M4.5 "no `<style>`" test was retuned to drop its
+  `<style>` assertion and add an inline-`style=` check;
+  810 total). **M4 in progress.** **No JavaScript / `<script>`,
+  no `<link>` external stylesheet, no inline event
+  attributes, no inline `style="..."`, no `<meta name="viewport">`,
+  no per-province / per-element CSS override, no CSS
+  animations / transitions / media queries / `@import` /
+  `@font-face`, no click handlers, no clickable UI, no
+  hover state, no tooltips, no state mutation from the
+  viewer, no legend / colour key, no font-family /
+  font-size on the `<text>` elements themselves, no
+  ownership dynamics, no neighbour / adjacency edges, no
+  terrain / resources / population overlays, no events, no
+  AI, no command integration, no new `PlayerCommandKind`,
+  no runner CLI flag, no new artefact (still 10), no save
+  schema bump (still v12), no new state field, no new
+  gameplay, no atomic `end_tick` writes, no change to
+  `provinces.svg` bytes.**
+- Previously shipped: **M4.5 — HTML viewer
   skeleton.** Wraps the existing SVG body in a minimal
   HTML5 document so the map opens cleanly in a browser
   without the raw-XML chrome standalone `.svg` files
@@ -500,20 +545,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.5): **M4.6** — open.
+- Next sub-milestone candidate (post-M4.6): **M4.7** — open.
   M4.1 shipped the data layer, M4.2 the first SVG renderer,
   M4.3 the owner-keyed palette, M4.4 the per-node labels,
-  M4.5 the HTML viewer wrapper; natural next steps include
-  (a) a clickable map / country-panel surface, (b) a legend
-  mapping owner indices to country id_codes inside the
-  viewer, (c) hover state / tooltips, (d) per-`<text>`
-  font sizing for label readability, (e) richer node fields
-  (neighbour adjacency, terrain, population) once a
-  renderer needs them. None committed; reviewer chooses.
+  M4.5 the HTML viewer wrapper, M4.6 the minimal CSS;
+  natural next steps include (a) a clickable map /
+  country-panel surface, (b) a legend mapping owner indices
+  to country id_codes inside the viewer, (c) hover state /
+  tooltips, (d) richer node fields (neighbour adjacency,
+  terrain, population) once a renderer needs them,
+  (e) `<meta name="viewport">` + media queries for
+  responsive sizing. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 shipped. See `docs/milestone-0-result.md`,
+  M4.4 + M4.5 + M4.6 shipped. See `docs/milestone-0-result.md`,
   `docs/milestone-1-result.md`, `docs/milestone-2-result.md`,
   and `docs/milestone-3-result.md` for the exit reports, and
   `rfc/RFC-090-roadmap.md` for the full milestone map.
@@ -542,7 +588,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 shipped. Fifty-two sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 shipped. Fifty-three sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -689,6 +735,47 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.6 HTML viewer minimal CSS skeleton — adds the smallest
+possible inline `<style>` block to the M4.5 HTML wrapper.
+Three CSS selectors: `body { margin: 0; padding: 20px;
+background-color: #f0f0f0; }` (zero browser margin + small
+breathing room + neutral grey page bg so the white SVG card
+pops), `svg { display: block; margin: 0 auto; border: 1px
+solid #888; background-color: #ffffff; }` (centre + bordered
+"card"), `svg text { font-family: sans-serif; }` (fix the
+browser's serif default for SVG `<text>`, which renders
+small labels poorly). `<style>` sits at 2-space indent
+inside `<head>` alongside `<meta>` + `<title>`.
+**`provinces.svg` byte output unchanged** — CSS lives only
+in the HTML wrapper; the standalone-SVG path stays CSS-free
+for downstream consumers (SVG-to-PNG pipelines, vector
+tools). All M4.5 nots preserved: no JavaScript, no
+`<script>`, no `<link>`, no inline event attributes, no
+`<meta name="viewport">`, no inline `style="..."` on
+individual elements. M4.4 `<text>` font-family / font-size
+contract preserved on the elements themselves; only the CSS
+selector `svg text` sets the font and applies only to the
+HTML viewer. **Artefact set unchanged (still 10); save
+format unchanged (still v12);** M1.17 / M2.22 / M3.7
+byte-identical determinism contracts continue to pass by
+construction. 6 new doctest cases (5 svg_export + 1 runner;
+M4.5 "no `<style>`" test retuned to drop its `<style>`
+assertion + add an inline-`style=` check; 810 total).
+**M4 in progress.** **No JavaScript / `<script>`, no
+`<link>` external stylesheet, no inline event attributes,
+no inline `style="..."`, no `<meta name="viewport">`, no
+per-province / per-element CSS override, no CSS animations
+/ transitions / media queries / `@import` / `@font-face`,
+no click handlers, no clickable UI, no hover state, no
+tooltips, no state mutation from the viewer, no legend /
+colour key, no font-family / font-size on the `<text>`
+elements themselves, no ownership dynamics, no neighbour /
+adjacency edges, no terrain / resources / population
+overlays, no events, no AI, no command integration, no
+new `PlayerCommandKind`, no runner CLI flag, no save
+schema bump, no new state field, no new gameplay, no
+atomic `end_tick` writes, no change to `provinces.svg`
+bytes.**;
 **M4.5 HTML viewer skeleton — wraps the existing SVG body in
 a minimal HTML5 document so the map opens cleanly in a
 browser without the raw-XML chrome standalone `.svg` files

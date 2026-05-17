@@ -7,22 +7,33 @@
 // existing circles using a fixed 10-entry palette indexed by
 // `owner.value() % kOwnerPaletteSize`. M4.4 added a `<text>`
 // label per node immediately after the matching `<circle>`.
-// M4.5 (this revision) adds a minimal HTML5 wrapper around the
-// same SVG body so `provinces.svg` is also reachable as
-// `map.html` for browser-friendly viewing without the raw-XML
-// chrome that browsers attach to standalone `.svg` files.
-// Future M4 sub-milestones (clickable UI, legend, hover state,
-// neighbour-adjacency lines, terrain, etc.) will extend the
-// renderer further.
+// M4.5 added a minimal HTML5 wrapper around the same SVG body
+// so `provinces.svg` is also reachable as `map.html` for
+// browser-friendly viewing. M4.6 (this revision) adds the
+// smallest possible `<style>` block to the M4.5 wrapper —
+// three selectors that centre the SVG, give it a card-like
+// border on a neutral page background, and pick a sans-serif
+// font for the labels so they're more readable than the
+// browser's serif default. Future M4 sub-milestones (clickable
+// UI, legend, hover state, neighbour-adjacency lines, terrain,
+// etc.) will extend the renderer further.
 //
-// What M4.5 deliberately does NOT do:
+// What M4.6 deliberately does NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer (`map.html` is a
 //     read-only render of `state.provinces`).
 //   * No legend / colour key inside the SVG or HTML.
-//   * No CSS / JavaScript inside `map.html` (no `<style>`,
-//     no `<script>`, no `<link>`, no inline event attributes).
+//   * No JavaScript / `<script>` (M4.5 constraint preserved).
+//   * No `<link>` to an external stylesheet (M4.5 constraint
+//     preserved; the M4.6 `<style>` block is inline only).
+//   * No inline event attributes (`onclick` / `onmouseover` /
+//     `onload` / ...) — M4.5 constraint preserved.
+//   * No inline `style="..."` attributes on individual
+//     elements — the M4.6 `<style>` block is the single
+//     CSS surface.
+//   * No `<meta name="viewport">` — responsive sizing stays
+//     a future sub-milestone.
 //   * No per-province colour override.
 //   * No ownership-dynamics layer (provinces are static; the
 //     renderer reads `owner` and never writes it).
@@ -32,16 +43,21 @@
 //   * No CLI flag — both artefacts are unconditional, in the
 //     same shape as `interest_groups.csv` (M3.5), with
 //     `RunnerOptions::provinces_svg_path` (M4.2) and
-//     `RunnerOptions::map_html_path` (M4.5 new) as optional
+//     `RunnerOptions::map_html_path` (M4.5) as optional
 //     programmatic overrides.
 //   * No new save-format field (the renderer reads existing
 //     `state.provinces`; save format stays v12).
 //   * No change to `provinces.svg`'s bytes — the M4.5
 //     refactor extracted a shared `render_svg_root` helper
 //     so the standalone-SVG path is byte-identical with M4.4.
-//   * No font-family / font-size / fill on `<text>` — the SVG
-//     consumer's default applies. Typography stays a future
-//     presentation sub-milestone.
+//     M4.6 only touches the HTML wrapper (the M4.5 + M4.6
+//     `render_map_html` output); `provinces.svg` remains
+//     CSS-free standalone-SVG.
+//   * No font-family / font-size / fill on `<text>` elements
+//     themselves (M4.4 contract preserved) — the only font
+//     change is the M4.6 CSS `svg text { font-family:
+//     sans-serif; }` rule, which only affects the HTML
+//     viewer, never the standalone SVG.
 //
 // Output shape (M4.5):
 //   * `provinces.svg` (M4.2 unchanged on the wire):
@@ -54,9 +70,22 @@
 //           2. `<text x=... y=... text-anchor="middle">NAME</text>`
 //              with x = cx, y = cy + kLabelYOffset, and NAME
 //              the XML-text-escaped `ProvinceNode::name` (M4.4).
-//   * `map.html` (M4.5 new):
+//   * `map.html` (M4.5 new; M4.6 adds CSS):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
-//         `<head>` (`<meta charset="UTF-8">` + `<title>`).
+//         `<head>` (`<meta charset="UTF-8">` + `<title>` +
+//         M4.6 `<style>` block).
+//       - The `<style>` block carries exactly three rules:
+//         `body { margin: 0; padding: 20px;
+//                 background-color: #f0f0f0; }`
+//         `svg  { display: block; margin: 0 auto;
+//                 border: 1px solid #888;
+//                 background-color: #ffffff; }`
+//         `svg text { font-family: sans-serif; }`
+//         (centre the SVG card on a neutral page; give the
+//         SVG a card-like border + white fill so the
+//         coloured nodes pop; switch labels from the
+//         browser's default serif to sans-serif for
+//         readability.)
 //       - `<body>` contains the **exact same** `<svg>...</svg>`
 //         body as `provinces.svg`, but WITHOUT the XML prolog
 //         (which is invalid inside HTML).

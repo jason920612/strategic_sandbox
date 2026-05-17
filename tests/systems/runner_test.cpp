@@ -3081,6 +3081,38 @@ TEST_CASE("run: canonical scenario embeds full SVG body inside map.html") {
     CHECK(html.find("<?xml") == std::string::npos);
 }
 
+TEST_CASE("run: canonical scenario carries the M4.6 minimal CSS in map.html") {
+    // M4.6 adds three CSS selectors to the HTML wrapper.
+    // Pin that the canonical run carries them all so a
+    // future edit to the inline stylesheet fails this gate
+    // loudly. provinces.svg must NOT carry the CSS.
+    TempDir td("leviathan_runner_m46_canonical_css");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string html = read_file(td.path / "map.html");
+    CHECK(html.find("<style>")                   != std::string::npos);
+    CHECK(html.find("body {")                    != std::string::npos);
+    CHECK(html.find("background-color: #f0f0f0") != std::string::npos);
+    CHECK(html.find("svg {")                     != std::string::npos);
+    CHECK(html.find("margin: 0 auto")            != std::string::npos);
+    CHECK(html.find("border: 1px solid #888")    != std::string::npos);
+    CHECK(html.find("svg text {")                != std::string::npos);
+    CHECK(html.find("font-family: sans-serif")   != std::string::npos);
+
+    // The standalone SVG stays CSS-free — the M4.6 styling
+    // applies only to the HTML viewer.
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find("<style")          == std::string::npos);
+    CHECK(svg.find("font-family")     == std::string::npos);
+    CHECK(svg.find("background-color") == std::string::npos);
+}
+
 TEST_CASE("run: map.html preserves byte-identical determinism on same seed") {
     TempDir td_a("leviathan_runner_m45_det_a");
     TempDir td_b("leviathan_runner_m45_det_b");
