@@ -252,3 +252,85 @@ TEST_CASE("apply_pending: policy with bad effect target stops with M1.5 error") 
     CHECK(q.pending[0].policy_id_code == "bad_policy");
     CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
 }
+
+// =====================================================================
+// M2.4: command log appended on success
+// =====================================================================
+
+TEST_CASE("M2.4 apply_pending: successful enact appends one log entry") {
+    GameState s = ger_state_with_player_selected();
+    REQUIRE(s.applied_commands.empty());
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    REQUIRE(s.applied_commands.size() == 1u);
+    CHECK(s.applied_commands[0].applied_on == GameDate(1930, 1, 1));
+    CHECK(s.applied_commands[0].command.kind ==
+          PlayerCommandKind::EnactPolicy);
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+}
+
+TEST_CASE("M2.4 apply_pending: multiple successes append in insertion order") {
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "increase_education"});
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    REQUIRE(s.applied_commands.size() == 2u);
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+    CHECK(s.applied_commands[1].command.policy_id_code == "increase_education");
+}
+
+TEST_CASE("M2.4 apply_pending: failed command does NOT append a log entry") {
+    // M2.3 atomicity is per-command; M2.4 inherits that for the log:
+    // the successful command logs once, the failing command does not
+    // log at all (even though it stays at the head of the queue for
+    // retry).
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "nope_not_a_policy"});
+
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    REQUIRE(s.applied_commands.size() == 1u);  // only raise_taxes logged
+    CHECK(s.applied_commands[0].command.policy_id_code == "raise_taxes");
+    REQUIRE(q.pending.size() == 1u);
+    CHECK(q.pending[0].policy_id_code == "nope_not_a_policy");
+}
+
+TEST_CASE("M2.4 apply_pending: applied_on captures current_date at apply time") {
+    // The log records the date the command was actually applied, not
+    // the date it was submitted. Bump current_date between submits to
+    // pin the rule.
+    GameState s = ger_state_with_player_selected();
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    CHECK(s.applied_commands.back().applied_on == GameDate(1930, 1, 1));
+
+    // Move the simulation date forward and apply another command.
+    s.current_date = GameDate(1930, 6, 15);
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "increase_education"});
+    REQUIRE(cmd::apply_pending(s, q).ok());
+    REQUIRE(s.applied_commands.size() == 2u);
+    CHECK(s.applied_commands[1].applied_on == GameDate(1930, 6, 15));
+}
+
+TEST_CASE("M2.4 apply_pending: precondition failure leaves applied_commands untouched") {
+    GameState s;
+    s.current_date = GameDate(1930, 1, 1);
+    s.countries.push_back(germany_baseline());
+    s.policies.push_back(raise_taxes_policy());
+    // player_country deliberately left at invalid()
+
+    cmd::CommandQueue q;
+    q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
+
+    REQUIRE(cmd::apply_pending(s, q).failed());
+    CHECK(s.applied_commands.empty());
+    CHECK(q.pending.size() == 1u);
+}

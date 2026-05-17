@@ -72,6 +72,14 @@ core::Result<ApplyOutcome> apply_pending(core::GameState& state,
 
         q.pending.erase(q.pending.begin());
         ++outcome.commands_applied;
+
+        // M2.4: log the successful enactment for future replay.
+        // Only reached when the per-command dispatch above returned
+        // ok(), so the log entry is consistent with the state mutation.
+        // A failed command produces no log entry — per-command
+        // atomicity covers the log too.
+        state.applied_commands.push_back(
+            core::AppliedPlayerCommand{state.current_date, cmd});
     }
 
     return core::Result<ApplyOutcome>::success(std::move(outcome));

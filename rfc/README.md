@@ -272,6 +272,27 @@ M0 / M1 中落地，部分仍是未來工作：
   （`AdjustBudget` / `ChangeTaxBurden` 等留給 M2.5+）、command
   log（M2.4）、queue 跨 save/load 持久化、multi-player command
   interleaving、新 log line、M1 system 行為變更。
+  **M2.4（Player command log）** 為 `core/player_commands.hpp` 新增
+  `AppliedPlayerCommand{applied_on, command}` 型別，並在 `GameState`
+  新增 `applied_commands` 向量（預設空）。`systems::commands::apply_pending`
+  在每個 per-command dispatch 成功後（M1.5 / M1.15 mutation 已 land
+  之後）append 一筆 log entry──per-command atomicity 涵蓋這個新
+  side effect：失敗 command 停在 queue head，不會 log。`applied_on`
+  抓的是 `state.current_date` 在 apply 那一刻的值（不是 submit 時
+  的日期），由一個跨日 test pin 住。**M2.4 是 M2 第二次 save schema
+  升版（v8 → v9）**：`applied_commands` 是 root-level 必備陣列，
+  每個 entry 為 `{applied_on, command: {kind, policy_id_code}}`；
+  v8 save、missing `applied_commands`、entry 不是 object、`applied_on`
+  非法 Gregorian 日期、`kind` 為未知字串、`command` 缺 `policy_id_code`、
+  entry 缺 `command` sub-object 等情況全部 reject 並把
+  `applied_commands[N]` 路徑寫進錯誤訊息。對應 RFC-090 §M2 task 2.6
+  「命令 log」與 RFC-050 §8「玩家命令需記錄」。這是 deterministic
+  replay 的基礎；replay 本身不在 M2.4 範圍。**M2.4 不做** replay
+  實作、log compaction / truncation、為失敗 command 寫 log 條目、
+  新的 `PlayerCommandKind` variants（仍只支援 `EnactPolicy`，留給
+  M2.5）、新 CLI flag、新 `state.logs` 條目、queue 自身的持久化
+  （`CommandQueue` 仍 runtime-only）、`apply_pending` 自動進
+  `step_one_day` 內、M1 system 行為變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

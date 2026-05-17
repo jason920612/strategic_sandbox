@@ -54,6 +54,27 @@ core::Result<core::LogSeverity> severity_from_string(std::string_view s) {
     return core::Result<core::LogSeverity>::failure(std::move(msg));
 }
 
+// ----- PlayerCommandKind <-> string ---------------------------------------
+
+std::string player_command_kind_to_string(core::PlayerCommandKind k) {
+    switch (k) {
+        case core::PlayerCommandKind::EnactPolicy: return "EnactPolicy";
+    }
+    return "EnactPolicy";
+}
+
+core::Result<core::PlayerCommandKind> player_command_kind_from_string(
+        std::string_view s) {
+    if (s == "EnactPolicy") {
+        return core::Result<core::PlayerCommandKind>::success(
+            core::PlayerCommandKind::EnactPolicy);
+    }
+    std::string msg = "unknown player command kind '";
+    msg.append(s.data(), s.size());
+    msg += "' (expected EnactPolicy)";
+    return core::Result<core::PlayerCommandKind>::failure(std::move(msg));
+}
+
 // ----- serialise -----------------------------------------------------------
 
 json country_to_json(const core::CountryState& c) {
@@ -681,6 +702,21 @@ std::string serialize(const core::GameState& state) {
     }
     root["logs"] = std::move(logs);
 
+    // M2.4 applied_commands block. Each entry: { applied_on,
+    // command: { kind, policy_id_code } }. Insertion order matches
+    // commands::apply_pending append order.
+    json applied = json::array();
+    for (const auto& ac : state.applied_commands) {
+        json entry = json::object();
+        entry["applied_on"] = ac.applied_on.to_string();
+        json cmd_obj = json::object();
+        cmd_obj["kind"]           = player_command_kind_to_string(ac.command.kind);
+        cmd_obj["policy_id_code"] = ac.command.policy_id_code;
+        entry["command"] = std::move(cmd_obj);
+        applied.push_back(std::move(entry));
+    }
+    root["applied_commands"] = std::move(applied);
+
     return root.dump(/*indent=*/2);
 }
 
@@ -875,6 +911,72 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             }
             state.logs.push_back(std::move(e).value());
         }
+    }
+
+    // M2.4 applied_commands (required as of save format v9). Empty
+    // array is fine; missing field is a hard failure (v8 saves
+    // dropped here per the v9 history note in save_system.hpp).
+    if (!root.contains("applied_commands")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'applied_commands'"));
+    }
+    const auto& ac_arr = root.at("applied_commands");
+    if (!ac_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'applied_commands' has wrong type (expected"
+                    " JSON array)"));
+    }
+    state.applied_commands.reserve(ac_arr.size());
+    for (std::size_t i = 0; i < ac_arr.size(); ++i) {
+        const std::string entry_ctx =
+            std::string(source_label) + ": applied_commands[" +
+            std::to_string(i) + "]";
+        const auto& entry = ac_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                entry_ctx + ": expected JSON object");
+        }
+
+        auto applied_on_r = require_date(entry, "applied_on", entry_ctx);
+        if (!applied_on_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(applied_on_r.error()));
+        }
+
+        if (!entry.contains("command")) {
+            return core::Result<core::GameState>::failure(
+                entry_ctx + ": missing required field 'command'");
+        }
+        const auto& cmd_obj = entry.at("command");
+        if (!cmd_obj.is_object()) {
+            return core::Result<core::GameState>::failure(
+                entry_ctx + ": 'command' has wrong type (expected"
+                " JSON object)");
+        }
+        auto kind_str = require_string(cmd_obj, "kind", entry_ctx);
+        if (!kind_str) {
+            return core::Result<core::GameState>::failure(
+                std::move(kind_str.error()));
+        }
+        auto kind = player_command_kind_from_string(kind_str.value());
+        if (!kind) {
+            return core::Result<core::GameState>::failure(
+                entry_ctx + ": 'command.kind': " + kind.error());
+        }
+        auto policy_id_code =
+            require_string(cmd_obj, "policy_id_code", entry_ctx);
+        if (!policy_id_code) {
+            return core::Result<core::GameState>::failure(
+                std::move(policy_id_code.error()));
+        }
+
+        core::AppliedPlayerCommand ac;
+        ac.applied_on            = applied_on_r.value();
+        ac.command.kind          = kind.value();
+        ac.command.policy_id_code = policy_id_code.value();
+        state.applied_commands.push_back(std::move(ac));
     }
 
     // provinces, policies, events: keys reserved, contents not yet

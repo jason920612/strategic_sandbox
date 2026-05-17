@@ -37,6 +37,8 @@ TEST_CASE("Default GameState has the documented baseline") {
     // headless run).
     CHECK(state.player_country == CountryId::invalid());
     CHECK(state.player_country.value() == -1);
+    // M2.4: applied_commands log starts empty.
+    CHECK(state.applied_commands.empty());
 }
 
 TEST_CASE("GameState fields are directly mutable (no setters needed)") {
