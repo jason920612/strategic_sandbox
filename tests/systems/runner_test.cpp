@@ -1752,3 +1752,100 @@ TEST_CASE("run: --replay of an empty-log save replays zero commands") {
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
+
+// =====================================================================
+// M2.11 - --verify CLI flag
+// =====================================================================
+
+TEST_CASE("parse_args: --verify flag is plumbed when combined with --replay") {
+    Argv arg(std::array<const char*, 6>{
+        "leviathan", "--days", "3",
+        "--replay", "out/source.json",
+        "--verify"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK(r.value().verify == true);
+}
+
+TEST_CASE("parse_args: --verify defaults to false when not passed") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "5"});
+    const auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK(r.value().verify == false);
+}
+
+TEST_CASE("parse_args: --verify without --replay is rejected") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "3", "--verify"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.failed());
+    CHECK(r.error().find("--verify") != std::string::npos);
+    CHECK(r.error().find("--replay") != std::string::npos);
+}
+
+#ifdef LEVIATHAN_TEST_DATA_DIR
+
+TEST_CASE("run: --replay + --verify with matching source reports zero mismatches") {
+    TempDir td("leviathan_runner_m211_verify_match");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    (void) build_source_save(source_path, {cmd});
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.verify        = true;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+    CHECK(r.value().verify_mismatches.empty());
+}
+
+TEST_CASE("run: --replay + --verify on a tweaked source detects mismatch") {
+    // Build a source save, then manually mutate a country field on
+    // disk and save again so replay produces a state that DOESN'T
+    // match the source. compare_states should catch the diff.
+    namespace ss = leviathan::systems::save_system;
+    TempDir td("leviathan_runner_m211_verify_diff");
+    const fs::path source_path = td.path / "source.json";
+
+    leviathan::core::PlayerCommand cmd;
+    cmd.kind            = leviathan::core::PlayerCommandKind::EnactPolicy;
+    cmd.policy_id_code = "raise_taxes";
+    auto source = build_source_save(source_path, {cmd});
+
+    // Tweak a non-command-driven field that replay can't reproduce.
+    // legal_tax_burden is mutated by the policy effect; tweaking it
+    // here makes replay's deterministic output differ from source.
+    source.countries[0].legal_tax_burden = 0.99;
+    REQUIRE(ss::save(source, source_path).ok());
+
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 0;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    opts.replay_path   = source_path;
+    opts.verify        = true;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    // Find the legal_tax_burden mismatch among the reported entries.
+    const auto& mismatches = r.value().verify_mismatches;
+    REQUIRE_FALSE(mismatches.empty());
+    bool found = false;
+    for (const auto& m : mismatches) {
+        if (m.field_path == "countries[0].legal_tax_burden") {
+            found = true;
+            break;
+        }
+    }
+    CHECK(found);
+}
+
+#endif  // LEVIATHAN_TEST_DATA_DIR

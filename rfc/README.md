@@ -406,6 +406,23 @@ M0 / M1 中落地，部分仍是未來工作：
   變更（仍 v9）、CLI 整合（M2.11 候選）、相對 tolerance、log /
   rng / policy 比對、mismatch budget cap、新 state.logs 條目、
   M1 system 變更。
+  **M2.11（Replay verify CLI）** 在 runner 新增 `--verify` boolean
+  flag（須與 `--replay` 並用），把 M2.10 `compare_states` 接進
+  M2.8 replay 流程。`end_tick` 成功後，runner 對「replayed state」
+  與「已載入的 source save」呼叫 `compare_states`，把結果寫進新的
+  `RunOutcome::verify_mismatches`（vector of `StateMismatch`）。
+  `main()` 在 stdout summary 加上 `Verify mismatches: N` 並對每個
+  mismatch 印一行 `  - <field_path> : <detail>`。**Informational
+  only** — 不論 mismatch 數量，run 都以 exit code 0 結束；artefacts
+  （save / JSONL / CSV）仍會寫到 disk 供使用者鑑識。`parse_args`
+  在 `--verify` 沒有 `--replay` 時直接 reject 並把兩個 flag 名稱
+  寫進錯誤訊息。Source save 重用 M2.8 已經載入的物件（沒有額外
+  disk I/O）。對應 RFC-090 §M2 與 RFC-050 §8 的「玩家命令需記錄」
+  消費端的最後一塊：自動化等價檢查的 CLI 入口。**M2.11 不做**
+  save schema 變更（仍 v9）、strict fail-on-mismatch 模式
+  （`--verify-strict` 留給 M2.13 候選）、CLI tolerance 旋鈕、
+  `--verify` 在 `--replay` 之外使用、mismatch list 截斷、新
+  state.logs 條目、M1 system 行為變更。
 - 未落地：RFC-020 完整政治、RFC-030 完整經濟、RFC-040 外交與戰爭、
   RFC-050 事件與隱藏真相、RFC-080 §6 §7 §10 政變 / 內戰 / 誤判公式。
 

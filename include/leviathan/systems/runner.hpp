@@ -50,6 +50,7 @@ struct RunnerOptions {
     std::optional<std::filesystem::path> factions_csv_path;   // unset = no per-faction CSV (M1.16)
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
+    bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
     bool                                 show_help   = false;
 };
 
@@ -100,6 +101,13 @@ struct RunOutcome {
     // replay run reports the same shape as a normal run plus this
     // extra counter.
     int                    replay_commands_replayed = 0;
+    // M2.11: mismatches reported by `diagnostics::compare_states`
+    // when `--verify` is set alongside `--replay`. Empty when
+    // --verify is not requested OR when the replayed state matches
+    // the source. The runner does NOT fail the run on mismatch
+    // — verification is informational; the caller (typically
+    // main.cpp / a CI harness) decides what to do with the list.
+    std::vector<diagnostics::StateMismatch> verify_mismatches;
 };
 
 // Execute one simulation run.
