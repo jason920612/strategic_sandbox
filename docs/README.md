@@ -58,6 +58,7 @@ Per-milestone design notes and PR description drafts.
 | [`m2-11-replay-verify.md`](m2-11-replay-verify.md) | M2.11 | **Replay verify CLI.** New `--verify` boolean runner flag (requires `--replay`) wires M2.10 `compare_states` into the M2.8 replay flow. After `end_tick` succeeds, the runner calls `compare_states(replayed_state, loaded_source)` and populates `RunOutcome::verify_mismatches`. `main()` prints `Verify mismatches: N` plus one bullet per mismatch (`  - <field_path> : <detail>`). **Informational only** — exit code stays 0 regardless of mismatch count; artefacts (save / JSONL / CSV) are still written so the user can forensically inspect. Reuses the already-loaded source save (no extra disk I/O). `parse_args` rejects `--verify` without `--replay` with both flag names in the error. **No save-format bump (still v9), no strict fail-on-mismatch mode (`--verify-strict` is a future candidate), no CLI tolerance knob, no `--verify` outside `--replay`, no mismatch-list truncation, no M1 system change.** |
 | [`m2-12-verify-strict.md`](m2-12-verify-strict.md) | M2.12 | **Replay strict mode.** New `--verify-strict` boolean runner flag (requires `--verify`) makes `main()` exit `EXIT_FAILURE` when M2.11 detects any mismatches. The full mismatch list still prints to stdout before the non-zero exit so CI logs capture every divergence. **Architectural decision**: `run()` semantics unchanged — it still returns success when the simulation+replay completes; strict mode is a `main()`-level exit-code policy. Tradeoff is one extra line of policy in `main()`; benefit is library/CLI separation stays clean and other consumers (tests, future embedders) can apply their own policy. `parse_args` rejects `--verify-strict` without `--verify` with both flag names in the error. Flag-chain: `--verify-strict` → `--verify` → `--replay`. **No save-format bump (still v9), no `--verify-tolerance` CLI knob (M2.13 candidate), no structured-diff output format, no mismatch-count threshold (strict is binary: any mismatch fails), no `run()` behaviour change, no M1 system change.** |
 | [`m2-13-verify-tolerance.md`](m2-13-verify-tolerance.md) | M2.13 | **Verify tolerance CLI.** New `--verify-tolerance FLOAT` runner flag (requires `--verify`) overrides M2.10's default `1e-9` `CompareOptions::double_tolerance` when calling `compare_states`. Parses via a new exception-free `parse_nonneg_double` helper that rejects empty input, trailing garbage (`"1.5x"`), non-finite values (`NaN`/`Inf`), and negatives at parse time with the flag name + bad value in the error. Plumbed into `run()`'s replay branch by building a `diagnostics::CompareOptions` with the override applied only when set. `main()` prints `Verify tolerance: <value>` when active so CI logs show which tolerance produced the mismatch count. **Completes the M2 replay-CLI family** (`--replay` / `--verify` / `--verify-strict` / `--verify-tolerance`). **No save-format bump (still v9), no library behaviour change beyond passing the override through, no relative tolerance, no per-field tolerance, no new gameplay.** |
+| [`milestone-2-result.md`](milestone-2-result.md) | **M2 exit report** | What M2 ships (every sub-milestone M2.1–M2.21 plus the M2.22 integration tests), the architectural invariants every M3+ milestone must preserve, deferred items (Delayed / Distorted execution outcomes, scheduler, RNG-based resistance, persistent attempted-command log, CLI script flag, runner-level rejection surface, expanded authority fields beyond the four M2.16 fields, authority drift, faction reactions to player commands, multi-country interaction, weighted multi-input formulas, atomic `end_tick` writes, relative tolerance in `CompareOptions`), recommendations for M3+ (`Delayed` outcomes, runner-level rejection surface, CLI `--script PATH`, authority drift system, faction reaction, multi-country), and the test surface at M2 close. **M2 closes here.** |
 | [`m2-21-command-script-driver.md`](m2-21-command-script-driver.md) | M2.21 | **Command script driver helper.** Library-only convenience function `commands::apply_command_script(state, vector<PlayerCommand>)` on top of M2.20's `try_apply_pending` surface. Takes a one-shot script (`std::vector<PlayerCommand>`), builds a local `CommandQueue`, dispatches through `try_apply_pending`. Outcome reuses M2.20's `ApplyWithReportOutcome` (no parallel struct). Routing inherited unchanged: empty script → success + nullopt rejection; full drain → success + nullopt rejection; gate rejection → success + populated record; non-execution failure (precondition / NaN delta / unknown policy / unknown category) → `Result::failure`. Input vector NOT mutated (helper copies into the local queue). Three-line implementation; entire point is the call-site ergonomics. **No runner / RunOutcome / `main()` / CLI / replay / save schema change.** **No remaining-queue surface for the trailing commands after a mid-script rejection** — callers that need them should keep using `try_apply_pending` directly. **No persistent attempted-command log, no `state.logs` entry, no new `PlayerCommandKind`, no new CSV column, no threshold / formula change, no DataLoader / policy effect / runner / M1 system change.** |
 | [`m2-20-command-rejection-reporting.md`](m2-20-command-rejection-reporting.md) | M2.20 | **Command rejection reporting.** Makes M2.18 / M2.19 order-execution rejections observable as structured data without changing `apply_pending` semantics. New POD `commands::RejectionRecord { kind, policy_id_code, budget_category, compliance, threshold, resistance }`. New wrapper `commands::ApplyWithReportOutcome { apply, rejection }`. New free function `commands::try_apply_pending(state, queue)` drains the queue exactly like `apply_pending` (same precondition, same atomicity — rejected command stays at head, no mutation, no log) but surfaces order-execution rejections as `Result::success` carrying the populated record. Non-execution errors (precondition / NaN delta / unknown policy / unknown category) still return `Result::failure` so genuine validation never gets swallowed. Internal refactor extracts a `dispatch_one` helper in `commands.cpp`'s anonymous namespace shared by both functions; `apply_pending`'s legacy rejection error string is byte-identical via a `format_rejection_message` helper. Existing M2.18 / M2.19 / replay tests pass unchanged. Drive-by: refreshed a stale M2.18-only comment in `order_execution.cpp` that PR #46 review flagged. **No save format change (still v10), no `apply_pending` signature or behaviour change, no persistent attempted-command log, no `state.logs` entry, no `RunOutcome` rejection surface (M2.21 candidate), no DataLoader / replay primitive / runner / CLI / M1 system change.** |
 | [`m2-19-adjust-budget-execution-gate.md`](m2-19-adjust-budget-execution-gate.md) | M2.19 | **AdjustBudget execution gate.** Extends M2.18's command-rejection shape to `AdjustBudget` with a single category-aware twist: `command.budget_category == "military"` gates on `military_loyalty`, every other category still gates on `bureaucratic_compliance`. New constant `kAdjustBudgetComplianceThreshold = 0.3` matches M2.18's value to keep canonical default-0.5 scenarios Accepted. The `AdjustBudget` arm in `evaluate()` selects the authority input, computes `resistance = 1.0 - selected`, returns `Accepted` when `selected >= 0.3` else `Rejected`. `commands::apply_pending` gains a pre-flight gate block structurally identical to M2.18's `EnactPolicy` block; rejected `AdjustBudget` short-circuits with an error naming `order_execution`, `rejected`, `AdjustBudget`, offending `budget_category`, selected compliance, and threshold. M2.3 / M2.4 mid-list-failure atomicity preserved. Replay compatibility holds for default-0.5 saves. **No save format change (still v10), no `Delayed` / `Distorted` outcomes, no bespoke per-category inputs beyond `military` ⇒ `military_loyalty`, no weighted multi-input formula, no probabilistic / RNG gate, no scheduler, no `state.logs` entry on rejection, no `RunOutcome` rejection counter (M2.20 candidate), no DataLoader / policy effect / replay primitive / runner / M1 system change.** |
@@ -79,44 +80,43 @@ If you're new to the codebase:
    → M1.11 → M1.12 → M1.13 → M1.14 → M1.15 → M1.16 →
    `milestone-1-result.md` → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 →
    M2.6 → M2.7 → M2.8 → M2.9 → M2.10 → M2.11 → M2.12 → M2.13 →
-   M2.14 → M2.16 → M2.17 → M2.18 → M2.19 → M2.20 → M2.21). They
+   M2.14 → M2.16 → M2.17 → M2.18 → M2.19 → M2.20 → M2.21 →
+   `milestone-2-result.md`). They
    build on each other and each one tries to call out the rules
    a future contributor must not silently break.
 
 ## What's next
 
-**M2 has begun.** M2.1–M2.14 + M2.16 + M2.17 + M2.18 + M2.19 +
-M2.20 + M2.21 shipped (M2.9 backfilled during the M2.10 → M2.13
-sprint). The M2 replay-CLI family (`--replay` / `--verify` /
-`--verify-strict` / `--verify-tolerance` / `--target-date`) is
-feature-complete. M2.16 opened the first M2 gameplay-state
-extension by introducing `GovernmentAuthorityState`; M2.17
-shipped the `order_execution::evaluate` skeleton; M2.18 turned
-the skeleton into the first command-rejecting gate
-(`EnactPolicy`); M2.19 extended the gate to `AdjustBudget` with a
-category-aware single-input twist; M2.20 introduced
-`commands::try_apply_pending` as a parallel surface that returns
-order-execution rejections as a structured
-`Result::success` + `RejectionRecord`; M2.21 wraps
-`try_apply_pending` in a one-shot script helper
-`apply_command_script(state, vector<PlayerCommand>)` so REPL /
-scripted-test / agent-driver callers don't repeat the
-build-queue-then-drain boilerplate. Suggested next M2
-sub-milestone:
+**M2 closed.** M2.1–M2.22 shipped (M2.9 backfilled during the
+M2.10 → M2.13 sprint). The M2 replay-CLI family (`--replay` /
+`--verify` / `--verify-strict` / `--verify-tolerance` /
+`--target-date`) is feature-complete. The M2 gameplay-state +
+gate stack (M2.16 `GovernmentAuthorityState` → M2.17
+skeleton → M2.18 EnactPolicy gate → M2.19 AdjustBudget
+category-aware gate → M2.20 `RejectionRecord` +
+`try_apply_pending` → M2.21 `apply_command_script` helper) is
+complete. M2.22 closes M2 with the three end-to-end integration
+tests + this exit-report family.
 
-- **M2.22 — Wire script driver into runner / CLI.** With the
-  library helper in place, plumb it through a CLI entry point
-  (e.g. `--script PATH` loading a JSON command list) and
-  surface structured rejection in `RunOutcome` / stdout. The
-  exact shape (new flag vs. extending `--replay` vs. a
-  separate sub-command) remains to be decided. Save-neutral.
+See `milestone-2-result.md` for the full M2 exit ledger:
+deferred items (Delayed / Distorted outcomes, scheduler,
+RNG-based resistance, attempted-command log, CLI script flag,
+runner-level rejection surface, expanded authority fields,
+authority drift, faction reactions, multi-country interaction,
+weighted formulas), recommendations for M3+, and the
+architectural invariants every M3+ milestone must preserve.
+
+Future player-operation work moves to **M3+ or separate
+post-M2 follow-ups**. None are committed; candidates listed
+in the M2 exit report.
 
 The deferred-from-M1 items (expiration sweep, effect revert,
 faction `react` extension, balance pass) are NOT M2 work and can
 land later as targeted follow-ups when the player loop needs them.
 
-Per the M-pacing rule, the next sub-milestone is **not** started
-until M2.21 is merged.
+M2 closes with M2.22 merged. Per the M-pacing rule, any post-M2
+work (M3+ or targeted follow-ups) waits for an explicit
+green-light from the reviewer.
 
 ## When to add a new file
 
