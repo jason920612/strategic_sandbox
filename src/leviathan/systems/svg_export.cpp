@@ -332,6 +332,23 @@ std::string render_map_html(const core::GameState& state) {
     out << "  .details-empty { margin: 0; color: #666; }\n";
     out << "  svg circle[data-id], svg text[data-id]"
            " { cursor: pointer; }\n";
+    // M4.19 hover affordance. Pure CSS — no JS hover
+    // handler, no mouseover / mouseout listeners, no
+    // tooltip, no <title> child element. Goes BEFORE the
+    // M4.12 .selected and M4.16 :focus-visible rules so
+    // those (later in source order, equal specificity)
+    // win on the same element when both apply. Grey
+    // stroke (#666666, 2px) is visually distinct from
+    // both the M4.12 black .selected stroke (#000000,
+    // 3px) and the M4.16 blue :focus-visible ring
+    // (#1976d2, 4px); text underline is a different
+    // mechanism from .selected font-weight: bold and
+    // focus-visible outline, so layered states stay
+    // readable.
+    out << "  svg circle:hover"
+           " { stroke: #666666; stroke-width: 2; }\n";
+    out << "  svg text:hover"
+           " { text-decoration: underline; }\n";
     // M4.12 selection highlight. The click handler adds the
     // `.selected` class to both the clicked element and its
     // sibling sharing the same data-id, so the whole province

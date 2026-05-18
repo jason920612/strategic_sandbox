@@ -104,14 +104,29 @@
 // ARIA" non-goal; the still-deferred surface is
 // narrower (no `aria-selected` / `aria-current` /
 // `aria-pressed` / `aria-live` / `aria-describedby`
-// / `aria-labelledby`). No state field, no new
-// artefact, no save-schema bump. Future M4
-// sub-milestones (hover state, tooltips, persistent
-// selection state, live-region announcements,
-// neighbour-adjacency lines, terrain, etc.) will
-// extend the renderer further.
+// / `aria-labelledby`). M4.19 (this revision) adds a
+// mouse-hover affordance. Two new CSS rules in the
+// M4.6 `<style>` block: `svg circle:hover { stroke:
+// #666666; stroke-width: 2; }` and `svg text:hover
+// { text-decoration: underline; }`. The grey 2px
+// stroke is visually distinct from the M4.12 black
+// 3px `.selected` stroke and the M4.16 blue 4px
+// `:focus-visible` ring; text-decoration: underline is
+// a different mechanism from `.selected`'s
+// `font-weight: bold` and `:focus-visible`'s
+// `outline`. The rules sit BEFORE `.selected` /
+// `:focus-visible` in CSS source order so those (equal
+// specificity, later) win when both apply.
+// Pure CSS — no JS hover handler, no mouseover /
+// mouseout listener, no tooltip, no SVG `<title>`
+// child element. No state field, no new artefact, no
+// save-schema bump. Future M4 sub-milestones
+// (tooltips, pair-hover via JS, persistent selection
+// state, live-region announcements, neighbour-
+// adjacency lines, terrain, etc.) will extend the
+// renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 / M4.19 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -265,6 +280,10 @@
 //                                                         (M4.10)
 //         `svg circle[data-id], svg text[data-id]
 //            { cursor: pointer; }`                        (M4.10)
+//         `svg circle:hover
+//            { stroke: #666666; stroke-width: 2; }`       (M4.19)
+//         `svg text:hover
+//            { text-decoration: underline; }`             (M4.19)
 //         `svg circle.selected
 //            { stroke: #000000; stroke-width: 3; }`       (M4.12)
 //         `svg text.selected { font-weight: bold; }`      (M4.12)

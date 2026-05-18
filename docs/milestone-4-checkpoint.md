@@ -3,13 +3,16 @@
 Status: in progress
 
 Refreshed at **M4.18** (companion notes for
-`feature/rfc090-m4-18-accessibility-checkpoint-refresh`).
-Originally written at M4.9 (M4.2–M4.8 SVG / HTML DOM
-contract); refreshed at M4.14 to cover M4.10–M4.13 (first
-JavaScript, decoupled labels, transient `.selected`, fifth
-`data-owner-name`); refreshed again at M4.18 to cover
-M4.15 (keyboard focus), M4.16 (visible focus ring), and
-M4.17 (ARIA labels).
+`feature/rfc090-m4-18-accessibility-checkpoint-refresh`),
+**inline-refreshed at M4.19** for the hover affordance
+surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
+DOM contract); refreshed at M4.14 to cover M4.10–M4.13
+(first JavaScript, decoupled labels, transient
+`.selected`, fifth `data-owner-name`); refreshed at M4.18
+to cover M4.15 (keyboard focus), M4.16 (visible focus
+ring), and M4.17 (ARIA labels). Future per-sub-milestone
+surface changes refresh this doc **inline** instead of
+deferring to a periodic checkpoint-refresh PR.
 
 M4.18 is a checkpoint refresh, **not an exit report**. M4
 remains in progress: this file is updated so the next
@@ -56,7 +59,10 @@ M4.16  focus-visible styling skeleton — :focus-visible CSS
 M4.17  ARIA labels skeleton — role="button" + aria-label=
        "<name>, <owner_name>" on circle+text (narrowly
        reverses the M4.15/M4.16 "no ARIA" non-goal)
-M4.18  accessibility checkpoint refresh (this PR)
+M4.18  accessibility checkpoint refresh
+M4.19  hover affordance skeleton — `svg circle:hover`
+       grey stroke + `svg text:hover` underline (pure CSS;
+       no JS hover handler)
 ```
 
 ## 2. Current artefact contract
@@ -193,6 +199,8 @@ additive — no removed or renamed attribute.
   .details-empty  { margin: 0; color: #666; }
   svg circle[data-id], svg text[data-id]                          // M4.10
                   { cursor: pointer; }
+  svg circle:hover { stroke: #666666; stroke-width: 2; }          // M4.19
+  svg text:hover   { text-decoration: underline; }                // M4.19
   svg circle.selected { stroke: #000000; stroke-width: 3; }       // M4.12
   svg text.selected   { font-weight: bold; }                      // M4.12
   svg circle:focus { outline: none; }                             // M4.16
@@ -265,11 +273,11 @@ additive — no removed or renamed attribute.
 
 where:
 
-- `<style>` block now carries **17 selectors** (M4.6 three
-  + M4.7 three + M4.10 six + M4.12 two + M4.16 four; was
-  13 at M4.14). All are layout / state rules — no
-  animations, no transitions, no media queries, no
-  `@import`, no `@font-face`.
+- `<style>` block now carries **19 selectors** (M4.6 three
+  + M4.7 three + M4.10 six + M4.12 two + M4.16 four +
+  M4.19 two; was 13 at M4.14 and 17 at M4.18). All are
+  layout / state rules — no animations, no transitions,
+  no media queries, no `@import`, no `@font-face`.
 - The inline SVG body is byte-identical to
   `provinces.svg` minus the XML prolog (M4.15 / M4.17
   attributes are included in the shared body, so both
@@ -351,6 +359,13 @@ Interactivity surface (map.html only, M4.10–M4.16):
                         click and keydown so the effect
                         cannot drift between input modes  // M4.15
   - fields array        five entries since M4.13
+  - :hover CSS          grey (#666666) 2px stroke on circle    // M4.19
+                        + text-decoration: underline on text;
+                        sits before .selected / :focus-visible
+                        in source order so those (equal
+                        specificity) win on the same element.
+                        Pure CSS — no JS hover handler, no
+                        tooltip, no <title> child.
 
 Accessibility surface (M4.15–M4.17):
   - tabindex="0"        on every <circle> + <text>; legend
@@ -441,9 +456,15 @@ later sub-milestone has one canonical reference for what is
 explicitly out of scope.
 
 ```text
-HOVER + TOOLTIPS
-  hover state (no CSS :hover rules; no JS mouseover)
-  tooltips (the M4.10 details panel is click/keydown-only)
+HOVER + TOOLTIPS (basic :hover CSS shipped at M4.19;
+                  richer hover behaviour still deferred)
+  pair-hover (hovering a circle does NOT also highlight
+    its matching <text>, and vice versa — would need JS
+    mouseover/mouseout + classList toggling on the
+    sibling sharing data-id)
+  tooltips (the M4.10 details panel is click/keydown-only;
+    no SVG <title> child element, no CSS-only tooltip)
+  hover-driven detail-panel preview / hover delay
 
 BROADER ARIA (the narrower ARIA surface — role=button +
               aria-label — shipped at M4.17)

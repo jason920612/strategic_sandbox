@@ -217,8 +217,78 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.18
-  （accessibility checkpoint refresh）** 對應 M4.14 在
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.19
+  （hover affordance skeleton）** 在 `map.html` 加入
+  滑鼠 hover 的視覺提示，讓使用者在按下去前就看到
+  「這個 marker 會回應我」。**純 CSS** ── 沒有改
+  JavaScript，也沒有改 markup 結構（只動 `<style>`
+  block）。M4.6 `<style>` block 新增兩條規則：
+  `svg circle:hover { stroke: #666666; stroke-width:
+  2; }` 與 `svg text:hover { text-decoration:
+  underline; }`。位置放在 M4.10 `cursor: pointer` 之後、
+  M4.12 `.selected` / M4.16 `:focus-visible` 之前 ──
+  CSS specificity 三者相等，靠 source order 決定誰
+  win，所以 `.selected` 與 `:focus-visible`（之後宣告）
+  會在同一個元素上 override hover。三種狀態的顏色刻意
+  分開：hover 灰色（`#666666`、2px）/ selected 黑色
+  （`#000000`、3px）/ focused 藍色（`#1976d2`、4px）；
+  狀態疊加時較粗的 stroke 自然贏。text 用 underline
+  （與 M4.12 的 `font-weight: bold` 和 M4.16 的
+  `outline` 機制不同），所以多重狀態疊加時讀起來仍然
+  分明。**純 CSS ── 沒有 JS hover handler、沒有
+  `mouseover` / `mouseout` listener、沒有 tooltip、
+  沒有 SVG `<title>` 子元素**（`<title>` 子元素會與
+  M4.17 `aria-label` 競爭 accessible name 的優先權）。
+  Pair-hover（hover circle 時同時讓對應的 text 變色）
+  deferred ── 那會需要 JS。**Checkpoint doc 在這個 PR
+  裡 inline 刷新**（按新的 feedback rule，每個改 surface
+  的 sub-milestone 都應該順手刷新
+  `docs/milestone-4-checkpoint.md`，不要再讓它 drift 到
+  需要專門的 refresh PR）：`<style>` selector 從 17 條
+  增加到 19 條；HTML wrapper shape 區塊把兩條新 hover
+  rule 列出來；interactivity surface 區塊加一個
+  `:hover` CSS bullet；deferred items 的 HOVER+TOOLTIPS
+  bucket 改寫成「basic :hover CSS 已 ship 在 M4.19；
+  richer hover behaviour 仍 deferred」。M4.10 的
+  XSS-safe DOM API、no-network discipline、「`map.html`
+  有且只有一段 inline `<script>`；`provinces.svg` 完全
+  沒有 script」這條非對稱 invariant、M4.12 transient
+  `.selected` 機制、M4.13 五個 data-* DOM contract、
+  M4.15 `tabindex` + keydown handler、M4.16
+  `:focus-visible` rings、M4.17 `role="button"` +
+  `aria-label` 全部沿用，完全 additive。**M4 仍在
+  in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.19 只是再多一個
+  skeleton sub-milestone，不是 exit。**save 格式仍
+  v12**。`provinces.svg` bytes 與 M4.17 完全相同
+  （hover CSS 只在 HTML wrapper）；`map.html` bytes
+  有變（多了兩條 CSS rule）。**Artefact 數量不變
+  （仍 10）；save 格式不變（仍 v12）**；M1.17 / M2.22
+  / M3.7 byte-identical determinism contract 仍 by
+  construction 通過。5 個新 doctest cases（共 885）。
+  **M4 in progress.**
+  **M4.19 不做** JS hover handler / pair-hover /
+  tooltip / SVG `<title>` 子元素 / hover-driven
+  detail-panel preview / hover delay / animation /
+  transition / 更廣的 ARIA（M4.17 之後仍 deferred）/
+  M4.15 之外的 keyboard polish / selection 持久化 /
+  save schema bump / 新 state field / 新 artefact /
+  新 fixture / 新 `InterestGroupKind` /
+  `PlayerCommandKind` / rename M4.8 / M4.13 data-*
+  key / 第二個 `<script>` / `<script src=>` /
+  `<script type=>` / `<link>` / 外部 CSS / font /
+  `<iframe>` / `<img>` / `fetch` / `XMLHttpRequest`
+  / `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` /
+  `navigator` / `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function` / inline
+  event attribute / per-element inline `style="..."`
+  / `<meta name="viewport">` / CSS animation /
+  transition / media query / `@import` / `@font-face`
+  / 鄰接 edge / terrain / overlay / runner CLI flag
+  / 動 `provinces.svg` bytes / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.18（accessibility checkpoint refresh）** 對應 M4.14 在
   當時的角色：**零新行為**，只刷新狀態快照 + 補一個
   小型 integration assertion。
   `docs/milestone-4-checkpoint.md` 上一次刷新是 M4.14
