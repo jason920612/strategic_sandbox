@@ -28,6 +28,7 @@ FetchContent_MakeAvailable(doctest)
 
 add_executable(leviathan_tests
     test_main.cpp
+    systems/bias_noise_test.cpp
     core/ids_test.cpp
     core/result_test.cpp
     core/game_date_test.cpp
