@@ -218,7 +218,75 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.3
+  information distortion）** — **M6.4
+  （reported_value helper skeleton）** 是 M6 的
+  第四個 sub-milestone。完全照 RFC-090 §6.4
+  （`6.4 實作 reported value`）實作：新增
+  `leviathan::systems::reported_value` module
+  （header + impl），公開
+  `core::Result<double> from_true_value(double
+  true_value, double accuracy)`。**M6.4 只 ship
+  helper SHAPE**：函式 body 是 placeholder 公式
+  `reported_value = true_value * accuracy`。在
+  `accuracy = 1.0`（M6.3 ceiling）時 reported 等於
+  true_value（玩家看到真相）；在 `accuracy = 0.0`
+  時 reported 等於 0（玩家看不到有用資訊）；中間值
+  做線性內插。負的 true_value（例如 M5.1 canonical
+  事件的 effect -0.02）會正確朝 0 damp。
+  **與 M6 管線的組合**：M6.3 `compute_for_country`
+  產出 accuracy；M6.4 透過 `from_true_value` 消費
+  它。M6.5（bias/noise）會用 RNG 在 M6.4 之上加
+  distortion；M6.6 / M6.7 會把 M6.3 accuracy 壓低
+  （M6.4 body 不變）；M6.8（debug 模式）會 bypass
+  M6.4；M6.9（非 debug 模式）會用 M6.4 的輸出把
+  `visible_report` 朝 `true_cause` 隱藏。
+  **M6.4 故意不改 M6.3 `compute_for_country` 的
+  body**（per PR #102 reviewer 規矩：*「M6.4 應避免
+  改 formula body」*）── M6.3 placeholder（`return
+  1.0`）保持原樣。**沒有 save schema bump** ── M6.4
+  是兩個 double 的 pure free function，沒 GameState
+  參數，沒新 persistent state；save format 保持
+  **v16**。**驗證**：`true_value` 與 `accuracy` 都
+  必須是 finite；`accuracy` 必須在 `[0, 1]`。失敗
+  訊息會帶 offending 值（NaN / ±∞ / 超界 都會
+  格式化），形狀與 M1.5 / M5.6 effect-value 驗證一致。
+  **Pure / deterministic**：沒 GameState、沒 RNG、沒
+  side effect；重複相同輸入呼叫得到相同結果。
+  **16 個新 doctest case（1090 total，62522
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：
+  happy path（accuracy=1.0 / accuracy=0.0 / 中點 /
+  true_value=0）/ 單調性 / 負 true_value 在
+  accuracy=1.0 完整還原 + 在低 accuracy damp / 驗證
+  （NaN、±∞、out-of-range）/ deterministic / 與 M6.3
+  的組合（canonical state → accuracy=1.0 → reported
+  等於 true_value 原值；失敗的 M6.3 lookup 在呼叫
+  M6.4 之前可被檢查）。所有 1074 個 M6.3-era 測試仍
+  byte-identical 通過。新
+  `docs/m6-4-reported-value-helper-skeleton.md`
+  design note。**沒有 save format bump（仍 v16）/
+  新 state field / 新 artefact（仍 10）/ 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / scenario_loader 變動 /
+  event-module / monthly_pipeline / runner 程式
+  變動 / information_accuracy module body 變動
+  （M6.3 placeholder 保持 1.0；per reviewer 規矩）
+  / canonical fixture 變動 / 任何系統消費此 helper
+  （M6.5+ / M6.9 才會用）/ event-aware 變體
+  （`from_event` 是 M6.9 的事）/ bias / noise
+  （M6.5）/ intelligence-budget 公式（M6.6）/
+  corruption 公式（M6.7）/ debug 模式（M6.8）/
+  非 debug 隱藏（M6.9）/ EventReport 類型或
+  artefact / events.jsonl 語意變動 / UI / map
+  整合 / balance pass / RNG draw（M6.4
+  deterministic；M6.5 才會引入 RNG）/ 對 M1.17 /
+  M2 / M3 / M4 / M5 byte-identical determinism
+  baseline 的變動（沒有消費者 = 沒有 determinism
+  drift）/ M6.5 工作 /
+  `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」字樣**。
+  M6 remains in progress。
+- **M6（歷史進行中）** — **M6.3
   （information_accuracy helper skeleton）** 是 M6
   的第三個 sub-milestone。完全照 RFC-090 §6.3
   （`6.3 實作 information_accuracy`）實作：新增
