@@ -14,7 +14,68 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.11 — clickable UI
+- Latest shipped sub-milestone: **M4.12 — clickable UI
+  selected-state CSS skeleton.** Layers a transient
+  selection highlight on top of the M4.10 click handler /
+  M4.11 details labels. Two new CSS rules in the M4.6
+  `<style>` block — `svg circle.selected { stroke:
+  #000000; stroke-width: 3; }` and `svg text.selected {
+  font-weight: bold; }`. The click handler now also calls
+  a `selectProvince(el)` helper that uses
+  `classList.remove("selected")` on every prior
+  `.selected` node and `classList.add("selected")` on
+  every node sharing the clicked element's `data-id`
+  (clicking either the `<circle>` or the `<text>`
+  highlights the whole province pair — fulfils the M4.8
+  design intent that "a future clickable UI can address
+  either element uniformly"). The selection logic
+  deliberately walks the pre-collected `nodes` NodeList
+  and compares `data-id` strings, so the attribute value
+  never re-enters a CSS-selector parser at runtime. The
+  initial render carries **NO `class="selected"`**
+  anywhere; the class only appears at click time.
+  **Selection is purely DOM-level**: never written into
+  `GameState`, never persisted across reloads, no
+  `localStorage` / `sessionStorage` / cookie / URL
+  fragment — a page reload always starts with nothing
+  selected. M4.10's XSS-safe DOM API (`createElement` +
+  `textContent` only; no `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function`), no-network
+  discipline (no `fetch` / `XMLHttpRequest`), and
+  asymmetric "exactly one inline `<script>` in `map.html`;
+  `provinces.svg` stays script-free" invariant all carry
+  over unchanged. The M4.8 `data-*` DOM contract on
+  `<circle>` / `<text>` is **NOT renamed**. **M4 remains
+  in progress** — no `docs/milestone-4-result.md`; M4.12
+  is the first selection-surface skeleton, not an exit.
+  Artefact set unchanged (still 10). Save format unchanged
+  (still v12). `provinces.svg` bytes unchanged from M4.8;
+  `map.html` bytes did change (two new CSS rules + new
+  `selectProvince` helper + extended click listener). 5
+  new doctest cases (848 total). **No state mutation, no
+  commands, no AI, no events emitted by the selection, no
+  selection persistence, no multi-select / shift-click /
+  right-click / context menu, no hover state, no tooltips,
+  no keyboard navigation / focus ring / `aria-*` polish,
+  no animation / transition on the highlight, no save
+  schema bump, no new state field, no new artefact, no
+  new fixture, no new `InterestGroupKind` /
+  `PlayerCommandKind`, no rename of the M4.8 `data-*` DOM
+  contract keys, no second `<script>`, no `<script src=>`,
+  no `<script type=>`, no `<link>`, no external CSS / font
+  / `<iframe>` / `<img>`, no `fetch` / XHR / storage /
+  history / navigation APIs, no `innerHTML` / `outerHTML`
+  / `document.write` / `eval` / `Function`, no
+  `className` string concatenation, no `setAttribute(
+  "class", ...)`, no inline event attributes, no
+  per-element inline `style="..."`, no `<meta
+  name="viewport">`, no CSS animations / transitions /
+  media queries / `@import` / `@font-face`, no neighbour
+  / adjacency edges, no terrain / resources / population
+  overlays, no runner CLI flag, no change to
+  `provinces.svg` bytes, no M4 close-out, no
+  `docs/milestone-4-result.md`, no "M4 closed" wording.**
+- Previously shipped: **M4.11 — clickable UI
   details labels polish.** Pure UX polish on the M4.10
   click handler. The `<dt>` labels rendered into the
   `<div id="details">` panel are decoupled from the raw
@@ -773,19 +834,21 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.11): **M4.12** — open.
+- Next sub-milestone candidate (post-M4.12): **M4.13** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface;
   M4.9 pinned the DOM contract via integration tests +
   checkpoint doc; M4.10 added the first JavaScript — a
   stateless click-handler details panel; M4.11 polished the
-  panel's `<dt>` labels to fixed human-readable strings.
-  Natural next steps include (a) hover state / tooltips
-  reusing the same XSS-safe DOM-API discipline, (b)
-  keyboard navigation / focus ring / `aria-*` polish on the
-  clickable circles + texts, (c) selection persistence
-  (highlight the clicked node) without state mutation,
+  panel's `<dt>` labels to fixed human-readable strings;
+  M4.12 added a transient `.selected` class + CSS highlight
+  on the clicked province pair. Natural next steps include
+  (a) hover state / tooltips reusing the same XSS-safe
+  DOM-API discipline, (b) keyboard navigation / focus ring
+  / `aria-*` polish on the clickable circles + texts,
+  (c) `.selected` persistence across reload (URL fragment
+  read on load, not write) without state mutation,
   (d) richer node fields (neighbour adjacency, terrain,
   population) once a renderer needs them, (e) `<meta
   name="viewport">` + media queries for responsive
@@ -793,7 +856,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -824,7 +887,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 shipped. Fifty-eight sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 shipped. Fifty-nine sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -971,6 +1034,56 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.12 clickable UI selected-state CSS skeleton — layers a
+transient selection highlight on top of the M4.10/M4.11
+click handler. Two new CSS rules in the M4.6 `<style>`
+block: `svg circle.selected { stroke: #000000;
+stroke-width: 3; }` and `svg text.selected { font-weight:
+bold; }`. The click handler now also calls a
+`selectProvince(el)` helper that clears every prior
+`.selected` via `classList.remove("selected")` and adds
+`.selected` via `classList.add("selected")` to every node
+sharing the clicked element's `data-id` (clicking either
+the `<circle>` or the `<text>` lights up the whole
+province pair — fulfils the M4.8 design intent that "a
+future clickable UI can address either element
+uniformly"). Walks the pre-collected `nodes` NodeList
+and compares `data-id` strings rather than re-entering a
+CSS-selector parser at runtime. Initial render carries
+**NO `class="selected"`** anywhere; the class only appears
+at click time. **Selection is purely DOM-level**: never
+written into `GameState`, never persisted across reloads,
+no `localStorage` / `sessionStorage` / cookie / URL
+fragment — a page reload always starts with nothing
+selected. M4.10's XSS-safe DOM API, no-network discipline,
+and asymmetric one-inline-script invariant all carry over
+unchanged. The M4.8 `data-*` DOM contract on `<circle>` /
+`<text>` is NOT renamed. **M4 remains in progress.**
+**Artefact set unchanged (still 10); save format unchanged
+(still v12);** M1.17 / M2.22 / M3.7 byte-identical
+determinism contracts continue to pass. `provinces.svg`
+bytes unchanged from M4.8; `map.html` bytes did change
+(two new CSS rules + new helper + extended listener). 5
+new doctest cases (848 total). **No state mutation, no
+commands, no AI, no events emitted by the selection, no
+selection persistence, no multi-select / right-click, no
+hover, no tooltip, no keyboard nav / `aria-*` polish, no
+animation, no save schema bump, no new state field /
+artefact / fixture / `InterestGroupKind` /
+`PlayerCommandKind`, no rename of the M4.8 data-* DOM
+contract keys, no second `<script>`, no `<script src=>` /
+`<script type=>`, no `<link>`, no external CSS / font /
+`<iframe>` / `<img>`, no `fetch` / XHR / storage / history
+/ navigation APIs, no `innerHTML` / `outerHTML` /
+`document.write` / `eval` / `Function`, no `className`
+string concatenation, no `setAttribute("class", ...)`, no
+inline event attributes, no per-element inline
+`style="..."`, no `<meta name="viewport">`, no CSS
+animations / transitions / media queries / `@import` /
+`@font-face`, no neighbour / adjacency / terrain /
+overlays, no runner CLI flag, no change to `provinces.svg`
+bytes, no M4 close-out, no `docs/milestone-4-result.md`,
+no "M4 closed" wording.**;
 **M4.11 clickable UI details labels polish — pure UX polish
 on the M4.10 click handler. The `<dt>` labels rendered into
 the `<div id="details">` panel are decoupled from the raw
