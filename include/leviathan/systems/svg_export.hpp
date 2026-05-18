@@ -15,22 +15,33 @@
 // surface (the four `data-*` attributes on both `<circle>`
 // and `<text>`). M4.9 was a checkpoint (zero behaviour
 // change; three new integration tests + status snapshot).
-// M4.10 (this revision) is the **first M4.x to add JavaScript
-// to map.html**: a single stateless inline `<script>` at end
-// of body wires a click handler that copies the four data-*
-// values off the clicked `<circle>` / `<text>` into a
-// read-only `<div id="details">` panel sitting between the
-// SVG and the legend. The script uses `addEventListener` +
+// M4.10 was the **first M4.x to add JavaScript to map.html**:
+// a single stateless inline `<script>` at end of body wires a
+// click handler that copies the four data-* values off the
+// clicked `<circle>` / `<text>` into a read-only
+// `<div id="details">` panel sitting between the SVG and the
+// legend. The script uses `addEventListener` +
 // `createElement` + `textContent` — never `innerHTML`,
 // `eval`, `document.write`, `fetch`, `XMLHttpRequest`, or
 // `localStorage` — so attribute values cannot inject markup
 // and the viewer remains read-only. `provinces.svg` stays
 // fully inert (no `<script>`, no `<style>`, no
-// `font-family`). Future M4 sub-milestones (hover state,
-// tooltips, selection persistence, neighbour-adjacency
-// lines, terrain, etc.) will extend the renderer further.
+// `font-family`). M4.11 (this revision) is a UX polish on
+// the M4.10 click handler: the `<dt>` labels rendered into
+// the details panel are decoupled from the raw `data-*`
+// attribute names. `getAttribute` still reads the M4.8 DOM
+// contract keys (`data-id` / `data-owner` / `data-owner-code`
+// / `data-name` — those are NOT renamed; the `<circle>` /
+// `<text>` surface is byte-identical with M4.10), but each
+// `<dt>` now renders a fixed human-readable label
+// (`Province ID` / `Owner Index` / `Owner Code` /
+// `Province Name`). No state mutation, no new artefact, no
+// save schema bump, no DOM-contract rename. Future M4
+// sub-milestones (hover state, tooltips, selection
+// persistence, neighbour-adjacency lines, terrain, etc.)
+// will extend the renderer further.
 //
-// What M4.10 deliberately does NOT do:
+// What M4.10 / M4.11 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -165,9 +176,19 @@
 //              `<p class="details-empty">` instructing the
 //              viewer to click a province. The M4.10 click
 //              handler replaces the div's contents with a
-//              `<dl>` listing the clicked element's `data-id`
-//              / `data-owner` / `data-owner-code` / `data-name`
-//              via `createElement` + `textContent` (XSS-safe).
+//              `<dl>` whose four `<dd>` cells carry the
+//              clicked element's `data-id` / `data-owner` /
+//              `data-owner-code` / `data-name` values
+//              respectively, read via `getAttribute` and
+//              written via `createElement` + `textContent`
+//              (XSS-safe). M4.11: the four `<dt>` labels
+//              are decoupled from the raw attribute names
+//              and render the fixed human-readable strings
+//              `Province ID` / `Owner Index` / `Owner Code`
+//              / `Province Name`. `getAttribute` still uses
+//              the raw data-* keys (the M4.8 DOM contract
+//              is unchanged); only the labels rendered into
+//              `<dt>` cells change.
 //           3. (M4.7) A `<ul class="legend">`. One `<li
 //              data-owner="N">` per entry in
 //              `state.countries`, in vector order. Each

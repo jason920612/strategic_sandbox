@@ -934,3 +934,80 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.10 script o
     CHECK(svg_text.find(".details")             == std::string::npos);
     CHECK(svg_text.find("addEventListener")     == std::string::npos);
 }
+
+// =====================================================================
+// M4.11 — details labels polish
+// =====================================================================
+// The M4.10 click handler used the raw data-* attribute name
+// as both the <dt> label and the getAttribute() lookup key.
+// M4.11 decouples the two: getAttribute() still reads the M4.8
+// DOM contract keys (`data-id`, `data-owner`,
+// `data-owner-code`, `data-name` — those are NOT renamed; the
+// <circle> / <text> surface is byte-identical with M4.10), but
+// the rendered <dt> body shows a fixed human-readable label
+// (`Province ID`, `Owner Index`, `Owner Code`, `Province
+// Name`). Pure UX polish; no commands / state mutation /
+// schema bump / artefact change.
+
+TEST_CASE("render_map_html: M4.11 click handler emits the four human-readable <dt> labels") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // All four labels appear as JavaScript string literals
+    // inside the inline script. textContent guarantees they
+    // render verbatim as the <dt> body at click time.
+    CHECK(html.find("\"Province ID\"")   != std::string::npos);
+    CHECK(html.find("\"Owner Index\"")   != std::string::npos);
+    CHECK(html.find("\"Owner Code\"")    != std::string::npos);
+    CHECK(html.find("\"Province Name\"") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.11 still uses raw data-* attr names for getAttribute (M4.8 DOM contract unchanged)") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The handler still has to look up the M4.8 attributes
+    // — only the <dt> labels are remapped. The four data-*
+    // keys must still appear as JS string literals (they go
+    // into the `attr:` field of each `fields[]` entry, which
+    // the loop passes to el.getAttribute(f.attr)).
+    CHECK(html.find("\"data-id\"")         != std::string::npos);
+    CHECK(html.find("\"data-owner\"")      != std::string::npos);
+    CHECK(html.find("\"data-owner-code\"") != std::string::npos);
+    CHECK(html.find("\"data-name\"")       != std::string::npos);
+    // getAttribute is still the read path (textContent is
+    // still the write path — XSS-safe API surface from
+    // M4.10 preserved).
+    CHECK(html.find("getAttribute(") != std::string::npos);
+    CHECK(html.find("textContent")   != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.11 changes the labels rendered into <dt>, NOT the <circle> / <text> attributes themselves") {
+    // The M4.8 DOM identity surface lives on the SVG
+    // elements: every <circle> and every <text> still
+    // carries `data-id` / `data-owner` / `data-owner-code` /
+    // `data-name` literally. A future clickable-UI consumer
+    // that greps for these attribute names must still find
+    // them on the elements — M4.11 only retouches the
+    // panel's display labels.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+    // <circle> attribute surface (raw key, unchanged).
+    CHECK(html.find(" data-id=\"berlin\"")        != std::string::npos);
+    CHECK(html.find(" data-owner=\"0\"")          != std::string::npos);
+    CHECK(html.find(" data-owner-code=\"GER\"")   != std::string::npos);
+    CHECK(html.find(" data-name=\"Berlin\"")      != std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT carry the M4.11 details labels") {
+    // The details panel + handler are HTML-wrapper-only.
+    // The standalone SVG must NOT pick up the new labels
+    // even though they are pure string literals.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("Province ID")   == std::string::npos);
+    CHECK(svg_text.find("Owner Index")   == std::string::npos);
+    CHECK(svg_text.find("Owner Code")    == std::string::npos);
+    CHECK(svg_text.find("Province Name") == std::string::npos);
+}

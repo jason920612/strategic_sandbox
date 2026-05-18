@@ -217,8 +217,56 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.10
-  （HTML clickable UI skeleton）** 是 `map.html` 第一段
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.11
+  （clickable UI details labels polish）** 是 M4.10 點擊
+  handler 的純 UX 打磨。`<div id="details">` panel 裡每個
+  `<dt>` 渲染的標籤，從原本「直接顯示 raw `data-*` 屬性
+  名」改成「固定的 human-readable label」，但 `getAttribute`
+  仍然查 M4.8 DOM contract 的四個原始 key
+  （`data-id` / `data-owner` / `data-owner-code` /
+  `data-name` ── **沒有 rename**；`<circle>` / `<text>` 上
+  的屬性面與 M4.10 完全 byte-identical），只有 `<dt>`
+  body 文字改成 `Province ID` / `Owner Index` /
+  `Owner Code` / `Province Name`。renderer 內部只動一段 JS
+  literal：`var keys = [...]` → `var fields = [{attr,
+  label}, ...]`，並把 `dt.textContent` 從 `keys[i]` 改成
+  `f.label`，`getAttribute(f.attr)` 維持原狀。M4.10 的
+  XSS-safe DOM API（`createElement` + `textContent` only；
+  沒有 `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function`）、no-storage / no-network discipline
+  （沒有 `fetch` / `XMLHttpRequest` / `localStorage` /
+  `sessionStorage` / `history.pushState` /
+  `window.location` / `navigator`）、以及「`map.html` 有且
+  只有一段 inline `<script>`；`provinces.svg` 完全沒有
+  script」這條非對稱 invariant 全部沿用，不需要新增或修改
+  既有的 integration test。**M4 仍在 in progress** ── 沒有
+  寫 `docs/milestone-4-result.md`，M4.11 只是 UX 打磨，
+  不是 exit。`provinces.svg` bytes 與 M4.8 完全相同；
+  `map.html` bytes 有變（多了四個 label 字串 + 新的
+  `fields` 陣列結構）。**Artefact 數量不變（仍 10）；save
+  格式不變（仍 v12）**；M1.17 / M2.22 / M3.7 byte-identical
+  determinism contract 仍 by construction 通過。4 個新
+  doctest cases（共 843）。**M4 in progress.**
+  **M4.11 不做** rename M4.8 的 data-* DOM contract key /
+  state mutation / commands / AI / 點擊 emit event /
+  selection persistence / 多選 / 右鍵 / hover / tooltip /
+  keyboard navigation / focus ring / `aria-*` polish /
+  animation / save schema bump / 新 state field / 新
+  artefact / 新 fixture / 新 `InterestGroupKind` /
+  `PlayerCommandKind` / 第二個 `<script>` / `<script src=>`
+  / `<script type=>` / `<link>` / 外部 CSS / font /
+  `<iframe>` / `<img>` / `fetch` / `XMLHttpRequest` /
+  `localStorage` / `sessionStorage` / `history.pushState`
+  / `window.location` / `navigator` / `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function` /
+  inline event attribute / per-element inline
+  `style="..."` / `<meta name="viewport">` / CSS
+  animation / transition / media query / `@import` /
+  `@font-face` / 鄰接 edge / terrain / overlay /
+  runner CLI flag / 動 `provinces.svg` bytes / M4
+  close-out / `docs/milestone-4-result.md` / 「M4
+  closed」字樣。
+  **M4.10（HTML clickable UI skeleton）** 是 `map.html` 第一段
   JavaScript。在 `<body>` 結尾放唯一一個 inline `<script>`
   IIFE，對每個 `svg circle[data-id], svg text[data-id]`
   元素掛一個 `click` listener；listener 透過
