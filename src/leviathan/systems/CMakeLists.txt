@@ -46,6 +46,7 @@ add_library(leviathan_systems STATIC
     order_execution.cpp
     policy_system.cpp
     random_service.cpp
+    reported_value.cpp
     runner.cpp
     save_system.cpp
     scenario_loader.cpp

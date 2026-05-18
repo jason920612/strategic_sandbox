@@ -9,7 +9,7 @@
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at M6.3. M6 follows RFC-090 §M6 (隱藏真相
+  progress at M6.4. M6 follows RFC-090 §M6 (隱藏真相
   與資訊失真): the player will not always see the
   truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
   `visible_report`; 6.3 `information_accuracy`; 6.4
@@ -53,7 +53,85 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.3 —
+- Latest shipped sub-milestone: **M6.4 —
+  reported_value helper skeleton.** Fourth M6 PR.
+  Implements only RFC-090 §6.4 (`6.4 實作 reported
+  value`). New `leviathan::systems::reported_value`
+  module (`include/leviathan/systems/reported_value.hpp`
+  + `src/leviathan/systems/reported_value.cpp`). Public
+  API: `core::Result<double> from_true_value(double
+  true_value, double accuracy)`. **M6.4 ships the
+  helper SHAPE only**: the body is a placeholder
+  formula — `reported_value = true_value * accuracy`.
+  At `accuracy = 1.0` (the M6.3
+  `kPlaceholderInformationAccuracy` ceiling), reported
+  equals true_value verbatim — the player sees the
+  truth. At `accuracy = 0.0`, reported equals 0 — the
+  player sees nothing useful. Intermediate values
+  linearly interpolate between truth and nothing.
+  Negative true_values (e.g. canonical M5.1
+  effect's -0.02) damp toward 0 correctly.
+  **Composition with the M6 pipeline**: M6.3's
+  `compute_for_country` produces the accuracy; M6.4
+  consumes it via `from_true_value`. M6.5 (bias /
+  noise) will wrap M6.4 with RNG-driven distortion;
+  M6.6 / M6.7 will reduce M6.3's accuracy below 1.0
+  (M6.4 body unaffected); M6.8 (debug mode) will
+  bypass M6.4 entirely; M6.9 (non-debug mode) will
+  use M6.4's output to hide `visible_report` toward
+  `true_cause`. **M6.4 does NOT modify M6.3's
+  `compute_for_country` body** per the PR #102
+  reviewer's discipline note (*"M6.4 應避免改 formula
+  body"*) — the M6.3 placeholder (`return 1.0`) stays
+  verbatim. **No save schema bump** — M6.4 is a pure
+  free function over two doubles, no GameState
+  parameter, no new persistent state; save format
+  stays at v16. **Validation**: both `true_value` and
+  `accuracy` must be finite; `accuracy` must be in
+  `[0, 1]`. Failure messages include the offending
+  value (NaN / ±∞ / out-of-range). Mirrors the M1.5
+  / M5.6 effect-value validation style. **Pure /
+  deterministic**: no GameState, no RNG, no side
+  effects; repeated identical-input calls return
+  identical values (pinned by a test). **16 new
+  doctest cases (1090 total, 62522 assertions;
+  verified via direct `leviathan_tests.exe` run** per
+  the `feedback_ctest_masks_doctest` rule): happy
+  path (accuracy=1.0 ⇒ true_value; accuracy=0.0 ⇒ 0;
+  midpoint ⇒ half; true_value=0 ⇒ 0); monotonicity
+  (higher accuracy ⇒ higher reported); negative
+  true_value round-trip at full accuracy + damp at
+  low accuracy; validation (NaN / ±∞ on both inputs;
+  accuracy<0; accuracy>1); determinism; composition
+  with M6.3 (canonical state ⇒ accuracy=1.0 ⇒ reported
+  equals true_value verbatim; failed M6.3 lookup is
+  checkable BEFORE M6.4 is called). All 1074 M6.3-era
+  tests still pass byte-identically. New
+  `docs/m6-4-reported-value-helper-skeleton.md`
+  design note. **No save format bump (still v16),
+  no new state field, no new artefact (still 10),
+  no new `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no scenario_loader change,
+  no event-module / monthly_pipeline / runner code
+  change, no information_accuracy module body
+  change (M6.3 placeholder stays at 1.0), no
+  canonical fixture change, no consumer in any
+  current system (helper callable but unused;
+  M6.5+ / M6.9 will start using it), no event-aware
+  variant (`from_event` is M6.9 scope), no bias /
+  noise (M6.5), no intelligence-budget formula
+  (M6.6), no corruption formula (M6.7), no debug
+  mode (M6.8), no non-debug hiding (M6.9), no
+  EventReport type / artefact, no events.jsonl
+  semantic change, no UI / map integration, no
+  balance pass, no RNG draws (M6.5 introduces RNG
+  when it lands), no rebake of M1.17 / M2 / M3 /
+  M4 / M5 byte-identical determinism baselines
+  (no consumer = no determinism drift), no M6.5
+  work, no `docs/milestone-6-checkpoint.md`, no
+  `docs/milestone-6-result.md`, no "M6 closed"
+  wording.** M6 remains in progress.
+- Previously shipped: **M6.3 —
   information_accuracy helper skeleton.** Third M6
   PR. Implements only RFC-090 §6.3 (`6.3 實作
   information_accuracy`). New
