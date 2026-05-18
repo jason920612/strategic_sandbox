@@ -3194,6 +3194,48 @@ TEST_CASE("run: canonical scenario carries M4.8 data-* attrs on both provinces.s
     }
 }
 
+TEST_CASE("run: canonical scenario emits the M4.10 clickable surface in map.html only") {
+    // M4.10 adds a <div id="details"> panel + exactly one
+    // inline <script> click handler to map.html. provinces.svg
+    // stays inert (no <script>, no <div id="details">, no
+    // .details CSS, no addEventListener).
+    TempDir td("leviathan_runner_m410_canonical_clickable");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    const auto r = rn::run(opts);
+    REQUIRE(r.ok());
+
+    const std::string html = read_file(td.path / "map.html");
+    const std::string svg  = read_file(td.path / "provinces.svg");
+
+    // map.html carries the details placeholder + exactly one
+    // inline <script>.
+    CHECK(html.find("<div id=\"details\"") != std::string::npos);
+    CHECK(html.find("Click a province to see its details.")
+          != std::string::npos);
+    CHECK(html.find("<script")  != std::string::npos);
+    CHECK(html.find("</script") != std::string::npos);
+    CHECK(html.find("<script src=")  == std::string::npos);
+    CHECK(html.find("<script type=") == std::string::npos);
+    CHECK(html.find("addEventListener") != std::string::npos);
+    // The click handler is read-only (no fetch / no storage /
+    // no innerHTML / no eval).
+    CHECK(html.find("fetch(")        == std::string::npos);
+    CHECK(html.find("localStorage")  == std::string::npos);
+    CHECK(html.find("innerHTML")     == std::string::npos);
+    CHECK(html.find("eval(")         == std::string::npos);
+
+    // provinces.svg stays fully inert.
+    CHECK(svg.find("<script")              == std::string::npos);
+    CHECK(svg.find("</script")             == std::string::npos);
+    CHECK(svg.find("<div id=\"details\"")  == std::string::npos);
+    CHECK(svg.find(".details")             == std::string::npos);
+    CHECK(svg.find("addEventListener")     == std::string::npos);
+}
+
 TEST_CASE("run: map.html preserves byte-identical determinism on same seed") {
     TempDir td_a("leviathan_runner_m45_det_a");
     TempDir td_b("leviathan_runner_m45_det_b");

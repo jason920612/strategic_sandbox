@@ -14,7 +14,68 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.9 — HTML DOM contract
+- Latest shipped sub-milestone: **M4.10 — HTML clickable UI
+  skeleton.** First JavaScript in `map.html`. A single
+  inline `<script>` IIFE at the end of `<body>` attaches one
+  `click` listener per `svg circle[data-id], svg
+  text[data-id]` element; the listener reads the four M4.8
+  `data-*` attributes off the clicked element via
+  `getAttribute` and renders them as a `<dl>` inside a new
+  `<div id="details">` placeholder that sits between the
+  inline SVG and the M4.7 legend. The placeholder starts
+  with `<p class="details-empty">Click a province to see
+  its details.</p>`; the first click replaces the
+  placeholder text with the `<dl>`, subsequent clicks
+  replace the previous `<dl>`. The handler is **stateless +
+  XSS-safe**: it uses `createElement` + `textContent` only
+  (no `innerHTML` / `outerHTML` / `document.write` / `eval`
+  / `Function`), and never calls `fetch` / `XMLHttpRequest`
+  / `localStorage` / `sessionStorage` / `history.pushState`
+  / `window.location` / `navigator`. The selector
+  deliberately skips the M4.7 legend swatch `<circle>`
+  elements (which have no `data-id`), keeping the legend
+  non-clickable. Four new CSS rules (`.details` + dl/dt/dd
+  + `.details-empty` + `svg circle[data-id], svg
+  text[data-id] { cursor: pointer; }`) live in the M4.6
+  `<style>` block; **no per-element inline `style="..."`**
+  — the M4.6 single-CSS-surface contract holds. The
+  JavaScript boundary is now **asymmetric**:
+  `provinces.svg` stays fully script-free / inert;
+  `map.html` carries EXACTLY ONE inline script (no `src=`,
+  no `type=`). The M4.9 integration test C splits to
+  enforce the new asymmetric invariant; M4.5 / M4.6 "no
+  `<script>`" unit test retunes accordingly. **M4 remains
+  in progress** — no `docs/milestone-4-result.md` is
+  written; M4.10 is one more skeleton sub-milestone, not
+  an exit report. Artefact set unchanged (still 10). Save
+  format unchanged (still v12). `provinces.svg` bytes
+  unchanged from M4.8; `map.html` bytes did change (new
+  CSS + placeholder + script). 8 new doctest cases (839
+  total: 7 in `svg_export_test`, 1 in `runner_test`).
+  **M4 in progress.** **No state mutation from the viewer,
+  no commands, no AI, no events emitted by the click, no
+  selection persistence, no multi-select / shift-click /
+  right-click, no hover state, no tooltips, no keyboard
+  navigation / focus ring / `aria-*` polish, no animation,
+  no save schema bump (still v12), no new state field, no
+  new artefact (still 10), no new fixture, no new
+  `InterestGroupKind` / `PlayerCommandKind`, no second
+  `<script>`, no `<script src=>`, no `<script
+  type="module">`, no `<link>`, no external CSS / font /
+  `<iframe>` / `<img>`, no `fetch` / `XMLHttpRequest` /
+  `localStorage` / `sessionStorage` / `history.pushState`
+  / `window.location` / `navigator`, no `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function`,
+  no inline event attributes (`onclick=` / ...), no
+  per-element inline `style="..."`, no `<meta
+  name="viewport">`, no CSS animations / transitions /
+  media queries / `@import` / `@font-face`, no neighbour
+  / adjacency edges, no terrain / resources / population
+  overlays, no runner CLI flag, no atomic `end_tick`
+  writes, no change to `provinces.svg` bytes, no M4
+  close-out, no `docs/milestone-4-result.md`, no "M4
+  closed" wording.**
+- Previously shipped: **M4.9 — HTML DOM contract
   checkpoint.** Mirrors M3.7's role for the M3 reaction
   loop: zero new behaviour, just three new integration
   tests (`tests/integration/m4_dom_contract_test.cpp`) and
@@ -29,33 +90,11 @@
   holds — no `<script>`, no `<link>`, no inline event
   attributes, no per-element `style="..."`, and
   `provinces.svg` additionally has no `<style>` block at
-  all. The checkpoint doc lists every contract point
-  (artefact set, SVG body shape, HTML wrapper shape, the
-  identity surface DOM lookups, the invariants future
-  M4.x sub-milestones must preserve, the deferred items)
-  in one place so a future clickable-UI sub-milestone can
-  read "what does the contract look like right now?"
-  without piecing together eight per-sub-milestone notes.
-  **M4 remains in progress** — no `docs/milestone-4-result.md`
-  is written; M4.9 is a checkpoint, not an exit report.
-  Renderer bytes unchanged from M4.8 — only tests + docs
-  ship. Artefact set unchanged (still 10). Save format
-  unchanged (still v12). 3 new doctest cases (830 total).
-  **M4 in progress.** **No new system, no new formula, no
-  new artefact (still 10), no save schema bump (still
-  v12), no new state field, no new fixture, no new
-  `InterestGroupKind` / `PlayerCommandKind`, no
-  JavaScript, no `<script>` / `<link>` / inline event
-  attributes / per-element inline `style="..."`, no
-  `<meta name="viewport">`, no CSS animations /
-  transitions / media queries / `@import` / `@font-face`,
-  no click handlers, no clickable UI, no hover state, no
-  tooltips, no state mutation, no neighbour / adjacency
-  edges, no terrain / resources / population overlays, no
-  events, no AI, no command integration, no runner CLI
-  flag, no atomic `end_tick` writes, no M4 close-out, no
-  `docs/milestone-4-result.md`, no "M4 closed" wording,
-  no change to `provinces.svg` or `map.html` bytes.**
+  all. (M4.10 reframes invariant 3 as asymmetric:
+  `provinces.svg` stays script-free; `map.html` now
+  carries exactly one inline script.) Renderer bytes
+  unchanged from M4.8 — only tests + docs ship in M4.9.
+  3 new doctest cases (830 total at M4.9).
 - Previously shipped: **M4.8 — HTML static
   province data attributes skeleton.** Widens the identity
   surface inside the SVG body: every `<circle>` and every
@@ -685,22 +724,26 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.9): **M4.10** — open.
+- Next sub-milestone candidate (post-M4.10): **M4.11** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface;
   M4.9 pinned the DOM contract via integration tests +
-  checkpoint doc. Natural next steps include (a) a
-  clickable map / country-panel surface that uses the
-  M4.8 data-* attrs as the DOM lookup key, (b) hover
-  state / tooltips, (c) richer node fields (neighbour
-  adjacency, terrain, population) once a renderer needs
-  them, (d) `<meta name="viewport">` + media queries for
-  responsive sizing. None committed; reviewer chooses.
+  checkpoint doc; M4.10 added the first JavaScript — a
+  stateless click-handler details panel. Natural next
+  steps include (a) hover state / tooltips reusing the
+  same XSS-safe DOM-API discipline, (b) keyboard
+  navigation / focus ring / `aria-*` polish on the
+  clickable circles + texts, (c) selection persistence
+  (highlight the clicked node) without state mutation,
+  (d) richer node fields (neighbour adjacency, terrain,
+  population) once a renderer needs them, (e) `<meta
+  name="viewport">` + media queries for responsive
+  sizing. None committed; reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -731,7 +774,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 shipped. Fifty-six sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 shipped. Fifty-seven sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -878,6 +921,61 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.10 HTML clickable UI skeleton — first JavaScript in
+`map.html`. A single inline `<script>` IIFE at the end of
+`<body>` attaches one `click` listener per `svg
+circle[data-id], svg text[data-id]` element; the listener
+reads the four M4.8 `data-*` attributes off the clicked
+element via `getAttribute` and renders them as a `<dl>`
+inside a new `<div id="details">` placeholder that sits
+between the inline SVG and the M4.7 legend. Placeholder
+starts with `<p class="details-empty">Click a province to
+see its details.</p>`; the first click replaces the
+placeholder, subsequent clicks replace the previous `<dl>`.
+The handler is **stateless + XSS-safe**: it uses
+`createElement` + `textContent` only (no `innerHTML` /
+`outerHTML` / `document.write` / `eval` / `Function`),
+and never calls `fetch` / `XMLHttpRequest` / `localStorage`
+/ `sessionStorage` / `history.pushState` / `window.location`
+/ `navigator`. The selector deliberately skips the M4.7
+legend swatch `<circle>` elements (which have no `data-id`),
+keeping the legend non-clickable. Four new CSS rules
+(`.details` + dl/dt/dd + `.details-empty` + `svg
+circle[data-id], svg text[data-id] { cursor: pointer; }`)
+live in the M4.6 `<style>` block; **no per-element inline
+`style="..."`** — M4.6 single-CSS-surface contract holds.
+The JavaScript boundary is now **asymmetric**:
+`provinces.svg` stays fully script-free; `map.html`
+carries EXACTLY ONE inline script (no `src=`, no `type=`).
+M4.9's integration test C splits to enforce the new
+asymmetric invariant; M4.5/M4.6 "no `<script>`" unit test
+retunes. **M4 remains in progress** — no
+`docs/milestone-4-result.md`; M4.10 is one more skeleton
+sub-milestone, not an exit. `provinces.svg` bytes
+unchanged from M4.8; `map.html` bytes did change (new CSS
++ placeholder + script). **Artefact set unchanged (still
+10); save format unchanged (still v12);** M1.17 / M2.22 /
+M3.7 byte-identical determinism contracts continue to
+pass. 8 new doctest cases (839 total: 7 svg_export + 1
+runner). **No state mutation, no commands, no AI, no
+events emitted by the click, no selection persistence, no
+multi-select / right-click, no hover state, no tooltips,
+no keyboard navigation / focus ring / `aria-*` polish, no
+animation, no save schema bump, no new state field, no
+new artefact, no new fixture, no new `InterestGroupKind`
+/ `PlayerCommandKind`, no second `<script>`, no `<script
+src=>`, no `<script type=>`, no `<link>`, no external CSS
+/ font / `<iframe>` / `<img>`, no `fetch` /
+`XMLHttpRequest` / `localStorage` / `sessionStorage` /
+`history.pushState` / `window.location` / `navigator`, no
+`innerHTML` / `outerHTML` / `document.write` / `eval` /
+`Function`, no inline event attributes, no per-element
+inline `style="..."`, no `<meta name="viewport">`, no CSS
+animations / transitions / media queries / `@import` /
+`@font-face`, no neighbour / adjacency edges, no terrain
+/ resources / population overlays, no runner CLI flag, no
+change to `provinces.svg` bytes, no M4 close-out, no
+`docs/milestone-4-result.md`, no "M4 closed" wording.**;
 **M4.9 HTML DOM contract checkpoint — mirrors M3.7's role
 for the M3 reaction loop: zero new behaviour, just three
 new integration tests (`tests/integration/m4_dom_contract_test.cpp`)
