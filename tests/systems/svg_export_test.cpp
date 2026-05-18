@@ -1011,3 +1011,100 @@ TEST_CASE("render_provinces (standalone SVG) does NOT carry the M4.11 details la
     CHECK(svg_text.find("Owner Code")    == std::string::npos);
     CHECK(svg_text.find("Province Name") == std::string::npos);
 }
+
+// =====================================================================
+// M4.12 — clickable UI selected-state CSS skeleton
+// =====================================================================
+// M4.12 layers a transient selection highlight on top of the
+// M4.10/M4.11 click handler:
+//   * Two new CSS rules in the M4.6 <style> block:
+//       svg circle.selected { stroke: #000000; stroke-width: 3; }
+//       svg text.selected   { font-weight: bold; }
+//   * The click handler now also calls a `selectProvince`
+//     helper that clears all `.selected` classes and re-adds
+//     `.selected` to every node (circle + text) sharing the
+//     clicked element's data-id.
+// Selection is **purely DOM-level**: never written into
+// GameState; never persisted across reloads; no
+// localStorage / sessionStorage / cookie / URL fragment.
+// `class="selected"` does NOT appear in the initial render.
+
+TEST_CASE("render_map_html: M4.12 <style> block carries circle.selected + text.selected rules") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("svg circle.selected { stroke: #000000; stroke-width: 3; }")
+          != std::string::npos);
+    CHECK(html.find("svg text.selected { font-weight: bold; }")
+          != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.12 click handler uses classList.add/remove on \"selected\"") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // classList API is the safe class manipulation path —
+    // it cannot inject markup the way assigning to .className
+    // with concatenated strings could.
+    CHECK(html.find("classList.add(\"selected\")")    != std::string::npos);
+    CHECK(html.find("classList.remove(\"selected\")") != std::string::npos);
+    // Helper function present.
+    CHECK(html.find("selectProvince") != std::string::npos);
+    // The handler still queries the previously-selected
+    // nodes so the highlight clears between clicks.
+    CHECK(html.find("\".selected\"") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.12 initial render has NO class=\"selected\" anywhere") {
+    // At first paint, nothing is selected. The handler only
+    // adds the class on click — there should be no element
+    // with class="selected" in the static HTML, on either a
+    // populated state or an empty one.
+    {
+        GameState state;
+        state.countries.push_back(country(0, "GER", "Germany"));
+        state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+        const std::string html = svg::render_map_html(state);
+        CHECK(html.find("class=\"selected\"")  == std::string::npos);
+        CHECK(html.find(" selected\"")          == std::string::npos);
+        CHECK(html.find("=\"selected ")         == std::string::npos);
+    }
+    {
+        GameState state;
+        const std::string html = svg::render_map_html(state);
+        CHECK(html.find("class=\"selected\"") == std::string::npos);
+    }
+}
+
+TEST_CASE("render_map_html: M4.12 selection is DOM-only — no storage / persistence / state mutation surface") {
+    // Reinforces the M4.10 no-persistence discipline against
+    // the M4.12 new code path. Selection must not leak into
+    // localStorage / sessionStorage / cookie / history /
+    // location, and must not introduce any new XSS escape
+    // hatches via `className` string concatenation or
+    // setAttribute("class", ...).
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("localStorage")          == std::string::npos);
+    CHECK(html.find("sessionStorage")        == std::string::npos);
+    CHECK(html.find("document.cookie")       == std::string::npos);
+    CHECK(html.find("history.pushState")     == std::string::npos);
+    CHECK(html.find("history.replaceState")  == std::string::npos);
+    CHECK(html.find("window.location")       == std::string::npos);
+    CHECK(html.find(".className")            == std::string::npos);
+    CHECK(html.find("setAttribute(\"class\"") == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.12 selection CSS or .selected handling") {
+    // M4.12, like M4.10/M4.11, lives entirely in the HTML
+    // wrapper. The standalone SVG must stay free of the
+    // selection CSS and any selection logic.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("circle.selected")    == std::string::npos);
+    CHECK(svg_text.find("text.selected")      == std::string::npos);
+    CHECK(svg_text.find(".selected")          == std::string::npos);
+    CHECK(svg_text.find("selectProvince")     == std::string::npos);
+    CHECK(svg_text.find("classList")          == std::string::npos);
+    // Initial-paint invariant also holds.
+    CHECK(svg_text.find("class=\"selected\"") == std::string::npos);
+}

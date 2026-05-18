@@ -35,13 +35,25 @@
 // `<text>` surface is byte-identical with M4.10), but each
 // `<dt>` now renders a fixed human-readable label
 // (`Province ID` / `Owner Index` / `Owner Code` /
-// `Province Name`). No state mutation, no new artefact, no
+// `Province Name`). M4.12 (this revision) layers a
+// transient selection highlight on top of the M4.10/M4.11
+// click handler: two new CSS rules — `svg circle.selected
+// { stroke: #000000; stroke-width: 3; }` and `svg
+// text.selected { font-weight: bold; }` — live in the
+// M4.6 `<style>` block, and the click handler now also
+// calls a `selectProvince` helper that clears all
+// `.selected` classes and re-adds `.selected` to every
+// node (circle + text) sharing the clicked element's
+// data-id. Selection is **purely DOM-level**: never
+// written into `GameState`, never persisted across
+// reloads, no `localStorage` / `sessionStorage` / cookie /
+// URL fragment. No state mutation, no new artefact, no
 // save schema bump, no DOM-contract rename. Future M4
-// sub-milestones (hover state, tooltips, selection
-// persistence, neighbour-adjacency lines, terrain, etc.)
-// will extend the renderer further.
+// sub-milestones (hover state, tooltips, persistent
+// selection state, neighbour-adjacency lines, terrain,
+// etc.) will extend the renderer further.
 //
-// What M4.10 / M4.11 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -167,6 +179,9 @@
 //                                                         (M4.10)
 //         `svg circle[data-id], svg text[data-id]
 //            { cursor: pointer; }`                        (M4.10)
+//         `svg circle.selected
+//            { stroke: #000000; stroke-width: 3; }`       (M4.12)
+//         `svg text.selected { font-weight: bold; }`      (M4.12)
 //       - `<body>` contains, in order:
 //           1. The **exact same** `<svg>...</svg>` body as
 //              `provinces.svg`, but WITHOUT the XML prolog
@@ -217,7 +232,17 @@
 //              `history.pushState`, no `window.location`
 //              navigation. The script never mutates the
 //              underlying `GameState`; it only repaints the
-//              `<div id="details">` placeholder.
+//              `<div id="details">` placeholder. M4.12: the
+//              click listener also calls a `selectProvince`
+//              helper that uses `classList.remove("selected")`
+//              on every prior `.selected` node and
+//              `classList.add("selected")` on every node
+//              sharing the clicked element's `data-id` (so
+//              clicking either the circle or the text
+//              highlights the whole province pair). The
+//              initial render carries NO `class="selected"`
+//              anywhere; selection is purely DOM-level and
+//              lost on reload.
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human

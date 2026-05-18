@@ -217,8 +217,63 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.11
-  （clickable UI details labels polish）** 是 M4.10 點擊
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.12
+  （clickable UI selected-state CSS skeleton）** 在 M4.10
+  click handler / M4.11 details labels 上再疊一層 transient
+  selection highlight。M4.6 `<style>` block 新增兩條 CSS：
+  `svg circle.selected { stroke: #000000; stroke-width:
+  3; }` 與 `svg text.selected { font-weight: bold; }`。
+  click handler 多呼叫一個 `selectProvince(el)` helper：
+  先用 `classList.remove("selected")` 清掉前一個 `.selected`
+  節點，再用 `classList.add("selected")` 加到所有與被點擊
+  元素同 `data-id` 的節點上（點 `<circle>` 或 `<text>` 都會
+  把該 province 的整對 element 一起亮起來 ── 正好兌現 M4.8
+  「未來 clickable UI 可以對 circle / text 一視同仁地查詢」
+  的設計意圖）。實作走預先收集的 `nodes` NodeList、用字串
+  比對 `data-id`，**不**讓 attribute value 重新進入
+  CSS-selector parser，避免任何 selector escape 風險。初始
+  render 完全沒有 `class="selected"`；class 只在 click 時
+  才出現。**selection 純粹是 DOM 層級的狀態**：不寫進
+  `GameState`、不持久化跨 reload、沒有 `localStorage` /
+  `sessionStorage` / cookie / URL fragment ── 重新整理頁面
+  一定從「沒有選擇」開始。M4.10 的 XSS-safe DOM API
+  （`createElement` + `textContent` only；沒有 `innerHTML`
+  / `outerHTML` / `document.write` / `eval` / `Function`）、
+  no-network discipline（沒有 `fetch` / `XMLHttpRequest`）、
+  以及「`map.html` 有且只有一段 inline `<script>`；
+  `provinces.svg` 完全沒有 script」這條非對稱 invariant
+  全部沿用，不需要新增或修改既有的 integration test。
+  M4.8 `<circle>` / `<text>` 上的 `data-*` DOM contract
+  key **沒有** rename。**M4 仍在 in progress** ── 沒有
+  寫 `docs/milestone-4-result.md`，M4.12 只是 selection
+  surface 的 skeleton，不是 exit。`provinces.svg` bytes
+  與 M4.8 完全相同；`map.html` bytes 有變（多了兩條 CSS
+  rule + 新的 helper + 延伸的 listener）。**Artefact 數量
+  不變（仍 10）；save 格式不變（仍 v12）**；M1.17 /
+  M2.22 / M3.7 byte-identical determinism contract 仍 by
+  construction 通過。5 個新 doctest cases（共 848）。
+  **M4 in progress.**
+  **M4.12 不做** state mutation / commands / AI / 點擊
+  emit event / selection persistence / 多選 / 右鍵 /
+  hover / tooltip / keyboard navigation / focus ring /
+  `aria-*` polish / animation / save schema bump / 新
+  state field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / rename
+  M4.8 的 data-* DOM contract key / 第二個 `<script>` /
+  `<script src=>` / `<script type=>` / `<link>` / 外部
+  CSS / font / `<iframe>` / `<img>` / `fetch` /
+  `XMLHttpRequest` / `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` / `navigator`
+  / `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function` / `className` 字串拼接 /
+  `setAttribute("class", ...)` / inline event attribute
+  / per-element inline `style="..."` / `<meta
+  name="viewport">` / CSS animation / transition / media
+  query / `@import` / `@font-face` / 鄰接 edge /
+  terrain / overlay / runner CLI flag / 動
+  `provinces.svg` bytes / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.11（clickable UI details labels polish）** 是 M4.10 點擊
   handler 的純 UX 打磨。`<div id="details">` panel 裡每個
   `<dt>` 渲染的標籤，從原本「直接顯示 raw `data-*` 屬性
   名」改成「固定的 human-readable label」，但 `getAttribute`

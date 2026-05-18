@@ -282,6 +282,18 @@ std::string render_map_html(const core::GameState& state) {
     out << "  .details-empty { margin: 0; color: #666; }\n";
     out << "  svg circle[data-id], svg text[data-id]"
            " { cursor: pointer; }\n";
+    // M4.12 selection highlight. The click handler adds the
+    // `.selected` class to both the clicked element and its
+    // sibling sharing the same data-id, so the whole province
+    // pair lights up regardless of whether the user clicked
+    // the circle or the label. Black stroke on the circle is
+    // visible against every M4.3 palette colour; bold on the
+    // text matches a familiar "this row is selected" idiom.
+    // No transitions / animations — same constraint as the
+    // M4.6 / M4.10 stylesheet.
+    out << "  svg circle.selected"
+           " { stroke: #000000; stroke-width: 3; }\n";
+    out << "  svg text.selected { font-weight: bold; }\n";
     out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";
@@ -336,6 +348,15 @@ std::string render_map_html(const core::GameState& state) {
     // fixed human-readable label so the panel reads as
     // English-language UX instead of leaking the
     // implementation key.
+    //
+    // M4.12: the click handler also toggles a transient
+    // `.selected` class via classList. Clicking either the
+    // <circle> or the <text> of a province lights up BOTH
+    // elements (the M4.8 widened data-id surface makes the
+    // pair lookup a one-line filter). Selection state is
+    // purely DOM-level — never written back into GameState,
+    // never persisted to localStorage / sessionStorage /
+    // history / URL fragment, lost on reload by design.
     out << "<script>\n";
     out << "(function() {\n";
     out << "  var details = document.getElementById(\"details\");\n";
@@ -346,6 +367,8 @@ std::string render_map_html(const core::GameState& state) {
     out << "    { attr: \"data-owner-code\", label: \"Owner Code\"    },\n";
     out << "    { attr: \"data-name\",       label: \"Province Name\" }\n";
     out << "  ];\n";
+    out << "  var nodes = document.querySelectorAll(\n";
+    out << "    \"svg circle[data-id], svg text[data-id]\");\n";
     out << "  function showDetails(el) {\n";
     out << "    while (details.firstChild) {\n";
     out << "      details.removeChild(details.firstChild);\n";
@@ -362,12 +385,24 @@ std::string render_map_html(const core::GameState& state) {
     out << "    }\n";
     out << "    details.appendChild(dl);\n";
     out << "  }\n";
-    out << "  var nodes = document.querySelectorAll(\n";
-    out << "    \"svg circle[data-id], svg text[data-id]\");\n";
+    out << "  function selectProvince(el) {\n";
+    out << "    var id = el.getAttribute(\"data-id\");\n";
+    out << "    if (!id) { return; }\n";
+    out << "    var prev = document.querySelectorAll(\".selected\");\n";
+    out << "    for (var p = 0; p < prev.length; p++) {\n";
+    out << "      prev[p].classList.remove(\"selected\");\n";
+    out << "    }\n";
+    out << "    for (var q = 0; q < nodes.length; q++) {\n";
+    out << "      if (nodes[q].getAttribute(\"data-id\") === id) {\n";
+    out << "        nodes[q].classList.add(\"selected\");\n";
+    out << "      }\n";
+    out << "    }\n";
+    out << "  }\n";
     out << "  for (var j = 0; j < nodes.length; j++) {\n";
     out << "    var el = nodes[j];\n";
     out << "    el.addEventListener(\"click\","
-           " (function(e) { return function() { showDetails(e); }; })(el));\n";
+           " (function(e) { return function() {"
+           " selectProvince(e); showDetails(e); }; })(el));\n";
     out << "  }\n";
     out << "})();\n";
     out << "</script>\n";
