@@ -218,7 +218,81 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.4
+  information distortion）** — **M6.5
+  （bias_noise helper skeleton）** 是 M6 的第五個
+  sub-milestone。完全照 RFC-090 §6.5（`6.5 實作
+  bias/noise`）實作：新增
+  `leviathan::systems::bias_noise` module
+  （header + impl），公開
+  `inline constexpr double
+  kPlaceholderNoiseAmplitude = 0.0` 與
+  `core::Result<double> sample_for_event(event_id_code,
+  country_id_code, fired_on, amplitude =
+  kPlaceholderNoiseAmplitude)`。**載重的設計選擇**
+  （per PR #103 reviewer 的建議）：**deterministic
+  hash-based noise，不消耗 state.rng**。消耗
+  `state.rng` 會推進 `state.rng.counter`，並讓未來
+  所有 RNG 取值都偏移 ── 那會破壞 M5 / M1.17 / M2
+  / M3 / M4 的 byte-identical determinism baseline。
+  Hash 以穩定的輸入（event id_code、country id_code、
+  fire date）算出來，純粹是 fire-time 已知資訊的
+  函數。**預設 amplitude = 0.0**：placeholder
+  fast path 回傳 0（不加 noise）。想加 noise 的
+  caller 顯式傳一個 `[0, 1]` 之內的正 amplitude；
+  M6.9（非 debug 隱藏）才會是第一個傳非零 amplitude
+  的 caller。**Hash 設計**：FNV-1a 64-bit（跨編譯器
+  穩定；不用 `std::hash`）+ splitmix64 finalize
+  （本地重新實作；`random_service` 不動）。
+  `event_id_code` 與 `country_id_code` 之間放一個
+  NUL separator，所以 `"abcd"+"ef"` 與 `"abc"+"def"`
+  的 hash 不同。日期打包成 `year*10000 + month*100
+  + day` 提供 byte-order-independent 的日期影響。
+  輸出用 top-53-bits 技巧縮放到
+  `[-amplitude, +amplitude]`。**與 M6 管線的組合**：
+  M6.3 → M6.4 → M6.5 → M6.9 把 `reported + noise`
+  合成最終可見值（M6.9 擁有 sum；M6.5 是純 noise
+  primitive）。**驗證**：`event_id_code` /
+  `country_id_code` 非空；`amplitude` finite 且在
+  `[0, 1]`。**沒有 save schema bump** ── 純函式，
+  沒 GameState 參數，沒新 persistent state；save
+  format 保持 **v16**。**17 個新 doctest case
+  （1107 total，62585 assertions；per
+  `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：placeholder fast
+  path（預設 amplitude 回 0 / 顯式 amplitude=0 回
+  0 / 常數穩定）/ happy path（結果在
+  `[-amplitude, +amplitude]` / amplitude=1.0 在
+  `[-1, +1]`）/ deterministic / 輸入分離（不同
+  event_id / country_id / fired_on / NUL-separator
+  pin）/ validation（空字串拒 / NaN-Inf-超界
+  amplitude 拒）/ cross-build 穩定性（canonical
+  輸入 `low_stability_unrest` / `GER` / `1930-03-15`
+  / amplitude=0.1 → 0.00128381 釘住確切值 ── 任何
+  formula drift 都會 fire 這個 test）。所有 1090
+  個 M6.4-era 測試仍 byte-identical 通過。新
+  `docs/m6-5-bias-noise-helper-skeleton.md` design
+  note。**沒有 save format bump（仍 v16）/ 新
+  state field / `state.rng` 消耗（載重）/ 新
+  artefact（仍 10）/ 新 `RunnerOptions` field /
+  CLI flag / 新 `PlayerCommandKind` /
+  scenario_loader 變動 / event-module /
+  monthly_pipeline / runner 程式變動 /
+  `random_service` 變動 / canonical fixture 變動
+  / 任何系統消費此 helper（M6.9 才會用）/
+  event-aware 變體（`sample_for_event_instance`
+  是 M6.9 的事）/ 與 M6.4 reported value 的自動
+  組合（M6.9 擁有 sum）/ intelligence-budget
+  權重（M6.6 調整上游 accuracy，不是 M6.5
+  amplitude）/ corruption 權重（M6.7，同上）/
+  debug 模式（M6.8）/ 非 debug 隱藏（M6.9）/
+  EventReport 類型或 artefact / events.jsonl
+  語意變動 / UI / map 整合 / balance pass / 對
+  M1.17 / M2 / M3 / M4 / M5 byte-identical
+  determinism baseline 的變動 / M6.6 工作 /
+  `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」
+  字樣**。M6 remains in progress。
+- **M6（歷史進行中）** — **M6.4
   （reported_value helper skeleton）** 是 M6 的
   第四個 sub-milestone。完全照 RFC-090 §6.4
   （`6.4 實作 reported value`）實作：新增

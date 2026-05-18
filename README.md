@@ -9,7 +9,7 @@
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at M6.4. M6 follows RFC-090 §M6 (隱藏真相
+  progress at M6.5. M6 follows RFC-090 §M6 (隱藏真相
   與資訊失真): the player will not always see the
   truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
   `visible_report`; 6.3 `information_accuracy`; 6.4
@@ -53,7 +53,96 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.4 —
+- Latest shipped sub-milestone: **M6.5 — bias_noise
+  helper skeleton.** Fifth M6 PR. Implements only
+  RFC-090 §6.5 (`6.5 實作 bias/noise`). New
+  `leviathan::systems::bias_noise` module
+  (`include/leviathan/systems/bias_noise.hpp` +
+  `src/leviathan/systems/bias_noise.cpp`). Public API:
+  `inline constexpr double kPlaceholderNoiseAmplitude =
+  0.0`, `core::Result<double> sample_for_event(const
+  std::string& event_id_code, const std::string&
+  country_id_code, const GameDate& fired_on, double
+  amplitude = kPlaceholderNoiseAmplitude)`. **The
+  load-bearing design call** (per the PR #103 reviewer):
+  **deterministic hash-based noise**, NOT `state.rng`
+  consumption. `state.rng` is the only mutable RNG state
+  in `GameState`; consuming it would advance
+  `state.rng.counter` on every event fire and shift
+  every downstream RNG draw — perturbing M5 / M1.17 /
+  M2 / M3 / M4 byte-identical determinism baselines.
+  Hash on stable inputs (event id_code, country id_code,
+  fire date) is purely a function of inputs known at
+  fire time. **Default amplitude = 0.0**: placeholder
+  fast path returns 0 (no noise). Callers that want
+  noise pass a positive amplitude in `[0, 1]`
+  explicitly. M6.9 (non-debug hiding) will be the first
+  caller to pass a non-zero amplitude. **Hash design**:
+  FNV-1a 64-bit for stable string-to-uint64 mixing +
+  splitmix64 finalize (reimplemented locally; the M0.5
+  `random_service` is untouched). NUL separator between
+  `event_id_code` and `country_id_code` so concatenation
+  boundary matters (`"abcd"+"ef" != "abc"+"def"`). Date
+  packed as `year*10000 + month*100 + day` for byte-
+  order-independent date influence. Output scaled to
+  `[-amplitude, +amplitude]` via the top-53-bits trick
+  for clean double mantissa mapping. **No
+  `std::hash`**: implementation-defined across compilers
+  would break cross-build determinism. **Composition
+  with the M6 pipeline**: M6.3 → M6.4 → M6.5 → M6.9
+  combines `reported + noise` into the final visible
+  value (M6.9 owns the sum; M6.5 is the pure noise
+  primitive). **Validation**: `event_id_code` /
+  `country_id_code` non-empty; `amplitude` finite + in
+  `[0, 1]`. Failure messages include the offending
+  value formatted for NaN / ±∞ clarity. **No save
+  schema bump** — M6.5 is a pure function over strings
+  + date + double; no GameState parameter, no new
+  persistent state; save format stays at **v16**.
+  **17 new doctest cases (1107 total, 62585
+  assertions; verified via direct `leviathan_tests.exe`
+  run** per the `feedback_ctest_masks_doctest` rule):
+  placeholder fast path (default amplitude returns 0 /
+  explicit amplitude=0 returns 0 / constant stable) /
+  happy path (result in `[-amplitude, +amplitude]` for
+  various dates / amplitude=1.0 produces `[-1, +1]`) /
+  determinism (three repeated identical-input calls
+  return same noise) / input separation (different
+  event_id / country_id / fired_on each produce
+  different noise; NUL-separator pin) / validation
+  (empty event_id_code / country_id_code rejected;
+  NaN / ±∞ amplitude rejected; amplitude<0 / >1
+  rejected) / cross-build stability (pinned exact value
+  for canonical inputs `low_stability_unrest` / `GER` /
+  `1930-03-15` / amplitude=0.1 → 0.00128381 — this
+  test will fire on any accidental formula drift). All
+  1090 M6.4-era tests still pass byte-identically. New
+  `docs/m6-5-bias-noise-helper-skeleton.md` design
+  note. **No save format bump (still v16), no new
+  state field, no `state.rng` consumption (the load-
+  bearing call), no new artefact (still 10), no new
+  `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no scenario_loader change, no
+  event-module / monthly_pipeline / runner code
+  change, no `random_service` change (splitmix64
+  finalize reimplemented locally), no canonical
+  fixture change, no consumer in any current system
+  (M6.9 will start using it), no event-aware variant
+  (`sample_for_event_instance` is M6.9 scope), no
+  automatic composition with M6.4 reported value
+  (M6.9 owns the `reported + noise` sum), no
+  intelligence-budget weighting (M6.6 modulates
+  upstream accuracy, not M6.5 amplitude), no
+  corruption weighting (M6.7, same reason), no debug
+  mode (M6.8), no non-debug hiding (M6.9), no
+  EventReport type / artefact, no events.jsonl
+  semantic change, no UI / map integration, no
+  balance pass, no rebake of M1.17 / M2 / M3 / M4 /
+  M5 byte-identical determinism baselines, no M6.6
+  work, no `docs/milestone-6-checkpoint.md`, no
+  `docs/milestone-6-result.md`, no "M6 closed"
+  wording.** M6 remains in progress.
+- Previously shipped: **M6.4 —
   reported_value helper skeleton.** Fourth M6 PR.
   Implements only RFC-090 §6.4 (`6.4 實作 reported
   value`). New `leviathan::systems::reported_value`
