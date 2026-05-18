@@ -19,13 +19,16 @@ ring), and M4.17 (ARIA labels). Future per-sub-milestone
 surface changes refresh this doc **inline** instead of
 deferring to a periodic checkpoint-refresh PR.
 
-M4.18 is a checkpoint refresh, **not an exit report**. M4
-remains in progress: this file is updated so the next
-future M4.x sub-milestone has one canonical snapshot to
-read. No new system, formula, artefact, save-schema bump,
-runner CLI flag, gameplay branch, or new interactivity.
-Renderer bytes are byte-identical with M4.17 — M4.18 only
-adds tests + docs.
+Each refresh (M4.14, M4.18, M4.22) is a **checkpoint,
+not an exit report**. M4 remains in progress: this file
+is updated so the next future M4.x sub-milestone has one
+canonical snapshot to read. No new system, formula,
+artefact, save-schema bump, runner CLI flag, gameplay
+branch, or new interactivity ships in any checkpoint PR.
+At the M4.22 stage (the close-out readiness checkpoint),
+the renderer is byte-identical with M4.21 — only tests
++ docs + the small svg_export.cpp comment-only math
+wording fix ship.
 
 The companion exit report (`docs/milestone-4-result.md`) is
 deliberately not written yet. The close-out lands when the
@@ -520,9 +523,11 @@ no CSS animations / transitions / @import / @font-face on
 
 ## 7. Deferred items
 
-These are intentionally not in M4 yet. M4.18 lists them so a
-later sub-milestone has one canonical reference for what is
-explicitly out of scope.
+These are intentionally not in M4 yet. The list is
+maintained inline at each refresh (originally M4.18;
+M4.22 reorganises it under section 9.2 with explicit
+category labels) so a later sub-milestone has one
+canonical reference for what is explicitly out of scope.
 
 ```text
 HOVER + TOOLTIPS (basic :hover CSS shipped at M4.19;
@@ -803,7 +808,7 @@ drifted. M4.22 fixes the wording across
 `svg_export.cpp`, `svg_export.hpp`, root + docs + rfc
 READMEs, and `m4-21-responsive-viewport-skeleton.md`.
 
-## 10. What M4.18 does NOT do
+## 10. What M4.22 does NOT do
 
 ```text
 no new system
@@ -812,34 +817,47 @@ no new artefact (still 10)
 no save schema bump (still v12)
 no new state field
 no new InterestGroupKind / PlayerCommandKind
-no new feature surface (M4.18 is docs + 1 integration test only)
+no new viewer feature surface beyond readiness
+   documentation (M4.22 is docs + 1 integration test +
+   1 math-wording fix; the svg_export.cpp change is a
+   comment-only correction, not behavioural)
+no renderer behaviour change
 no rename of any data-* attribute
-no change to the SVG body / click handler / details panel
-   / .selected CSS / focus-visible CSS / role / aria-label
-   / hover-status / @media bytes (M4.15–M4.21 shapes
-   byte-identical since the last surface-changing PR)
-no second `<meta name="viewport">` (M4.21 shipped one)
-no second @media block (M4.21 shipped one); no broader
-   responsive surface (mobile-only layouts, breakpoint
-   cascade, container queries, prefers-color-scheme,
-   prefers-reduced-motion)
-no CSS animations / transitions / @import
+no change to the SVG body / click handler / keydown
+   handler / hover-status handler / details panel /
+   .selected CSS / :focus-visible CSS / role /
+   aria-label / :hover CSS / viewport meta / @media
+   bytes (M4.15–M4.21 shapes byte-identical)
+no second <meta name="viewport"> (M4.21 shipped one)
+no second @media block (M4.21 shipped one); no
+   broader responsive surface (mobile-only layouts,
+   breakpoint cascade, container queries,
+   prefers-color-scheme, prefers-reduced-motion,
+   responsive font sizing, JS responsive surface)
+no CSS animations / transitions / @import / @font-face
 no neighbour / adjacency edges
 no terrain / resources / population overlays
-no events / AI / command integration
-no hover state / tooltip
+no events / AI / command integration with the viewer
 no broader ARIA (aria-selected / aria-current /
    aria-pressed / aria-live / aria-describedby /
-   aria-labelledby) — still deferred
+   aria-labelledby) — still deferred per section 9.2
+   category B
+no pair-hover / position-aware floating tooltip /
+   hover delay / hover-driven detail-panel preview
+   (still deferred per section 9.2 category B)
+no SVG <title> child element on the markers (the
+   M4.5 head <title> stays the only one; the M4.17
+   aria-label remains the accessible name)
 no keyboard polish beyond M4.15 (no arrow-key nav,
-   no Escape-to-clear, no Tab-within-panel)
+   no Escape-to-clear, no Tab-within-panel, no
+   skip-link)
 no selection persistence across reloads
-no runner CLI flag
-no atomic end_tick writes
+no runner CLI flag for either artefact
+no atomic end_tick writes (deferred since M2.9)
 no M4 close-out
 no docs/milestone-4-result.md
 no "M4 closed" wording
 no change to provinces.svg or map.html bytes
-   (M4.18 only adds tests + docs; the renderer is
-   byte-identical with M4.17)
+   (M4.22 only adds tests + docs / comment wording;
+    renderer behaviour is byte-identical with M4.21)
 ```
