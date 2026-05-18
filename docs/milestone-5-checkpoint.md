@@ -1,16 +1,34 @@
 # Milestone 5 Checkpoint
 
-Status: **in progress (at M5.9)**
+> **Historical checkpoint.** M5 closed at **M5.10**. The
+> canonical M5 record is now
+> [`milestone-5-result.md`](milestone-5-result.md) — read
+> that for the authoritative M5 ledger / dataflow /
+> 10-artefact contract / save-format v14 floor /
+> architectural invariants / deferred items / next-
+> milestone candidates. This checkpoint file is kept
+> verbatim below for archaeology: it captures the M5
+> in-progress snapshot as it stood at M5.9, just before
+> the M5.10 close-out PR. Future readers wanting "what
+> does the M5 contract look like right now?" should read
+> `milestone-5-result.md`, not this file. Future readers
+> wanting "how did the M5 contract evolve sub-milestone by
+> sub-milestone?" can read the per-PR design notes
+> `docs/m5-NN-*.md` alongside this snapshot.
 
-Companion notes for
+Status: **historical (M5 closed at M5.10)**
+
+Originally written at M5.9 — companion notes for
 `feature/rfc090-m5-09-event-observability-checkpoint`.
 
-M5.9 is the **M5 status snapshot** — a single-page page reading
+M5.9 was the **M5 status snapshot** — a single-page page reading
 "what does the event engine look like right now?" without
-piecing together nine per-sub-milestone notes. M5.9 is **NOT**
-the M5 exit report; M5 remains in progress. The pattern mirrors
-M3.7 / M4.9 / M4.14 / M4.18 / M4.22: docs + integration tests,
-no new gameplay.
+piecing together nine per-sub-milestone notes. M5.9 was **NOT**
+the M5 exit report; M5 was still in progress at the time. The
+pattern mirrored M3.7 / M4.9 / M4.14 / M4.18 / M4.22: docs +
+integration tests, no new gameplay. M5.10 then took over as the
+M5 close-out (publishing `milestone-5-result.md` + flipping
+READMEs + annotating this file as historical).
 
 The companion exit report `docs/milestone-5-result.md` is
 **deliberately not written yet**. The close-out lands when the
