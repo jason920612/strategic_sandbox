@@ -104,7 +104,7 @@
       ],
       "effects": [
         {
-          "target": "country.government_authority.bureaucratic_compliance",
+          "target": "country.administrative_efficiency",
           "op": "add",
           "value": -0.01
         }

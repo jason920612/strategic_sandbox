@@ -57,7 +57,7 @@
 //
 // M5.9 deliberately does NOT add a new system, formula,
 // artefact, save schema bump, gameplay branch, RunnerOptions
-// field, CLI flag, or close M5 — see
+// field, CLI flag, or close M5 ??see
 // docs/milestone-5-checkpoint.md.
 
 #include <doctest/doctest.h>
@@ -209,7 +209,7 @@ TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty,
     // month boundary, but the canonical events at M5.1 are
     // deliberately tuned so neither fires on the canonical
     // 1930 scenario.
-    CHECK(save.find("\"save_version\": 16")    != std::string::npos);
+    CHECK(save.find("\"save_version\": 17")    != std::string::npos);
     CHECK(save.find("\"event_history\": []")   != std::string::npos);
 
     // events.jsonl is the M0.6 lifecycle log; M5.8 did NOT
@@ -255,7 +255,7 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
 
     // The event recorded one EventInstance + applied its effect
     // to GER (the first / only actor).
-    CHECK(save.find("\"save_version\": 16")                       != std::string::npos);
+    CHECK(save.find("\"save_version\": 17")                       != std::string::npos);
     CHECK(save.find("\"low_stability_unrest_firing\"")            != std::string::npos);
     // Legitimacy dropped by 0.05 from 0.50 -> 0.45 (rounded text
     // varies; pin the field name + the dropped digit).
@@ -309,11 +309,17 @@ TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefac
     CHECK_FALSE(fs::exists(td.path / "event_history.json"));
     CHECK_FALSE(fs::exists(td.path / "events.csv"));
 
-    // events.jsonl is the M0.6 lifecycle log. M5 did NOT change
-    // its semantics: the firing event's id_code must NOT appear
-    // in it.
+    // events.jsonl is the M0.6 lifecycle log. RCR-1 (RFC-090
+    // §5.9) updates its semantics: event_firer now emits one
+    // per-fire LogEntry per recorded event, with category
+    // "event_fired" and the fired event_id_code in the message
+    // + metadata. So the firing event's id_code DOES now appear
+    // in events.jsonl. (The original M5 invariant — events.jsonl
+    // semantics unchanged — has been superseded by the RCR-1
+    // corrective batch.)
     const std::string ev_log = read_file(td.path / "events.jsonl");
-    CHECK(ev_log.find("low_stability_unrest_firing") == std::string::npos);
+    CHECK(ev_log.find("low_stability_unrest_firing") != std::string::npos);
+    CHECK(ev_log.find("event_fired")                 != std::string::npos);
 
     // The save must NOT contain a synthesised active_policies
     // entry (events aren't policies) or an applied_commands
@@ -331,7 +337,7 @@ TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefac
 // D. determinism: same hand-built state + same options ->
 //    byte-identical 10 artefacts WITH events firing
 // =====================================================================
-TEST_CASE("M5 integration: firing run is deterministic — two runs produce byte-identical 10 artefacts") {
+TEST_CASE("M5 integration: firing run is deterministic ??two runs produce byte-identical 10 artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         GameState state = make_m5_firing_state();
         rn::RunnerOptions opts;

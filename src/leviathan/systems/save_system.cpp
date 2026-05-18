@@ -121,6 +121,7 @@ json country_to_json(const core::CountryState& c) {
     j["legitimacy"]                = c.legitimacy;
     j["military_power"]            = c.military_power;
     j["threat_perception"]         = c.threat_perception;
+    j["military_strength"]         = c.military_strength;     // RCR-1 (RFC-090 §3.8)
     j["last_gdp_growth_rate"]      = c.last_gdp_growth_rate;  // M1.12
 
     // M1.3 budget block - nested object, fixed key order.
@@ -320,6 +321,7 @@ core::Result<core::CountryState> country_from_json(const json& j,
     if (auto r = load_num("legitimacy",                c.legitimacy);                !r) return r;
     if (auto r = load_num("military_power",            c.military_power);            !r) return r;
     if (auto r = load_num("threat_perception",         c.threat_perception);         !r) return r;
+    if (auto r = load_num("military_strength",         c.military_strength);         !r) return r;  // RCR-1 (RFC-090 §3.8)
     if (auto r = load_num("last_gdp_growth_rate",      c.last_gdp_growth_rate);      !r) return r;  // M1.12
 
     // M1.3 budget block.
@@ -810,9 +812,65 @@ std::string serialize(const core::GameState& state) {
             effects_arr.push_back(std::move(fj));
         }
         entry["effects"] = std::move(effects_arr);
+
+        // RCR-1: weight_modifiers (RFC-090 §5.3) — array of
+        // {target, op, value, weight_delta}. May be empty.
+        json wm_arr = json::array();
+        for (const auto& wm : ev.weight_modifiers) {
+            json wj = json::object();
+            wj["target"]       = wm.target;
+            wj["op"]           = wm.op;
+            wj["value"]        = wm.value;
+            wj["weight_delta"] = wm.weight_delta;
+            wm_arr.push_back(std::move(wj));
+        }
+        entry["weight_modifiers"] = std::move(wm_arr);
+
+        // RCR-1: options (RFC-090 §5.4 / §5.8) — array of
+        // {id_code, label, effects[]}. May be empty.
+        json opts_arr = json::array();
+        for (const auto& opt : ev.options) {
+            json oj = json::object();
+            oj["id_code"] = opt.id_code;
+            oj["label"]   = opt.label;
+            json opt_effects = json::array();
+            for (const auto& f : opt.effects) {
+                json fj = json::object();
+                fj["target"] = f.target;
+                fj["op"]     = f.op;
+                fj["value"]  = f.value;
+                opt_effects.push_back(std::move(fj));
+            }
+            oj["effects"] = std::move(opt_effects);
+            opts_arr.push_back(std::move(oj));
+        }
+        entry["options"] = std::move(opts_arr);
+
+        // RCR-1: followup_event_ids (RFC-090 §5.12) — array of
+        // non-empty event id_code strings. May be empty.
+        json followup_arr = json::array();
+        for (const auto& s : ev.followup_event_ids) {
+            followup_arr.push_back(s);
+        }
+        entry["followup_event_ids"] = std::move(followup_arr);
+
         events_arr.push_back(std::move(entry));
     }
     root["events"] = std::move(events_arr);
+
+    // RCR-1: relationships block (RFC-090 §3.6 / §3.7). Array of
+    // {from, to, relationship, threat}. May be empty. Save format
+    // v17 makes the block required at the save layer.
+    json relations_arr = json::array();
+    for (const auto& r : state.relationships) {
+        json rj = json::object();
+        rj["from"]         = r.from.value();
+        rj["to"]           = r.to.value();
+        rj["relationship"] = r.relationship;
+        rj["threat"]       = r.threat;
+        relations_arr.push_back(std::move(rj));
+    }
+    root["relationships"] = std::move(relations_arr);
 
     // M5.4: event_history array carries fired-event records
     // (EventInstance). M5.4 ships the data layer only — no system
@@ -1600,6 +1658,162 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             effects.push_back(std::move(eff));
         }
 
+        // RCR-1: weight_modifiers (RFC-090 §5.3). Required array
+        // at the save layer; may be empty. Per entry: target / op
+        // strings (free-form at this layer, mirrors triggers'
+        // shape — full target/op allowlist applies at the
+        // event_evaluator::rank_weighted_events consumer side),
+        // value finite, weight_delta finite.
+        if (!entry.contains("weight_modifiers")
+            || !entry.at("weight_modifiers").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'weight_modifiers' missing or not an array");
+        }
+        const auto& wm_arr = entry.at("weight_modifiers");
+        std::vector<core::WeightModifier> weight_modifiers;
+        weight_modifiers.reserve(wm_arr.size());
+        for (std::size_t wi = 0; wi < wm_arr.size(); ++wi) {
+            const std::string wctx =
+                ev_ctx + ": weight_modifiers[" + std::to_string(wi) + "]";
+            const auto& w = wm_arr[wi];
+            if (!w.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    wctx + ": expected JSON object");
+            }
+            auto target_r = require_string(w, "target", wctx);
+            if (!target_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(target_r.error()));
+            }
+            auto op_r = require_string(w, "op", wctx);
+            if (!op_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(op_r.error()));
+            }
+            auto value_r = require_number(w, "value", wctx);
+            if (!value_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(value_r.error()));
+            }
+            auto delta_r = require_number(w, "weight_delta", wctx);
+            if (!delta_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(delta_r.error()));
+            }
+            core::WeightModifier wm;
+            wm.target       = std::move(target_r).value();
+            wm.op           = std::move(op_r).value();
+            wm.value        = value_r.value();
+            wm.weight_delta = delta_r.value();
+            weight_modifiers.push_back(std::move(wm));
+        }
+
+        // RCR-1: options (RFC-090 §5.4 / §5.8). Required array
+        // at the save layer; may be empty. Per entry: id_code /
+        // label strings (id_code non-empty), effects[] mirrors
+        // EventDefinition.effects shape.
+        if (!entry.contains("options")
+            || !entry.at("options").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'options' missing or not an array");
+        }
+        const auto& opts_arr = entry.at("options");
+        std::vector<core::EventOption> options;
+        options.reserve(opts_arr.size());
+        for (std::size_t oi = 0; oi < opts_arr.size(); ++oi) {
+            const std::string octx =
+                ev_ctx + ": options[" + std::to_string(oi) + "]";
+            const auto& o = opts_arr[oi];
+            if (!o.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    octx + ": expected JSON object");
+            }
+            auto oid_r = require_string(o, "id_code", octx);
+            if (!oid_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(oid_r.error()));
+            }
+            if (oid_r.value().empty()) {
+                return core::Result<core::GameState>::failure(
+                    octx + ": 'id_code' must be non-empty");
+            }
+            auto label_r = require_string(o, "label", octx);
+            if (!label_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(label_r.error()));
+            }
+            if (!o.contains("effects") || !o.at("effects").is_array()) {
+                return core::Result<core::GameState>::failure(
+                    octx + ": 'effects' missing or not an array");
+            }
+            const auto& opt_eff_arr = o.at("effects");
+            std::vector<core::PolicyEffect> opt_effects;
+            opt_effects.reserve(opt_eff_arr.size());
+            for (std::size_t oei = 0; oei < opt_eff_arr.size(); ++oei) {
+                const std::string oectx =
+                    octx + ": effects[" + std::to_string(oei) + "]";
+                const auto& f = opt_eff_arr[oei];
+                if (!f.is_object()) {
+                    return core::Result<core::GameState>::failure(
+                        oectx + ": expected JSON object");
+                }
+                auto tr = require_string(f, "target", oectx);
+                if (!tr) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(tr.error()));
+                }
+                auto opr = require_string(f, "op", oectx);
+                if (!opr) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(opr.error()));
+                }
+                auto vr = require_number(f, "value", oectx);
+                if (!vr) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(vr.error()));
+                }
+                core::PolicyEffect eff;
+                eff.target = std::move(tr).value();
+                eff.op     = std::move(opr).value();
+                eff.value  = vr.value();
+                opt_effects.push_back(std::move(eff));
+            }
+            core::EventOption opt;
+            opt.id_code = std::move(oid_r).value();
+            opt.label   = std::move(label_r).value();
+            opt.effects = std::move(opt_effects);
+            options.push_back(std::move(opt));
+        }
+
+        // RCR-1: followup_event_ids (RFC-090 §5.12). Required
+        // array at the save layer; may be empty. Each entry must
+        // be a non-empty string. Cross-reference to state.events
+        // entries is NOT enforced at the save layer (same
+        // tolerance as event_history.event_id_code).
+        if (!entry.contains("followup_event_ids")
+            || !entry.at("followup_event_ids").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'followup_event_ids' missing or not an array");
+        }
+        const auto& fu_arr = entry.at("followup_event_ids");
+        std::vector<std::string> followup_event_ids;
+        followup_event_ids.reserve(fu_arr.size());
+        for (std::size_t fi = 0; fi < fu_arr.size(); ++fi) {
+            const std::string fctx =
+                ev_ctx + ": followup_event_ids[" + std::to_string(fi) + "]";
+            const auto& v = fu_arr[fi];
+            if (!v.is_string()) {
+                return core::Result<core::GameState>::failure(
+                    fctx + ": expected string");
+            }
+            std::string s = v.get<std::string>();
+            if (s.empty()) {
+                return core::Result<core::GameState>::failure(
+                    fctx + ": must be non-empty");
+            }
+            followup_event_ids.push_back(std::move(s));
+        }
+
         // Duplicate id_code rejected at the save layer — mirrors
         // the M3.1 interest_groups + M4.1 provinces rule.
         for (const auto& existing : state.events) {
@@ -1611,13 +1825,16 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         }
 
         core::EventDefinition ev;
-        ev.id_code        = std::move(id_code_r).value();
-        ev.name           = std::move(name_r).value();
-        ev.description    = desc;
-        ev.visible_report = visible_report;   // M6.2
-        ev.true_cause     = true_cause;       // M6.1
-        ev.triggers       = std::move(triggers);
-        ev.effects        = std::move(effects);
+        ev.id_code            = std::move(id_code_r).value();
+        ev.name               = std::move(name_r).value();
+        ev.description        = desc;
+        ev.visible_report     = visible_report;   // M6.2
+        ev.true_cause         = true_cause;       // M6.1
+        ev.triggers           = std::move(triggers);
+        ev.effects            = std::move(effects);
+        ev.weight_modifiers   = std::move(weight_modifiers);   // RCR-1
+        ev.options            = std::move(options);            // RCR-1
+        ev.followup_event_ids = std::move(followup_event_ids); // RCR-1
         state.events.push_back(std::move(ev));
     }
 
@@ -1742,6 +1959,95 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         inst.fired_on      = fired_on_r.value();
         inst.actors        = std::move(actors);
         state.event_history.push_back(std::move(inst));
+    }
+
+    // RCR-1: relationships block (RFC-090 §3.6 / §3.7). Required
+    // at the save layer (v17); may be empty. Each entry: from /
+    // to as integers indexing into state.countries (both validated
+    // against state.countries.size() so a corrupted save fails
+    // loudly), relationship as finite double in [-1, 1], threat
+    // as finite double in [0, 1].
+    if (!root.contains("relationships")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'relationships'"));
+    }
+    const auto& rel_arr = root.at("relationships");
+    if (!rel_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'relationships' has wrong type (expected JSON array)"));
+    }
+    state.relationships.reserve(rel_arr.size());
+    for (std::size_t i = 0; i < rel_arr.size(); ++i) {
+        const std::string rctx =
+            std::string(source_label) + ": relationships[" +
+            std::to_string(i) + "]";
+        const auto& entry = rel_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": expected JSON object");
+        }
+        auto from_r = require_number(entry, "from", rctx);
+        if (!from_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(from_r.error()));
+        }
+        auto to_r = require_number(entry, "to", rctx);
+        if (!to_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(to_r.error()));
+        }
+        auto rel_r = require_number(entry, "relationship", rctx);
+        if (!rel_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(rel_r.error()));
+        }
+        auto threat_r = require_number(entry, "threat", rctx);
+        if (!threat_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(threat_r.error()));
+        }
+        const double from_d = from_r.value();
+        const double to_d   = to_r.value();
+        if (from_d < 0.0 || from_d != static_cast<int>(from_d)) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'from' must be a non-negative integer");
+        }
+        if (to_d < 0.0 || to_d != static_cast<int>(to_d)) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'to' must be a non-negative integer");
+        }
+        const std::size_t from_idx = static_cast<std::size_t>(from_d);
+        const std::size_t to_idx   = static_cast<std::size_t>(to_d);
+        if (from_idx >= state.countries.size()) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'from' (" + std::to_string(from_idx) +
+                ") out of range for countries.size() (" +
+                std::to_string(state.countries.size()) + ")");
+        }
+        if (to_idx >= state.countries.size()) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'to' (" + std::to_string(to_idx) +
+                ") out of range for countries.size() (" +
+                std::to_string(state.countries.size()) + ")");
+        }
+        const double rel_v    = rel_r.value();
+        const double threat_v = threat_r.value();
+        if (rel_v < -1.0 || rel_v > 1.0) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'relationship' must be in [-1, 1]");
+        }
+        if (threat_v < 0.0 || threat_v > 1.0) {
+            return core::Result<core::GameState>::failure(
+                rctx + ": 'threat' must be in [0, 1]");
+        }
+        core::CountryRelation r;
+        r.from         = core::CountryId{static_cast<core::CountryId::underlying_type>(from_idx)};
+        r.to           = core::CountryId{static_cast<core::CountryId::underlying_type>(to_idx)};
+        r.relationship = rel_v;
+        r.threat       = threat_v;
+        state.relationships.push_back(std::move(r));
     }
 
     return core::Result<core::GameState>::success(std::move(state));

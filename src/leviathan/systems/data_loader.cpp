@@ -245,6 +245,21 @@ core::Result<core::CountryState> parse_country(
     }
     country.threat_perception = tp.value();
 
+    // RCR-1: RFC-090 §3.8 military_strength. Optional in country
+    // JSON with default 0.0 (so older fixtures load unchanged);
+    // SaveSystem requires the field at the save layer (v17). When
+    // present in country JSON it must be a finite non-negative
+    // number (absolute scalar, not a ratio).
+    if (navigate(root, "military_strength") != nullptr) {
+        auto ms = require_nonneg_number(root, "military_strength",
+                                        source_label);
+        if (!ms) {
+            return core::Result<core::CountryState>::failure(
+                std::move(ms.error()));
+        }
+        country.military_strength = ms.value();
+    }
+
     // tax_revenue and budget_balance are runtime-only. They are not
     // read from the config JSON; they start at 0 and will be updated
     // by future economy systems (M1.5+).

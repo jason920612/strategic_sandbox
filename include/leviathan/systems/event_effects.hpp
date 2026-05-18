@@ -111,6 +111,44 @@ core::Result<ApplyOutcome> apply_event_effects(
     const core::EventInstance&   instance,
     const core::EventDefinition& definition);
 
+// RCR-1: RFC-090 §5.4 / §5.8 — deterministic default option
+// selector. Returns a pointer into `definition.options[0]` if the
+// options vector is non-empty, or `nullptr` if the definition has
+// no options (which mirrors the M5.6-era contract where
+// `definition.effects` was the only effect path).
+//
+// Pure read; never mutates `definition`. The returned pointer is
+// non-owning and stable across the call but invalidated by any
+// subsequent mutation of `definition.options`.
+//
+// Future expansion: a smarter selector could take a player choice
+// or AI heuristic. RCR-1 ships the deterministic first-option
+// rule per the user's instruction "deterministic default option
+// selection helper".
+const core::EventOption*
+select_default_option(const core::EventDefinition& definition);
+
+// RCR-1: RFC-090 §5.12 — followup-event-id resolver. Given a
+// definition's `followup_event_ids` vector, returns the matching
+// `state.events` indices for every id_code that resolves
+// successfully. Unresolvable id_codes are skipped (the M5.4-era
+// "EventInstance.event_id_code is NOT cross-checked against
+// state.events on load" tolerance applies here too — followup
+// chains across scenario reloads are legitimate).
+//
+// Returns a vector of size <= `definition.followup_event_ids.size()`;
+// the result preserves the order of `definition.followup_event_ids`.
+// Empty input → empty output. Pure read.
+//
+// No system *fires* the resolved followup events automatically in
+// RCR-1 — that wiring is the M5/event-engine extension that this
+// corrective batch deliberately keeps small. The helper exists so
+// a future runner-policy can call it and feed the result through
+// `event_firer::record_match` per followup.
+std::vector<std::size_t>
+resolve_followup_ids(const core::GameState&       state,
+                     const core::EventDefinition& definition);
+
 }  // namespace leviathan::systems::event_effects
 
 #endif  // LEVIATHAN_SYSTEMS_EVENT_EFFECTS_HPP

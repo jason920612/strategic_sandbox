@@ -27,6 +27,7 @@
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/annual_stats.hpp"
 #include "leviathan/systems/diagnostics.hpp"
 
 namespace leviathan::systems::runner {
@@ -84,6 +85,12 @@ struct RunnerOptions {
     // browser without the raw-XML chrome standalone .svg files
     // attract.
     std::optional<std::filesystem::path> map_html_path;
+    // RCR-1 (RFC-090 §3.9 / RFC-010 §5): annual world statistics CSV
+    // is UNCONDITIONAL (same shape as M3.5 / M4.2 — `end_tick` always
+    // writes it, with an optional programmatic path override; default
+    // is `<output_dir>/annual_world_stats.csv`). Bumps the
+    // unconditional artefact contract from 10 to 11. No CLI flag.
+    std::optional<std::filesystem::path> annual_world_stats_csv_path;
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
@@ -175,6 +182,15 @@ struct RunOutcome {
     // — verification is informational; the caller (typically
     // main.cpp / a CI harness) decides what to do with the list.
     std::vector<diagnostics::StateMismatch> verify_mismatches;
+
+    // RCR-1 (RFC-090 §3.9 / RFC-010 §5): annual world statistics
+    // CSV output. Path always resolved (mirrors interest_groups_csv_path
+    // / provinces_svg_path / map_html_path shape — unconditional
+    // artefact written by `end_tick`). `annual_world_stats_csv_rows`
+    // counts the number of data rows (not including the header)
+    // written across every year-boundary snapshot.
+    std::filesystem::path  annual_world_stats_csv_path;
+    std::size_t            annual_world_stats_csv_rows = 0;
 };
 
 // Execute one simulation run.
@@ -307,6 +323,17 @@ struct TickController {
         interest_group_country_feedback_rows;
     std::vector<interest_group::AuthorityPressureTraceRow>
         interest_group_authority_pressure_rows;
+
+    // RCR-1 (RFC-090 §3.9 / RFC-010 §5): annual world stats rows.
+    // One entry per crossed year boundary; the date of the crossing
+    // is captured alongside the aggregate so `end_tick` can write
+    // (date, aggregate) pairs without re-deriving the snapshot
+    // calendar.
+    struct AnnualRowEntry {
+        core::GameDate                          snapshot_date{};
+        annual_stats::AnnualRow                 row;
+    };
+    std::vector<AnnualRowEntry> annual_rows;
 
     // Lifecycle flags. begin_tick sets started=true; end_tick sets
     // ended=true. step_one_day / end_tick refuse to run if started is

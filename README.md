@@ -9,29 +9,29 @@
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are
 > closed as **implementation milestones**, not as full
 > original RFC-090 / RFC-010 acceptance milestones. The
-> full deferred-scope backlog is tracked in
+> compliance audit lives in
 > [`docs/rfc-090-010-compliance-audit.md`](docs/rfc-090-010-compliance-audit.md);
-> issue #105 is the corresponding audit ticket. Future
-> milestone close-out docs cross-link there rather than
-> re-litigating the gap.
+> issue #105 is the corresponding audit ticket.
 >
-> **RCR (RFC Compliance Recovery) track.** A separate
-> recovery-track sequence — **RCR-1, RCR-2, …** — clears
-> the audit-doc backlog. `RCR-N` is a recovery-track
-> identifier, NOT an M-milestone number, so RCR work
-> does not consume RFC-090 milestone numbering. **RCR-1
-> has shipped** (this batch): 20-country / 20-policy /
-> 10-event / 6+-IG-across-countries floors now met via
-> new `data/scenarios/1930_rfc_compliance.json`; new
-> `leviathan::systems::ai_policy::select_policies`
-> selection-only AI-policy skeleton. Items still labelled
-> "deferred to RCR-2" in the audit doc (annual world
-> stats CSV, save schema v17 bump for relationships /
-> `EventOption` / `WeightModifier` / followup-event
-> chains, events.jsonl per-fire emission, 10-year event
-> stress test, AI-policy apply path) remain backlog.
-> **M6.6 implementation work stays paused** while the
-> RCR track runs.
+> **RCR-1 was a one-time corrective PR**, NOT a new
+> long-running recovery track. It closed the RFC-090 §M3 /
+> §M5 / RFC-010 v0.1 compliance gap in a single batch:
+> 20-country / 20-policy / 10-event / 10-cross-country-IG
+> floors via new `data/scenarios/1930_rfc_compliance.json`;
+> AI policy selection + apply (`leviathan::systems::ai_policy`);
+> relationships matrix + military_strength + EventOption +
+> WeightModifier + followup-event-ids under a single save
+> schema bump v16 → v17; new
+> `leviathan::systems::annual_stats` module + new
+> `annual_world_stats.csv` unconditional artefact (artefact
+> contract 10 → 11); `event_evaluator::rank_weighted_events`
+> deterministic weighted ranker; `event_firer` now emits
+> per-fire `event_fired` LogEntries into `events.jsonl`;
+> integration tests pin a deterministic byte-identical
+> 1930–2000 sweep on the 20-country compliance scenario
+> plus a 10-year event stress run. After RCR-1, execution
+> returns to the M-numbered milestone sequence — **M6.6
+> resumes per RFC-090 §6.6 on explicit go-ahead**.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**

@@ -216,7 +216,33 @@ namespace leviathan::systems::save_system {
 //                budget, corruption, debug mode, non-debug
 //                hiding) does NOT ship in M6.2 — they land
 //                in 6.3–6.9 in their own sub-milestone PRs.
-inline constexpr std::uint32_t kSaveFormatVersion   = 16;
+//   v17 (RCR-1) - RFC compliance recovery batch. Adds five
+//                persistent surfaces in one batch save bump
+//                (per [[feedback-rcr-recovery-track]] "use
+//                one batched save bump per recovery PR"):
+//                  (a) CountryState gains a required scalar
+//                      `military_strength` (>= 0; absolute,
+//                      distinct from the existing
+//                      `military_power` ratio). RFC-090 §3.8.
+//                  (b) EventDefinition gains three required
+//                      JSON-array blocks at the save layer:
+//                      `weight_modifiers[]`, `options[]`,
+//                      `followup_event_ids[]`. Each MAY be
+//                      empty; missing / wrong-type rejected.
+//                      RFC-090 §5.3 / §5.4 / §5.12.
+//                  (c) GameState gains a required root-level
+//                      `relationships[]` array of
+//                      `{from, to, relationship, threat}`
+//                      records (may be empty). `from` / `to`
+//                      validated against state.countries size;
+//                      `relationship` in [-1, 1]; `threat`
+//                      in [0, 1]. RFC-090 §3.6 / §3.7.
+//                Round-trip is strict equality: v17 reload
+//                of a v17 save preserves bytes-after-pretty-
+//                print across both new and pre-existing
+//                fields. Pre-v17 saves are rejected loudly
+//                with the version-mismatch error.
+inline constexpr std::uint32_t kSaveFormatVersion   = 17;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

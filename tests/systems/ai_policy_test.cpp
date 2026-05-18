@@ -205,3 +205,96 @@ TEST_CASE("RCR-1 ai_policy: selection vector follows state.countries vector orde
     CHECK(r.value()[1].country == CountryId{1});
     CHECK(r.value()[2].country == CountryId{2});
 }
+
+// =====================================================================
+// RCR-1 ai_policy::apply_selected_policies — actually mutate state
+// =====================================================================
+
+TEST_CASE("RCR-1 ai_policy: apply_selected_policies applies to non-player countries via existing policy path") {
+    GameState state = leviathan::core::make_game_state(
+        leviathan::core::SimulationConfig{});
+    state.current_date = leviathan::core::GameDate(1930, 1, 1);
+
+    // Three countries.
+    auto a = make_country("AAA"); a.id = CountryId{0}; a.stability = 0.5;
+    auto b = make_country("BBB"); b.id = CountryId{1}; b.stability = 0.5;
+    auto c = make_country("CCC"); c.id = CountryId{2}; c.stability = 0.5;
+    state.countries.push_back(a);
+    state.countries.push_back(b);
+    state.countries.push_back(c);
+
+    // One policy that raises stability.
+    PolicyData p = make_policy("test_stability_up");
+    p.duration_days = 30;
+    p.effects.push_back({"country.stability", "add", 0.1});
+    state.policies.push_back(p);
+
+    const auto r = ai::apply_selected_policies(state);
+    REQUIRE(r);
+    CHECK(r.value().considered == 3);
+    CHECK(r.value().applied    == 3);
+    CHECK(r.value().skipped    == 0);
+    CHECK(r.value().failed_countries.empty());
+
+    CHECK(state.countries[0].stability == doctest::Approx(0.6));
+    CHECK(state.countries[1].stability == doctest::Approx(0.6));
+    CHECK(state.countries[2].stability == doctest::Approx(0.6));
+
+    // M1.15 active_policies appended through the existing policy
+    // path (the AI applicator reuses policy::apply_policy_effects).
+    CHECK(state.countries[0].active_policies.size() == 1u);
+    CHECK(state.countries[1].active_policies.size() == 1u);
+    CHECK(state.countries[2].active_policies.size() == 1u);
+}
+
+TEST_CASE("RCR-1 ai_policy: apply_selected_policies skips the player country") {
+    GameState state = leviathan::core::make_game_state(
+        leviathan::core::SimulationConfig{});
+    state.current_date = leviathan::core::GameDate(1930, 1, 1);
+
+    auto a = make_country("AAA"); a.id = CountryId{0}; a.stability = 0.5;
+    auto b = make_country("BBB"); b.id = CountryId{1}; b.stability = 0.5;
+    state.countries.push_back(a);
+    state.countries.push_back(b);
+    state.player_country = CountryId{0};
+
+    PolicyData p = make_policy("test_stab_up");
+    p.duration_days = 30;
+    p.effects.push_back({"country.stability", "add", 0.1});
+    state.policies.push_back(p);
+
+    const auto r = ai::apply_selected_policies(state);
+    REQUIRE(r);
+    CHECK(r.value().considered == 1);
+    CHECK(r.value().applied    == 1);
+    // Player country unchanged.
+    CHECK(state.countries[0].stability == doctest::Approx(0.5));
+    CHECK(state.countries[1].stability == doctest::Approx(0.6));
+    CHECK(state.countries[0].active_policies.size() == 0u);
+    CHECK(state.countries[1].active_policies.size() == 1u);
+}
+
+TEST_CASE("RCR-1 ai_policy: apply_selected_policies fail-continues on per-country failure") {
+    // A bogus policy effect target will cause every per-country apply
+    // to fail. Failures should be reported but the call should not
+    // throw or short-circuit.
+    GameState state = leviathan::core::make_game_state(
+        leviathan::core::SimulationConfig{});
+    state.current_date = leviathan::core::GameDate(1930, 1, 1);
+
+    auto a = make_country("AAA"); a.id = CountryId{0};
+    auto b = make_country("BBB"); b.id = CountryId{1};
+    state.countries.push_back(a);
+    state.countries.push_back(b);
+
+    PolicyData p = make_policy("broken_policy");
+    p.duration_days = 30;
+    p.effects.push_back({"country.this_field_does_not_exist", "add", 0.1});
+    state.policies.push_back(p);
+
+    const auto r = ai::apply_selected_policies(state);
+    REQUIRE(r);
+    CHECK(r.value().considered == 2);
+    CHECK(r.value().applied    == 0);
+    CHECK(r.value().failed_countries.size() == 2);
+}

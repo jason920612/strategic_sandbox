@@ -430,6 +430,7 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
             check_double(out, prefix + ".legitimacy",                ca.legitimacy,                cb.legitimacy,                tol);
             check_double(out, prefix + ".military_power",            ca.military_power,            cb.military_power,            tol);
             check_double(out, prefix + ".threat_perception",         ca.threat_perception,         cb.threat_perception,         tol);
+            check_double(out, prefix + ".military_strength",         ca.military_strength,         cb.military_strength,         tol);   // RCR-1
             check_double(out, prefix + ".last_gdp_growth_rate",      ca.last_gdp_growth_rate,      cb.last_gdp_growth_rate,      tol);
 
             check_double(out, prefix + ".budget.administration", ca.budget.administration, cb.budget.administration, tol);
@@ -647,6 +648,110 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
                                  fa.value, fb.value, tol);
                 }
             }
+
+            // RCR-1: weight_modifiers (RFC-090 §5.3).
+            if (ea.weight_modifiers.size() != eb.weight_modifiers.size()) {
+                push_mismatch(out, prefix + ".weight_modifiers.size()",
+                              std::to_string(ea.weight_modifiers.size()) +
+                              " != " +
+                              std::to_string(eb.weight_modifiers.size()));
+            } else {
+                for (std::size_t wi = 0; wi < ea.weight_modifiers.size(); ++wi) {
+                    const auto& wa = ea.weight_modifiers[wi];
+                    const auto& wb = eb.weight_modifiers[wi];
+                    const std::string wprefix =
+                        prefix + ".weight_modifiers[" + std::to_string(wi) + "]";
+                    check_string(out, wprefix + ".target",
+                                 wa.target, wb.target);
+                    check_string(out, wprefix + ".op", wa.op, wb.op);
+                    check_double(out, wprefix + ".value",
+                                 wa.value, wb.value, tol);
+                    check_double(out, wprefix + ".weight_delta",
+                                 wa.weight_delta, wb.weight_delta, tol);
+                }
+            }
+
+            // RCR-1: options (RFC-090 §5.4 / §5.8).
+            if (ea.options.size() != eb.options.size()) {
+                push_mismatch(out, prefix + ".options.size()",
+                              std::to_string(ea.options.size()) + " != " +
+                              std::to_string(eb.options.size()));
+            } else {
+                for (std::size_t oi = 0; oi < ea.options.size(); ++oi) {
+                    const auto& oa = ea.options[oi];
+                    const auto& ob = eb.options[oi];
+                    const std::string oprefix =
+                        prefix + ".options[" + std::to_string(oi) + "]";
+                    check_string(out, oprefix + ".id_code",
+                                 oa.id_code, ob.id_code);
+                    check_string(out, oprefix + ".label",
+                                 oa.label, ob.label);
+                    if (oa.effects.size() != ob.effects.size()) {
+                        push_mismatch(out, oprefix + ".effects.size()",
+                                      std::to_string(oa.effects.size()) +
+                                      " != " +
+                                      std::to_string(ob.effects.size()));
+                    } else {
+                        for (std::size_t oei = 0;
+                             oei < oa.effects.size(); ++oei) {
+                            const auto& fa = oa.effects[oei];
+                            const auto& fb = ob.effects[oei];
+                            const std::string eprefix =
+                                oprefix + ".effects[" + std::to_string(oei) + "]";
+                            check_string(out, eprefix + ".target",
+                                         fa.target, fb.target);
+                            check_string(out, eprefix + ".op",
+                                         fa.op, fb.op);
+                            check_double(out, eprefix + ".value",
+                                         fa.value, fb.value, tol);
+                        }
+                    }
+                }
+            }
+
+            // RCR-1: followup_event_ids (RFC-090 §5.12).
+            if (ea.followup_event_ids.size() != eb.followup_event_ids.size()) {
+                push_mismatch(out, prefix + ".followup_event_ids.size()",
+                              std::to_string(ea.followup_event_ids.size()) +
+                              " != " +
+                              std::to_string(eb.followup_event_ids.size()));
+            } else {
+                for (std::size_t fi = 0; fi < ea.followup_event_ids.size(); ++fi) {
+                    check_string(out,
+                                 prefix + ".followup_event_ids[" +
+                                 std::to_string(fi) + "]",
+                                 ea.followup_event_ids[fi],
+                                 eb.followup_event_ids[fi]);
+                }
+            }
+        }
+    }
+
+    // ---- relationships (RCR-1, RFC-090 §3.6 / §3.7) ----------------
+    if (a.relationships.size() != b.relationships.size()) {
+        push_mismatch(out, "relationships.size()",
+                      std::to_string(a.relationships.size()) + " != " +
+                      std::to_string(b.relationships.size()));
+    } else {
+        for (std::size_t i = 0; i < a.relationships.size(); ++i) {
+            const auto& ra = a.relationships[i];
+            const auto& rb = b.relationships[i];
+            const std::string prefix =
+                "relationships[" + std::to_string(i) + "]";
+            if (ra.from != rb.from) {
+                push_mismatch(out, prefix + ".from",
+                              std::to_string(ra.from.value()) + " != " +
+                              std::to_string(rb.from.value()));
+            }
+            if (ra.to != rb.to) {
+                push_mismatch(out, prefix + ".to",
+                              std::to_string(ra.to.value()) + " != " +
+                              std::to_string(rb.to.value()));
+            }
+            check_double(out, prefix + ".relationship",
+                         ra.relationship, rb.relationship, tol);
+            check_double(out, prefix + ".threat",
+                         ra.threat, rb.threat, tol);
         }
     }
 

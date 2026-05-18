@@ -82,4 +82,28 @@ core::Result<ApplyOutcome> apply_event_effects(
     return core::Result<ApplyOutcome>::success(std::move(out));
 }
 
+const core::EventOption*
+select_default_option(const core::EventDefinition& definition) {
+    if (definition.options.empty()) {
+        return nullptr;
+    }
+    return &definition.options.front();
+}
+
+std::vector<std::size_t>
+resolve_followup_ids(const core::GameState&       state,
+                     const core::EventDefinition& definition) {
+    std::vector<std::size_t> out;
+    out.reserve(definition.followup_event_ids.size());
+    for (const auto& id_code : definition.followup_event_ids) {
+        for (std::size_t i = 0; i < state.events.size(); ++i) {
+            if (state.events[i].id_code == id_code) {
+                out.push_back(i);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 }  // namespace leviathan::systems::event_effects

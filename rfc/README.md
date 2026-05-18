@@ -63,28 +63,51 @@ they are *implementation milestone* close-outs or *full
 original RFC acceptance* close-outs, and link to the
 compliance-audit doc when the two diverge.
 
-### Recovery track (RCR)
+### RCR-1 (one-time corrective PR)
 
-`RCR-N` is a **recovery-track identifier** for clearing
-items from the compliance-audit backlog. It is **not** an
-RFC milestone number and does not consume M0–M9 numbering.
-**RCR-1 has shipped**:
+`RCR-1` was a **one-time corrective PR** that closed the
+audit-doc compliance gap in a single batch — not the first
+of a long-running recovery track. After RCR-1 lands,
+execution returns to the M-numbered milestone sequence; M6.6
+resumes per RFC-090 §6.6 on explicit go-ahead. `RCR` is **not**
+an RFC milestone number and does not consume M0–M9 numbering.
 
-- 20-country / 20-policy / 10-event / 6+-IG floors via
-  new `data/scenarios/1930_rfc_compliance.json` (the
-  canonical `1930_minimal.json` stays at 3 countries to
-  preserve byte-identical M1–M5 determinism baselines).
-- `leviathan::systems::ai_policy::select_policies` —
-  selection-only AI-policy skeleton (RNG-free,
-  mutation-free, deterministic).
+What RCR-1 shipped:
 
-Items the audit doc currently labels "deferred to RCR-2"
-(relationships matrix + EventOption + WeightModifier +
-followup-event chains under one v16→v17 save bump; annual
-world stats CSV artefact; events.jsonl per-fire emission;
-AI-policy apply path; 10-year event stress test) remain
-backlog. M6.6 implementation work stays paused while the
-RCR track runs.
+- 20-country / 20-policy / 10-event / 10-cross-country-IG
+  floors via new `data/scenarios/1930_rfc_compliance.json`
+  (canonical `1930_minimal.json` unchanged so byte-identical
+  M1–M5 determinism baselines stay green).
+- AI policy selection + apply
+  (`leviathan::systems::ai_policy::select_policies` +
+  `apply_selected_policies`); apply reuses
+  `policy::apply_policy_effects` so events inherit M1.5
+  pre-flight atomicity and M1.15 active_policies bookkeeping.
+- Save schema bump **v16 → v17** in one batched migration:
+  `CountryState.military_strength`,
+  `EventDefinition.weight_modifiers`,
+  `EventDefinition.options`,
+  `EventDefinition.followup_event_ids`,
+  `GameState.relationships`.
+- New artefact `annual_world_stats.csv` (artefact contract
+  10 → 11) emitted per year boundary by the new
+  `leviathan::systems::annual_stats` module.
+- `event_evaluator::rank_weighted_events` — RNG-free
+  deterministic weighted ranker (RFC-090 §5.3 / §5.6 / §5.7).
+- `event_effects::select_default_option` +
+  `resolve_followup_ids` (RFC-090 §5.8 / §5.12).
+- `event_firer::record_match` now emits one `event_fired`
+  LogEntry per fired event so `events.jsonl` records
+  firings (RFC-090 §5.9). Canonical scenarios at M5 stay
+  no-fire so canonical bytes are byte-identical.
+- Integration tests: 365-day compliance load, 5-year
+  annual-stats run, 1930–2000 (25567-day) sweep with
+  byte-deterministic repeated run, 10-year event stress
+  test.
+
+See [`../docs/rfc-090-010-compliance-audit.md`](../docs/rfc-090-010-compliance-audit.md)
+for the per-item audit-doc status (every actionable bullet
+is `[X]` after RCR-1).
 
 ## 實作進度（與 RFC 對應）
 

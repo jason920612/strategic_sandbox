@@ -645,6 +645,16 @@ core::Result<bool> begin_tick(core::GameState& state,
         if (!r) return r;
     }
 
+    // RCR-1 (RFC-090 §3.9): capture the initial annual-stats row
+    // (one row labelled by start_date.year). Subsequent rows are
+    // appended on every year_changed boundary in step_one_day.
+    {
+        TickController::AnnualRowEntry e;
+        e.snapshot_date = state.current_date;
+        e.row = annual_stats::snapshot(state, state.current_date.year());
+        ctrl.annual_rows.push_back(std::move(e));
+    }
+
     ctrl.started = true;
     return core::Result<bool>::success(true);
 }
@@ -712,6 +722,16 @@ core::Result<bool> step_one_day(core::GameState& state,
     if (tr.month_changed) {
         auto r = snapshot_all_interest_groups(state, ctrl);
         if (!r) return r;
+    }
+    // RCR-1 (RFC-090 §3.9): annual snapshot on year boundary,
+    // after the year-rolled-over log and after the monthly pipeline
+    // ran (so the year-end aggregates reflect the just-finished
+    // December tick).
+    if (tr.year_changed) {
+        TickController::AnnualRowEntry e;
+        e.snapshot_date = state.current_date;
+        e.row = annual_stats::snapshot(state, state.current_date.year());
+        ctrl.annual_rows.push_back(std::move(e));
     }
 
     ++ctrl.days_stepped;
@@ -799,6 +819,11 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto map_html_path =
         opts.map_html_path.value_or(
             opts.output_dir / "map.html");
+    // RCR-1 (RFC-090 §3.9): annual_world_stats.csv is always
+    // written. Default sits next to map.html under output_dir.
+    const auto annual_world_stats_csv_path =
+        opts.annual_world_stats_csv_path.value_or(
+            opts.output_dir / "annual_world_stats.csv");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -911,6 +936,23 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(html_w.error()));
         }
     }
+    // RCR-1 (RFC-090 §3.9 / RFC-010 §5): unconditionally write the
+    // annual world stats CSV. Empty annual_rows produces a
+    // header-only file (runs shorter than the first year-boundary
+    // crossing with no initial-row capture). On-disk format mirrors
+    // the M1.14 / M1.16 byte-stable CSV conventions.
+    {
+        std::ostringstream csv;
+        csv << annual_stats::write_csv_header();
+        for (const auto& e : ctrl.annual_rows) {
+            csv << annual_stats::write_csv_row(e.snapshot_date, e.row);
+        }
+        auto csv_w = write_string_to_file(
+            annual_world_stats_csv_path, csv.str());
+        if (!csv_w) {
+            return core::Result<RunOutcome>::failure(std::move(csv_w.error()));
+        }
+    }
 
     RunOutcome outcome;
     outcome.start_date           = ctrl.start_date;
@@ -939,6 +981,9 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
         ctrl.interest_group_authority_pressure_rows.size();
     outcome.provinces_svg_path = provinces_svg_path;
     outcome.map_html_path      = map_html_path;
+    // RCR-1 (RFC-090 §3.9 / RFC-010 §5):
+    outcome.annual_world_stats_csv_path = annual_world_stats_csv_path;
+    outcome.annual_world_stats_csv_rows = ctrl.annual_rows.size();
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));

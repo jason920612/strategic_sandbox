@@ -7,6 +7,7 @@
 
 #include "leviathan/systems/event_evaluator.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -193,6 +194,49 @@ std::vector<EventMatch> match_events(const core::GameState& state) {
             out.push_back(std::move(*m));
         }
     }
+    return out;
+}
+
+std::vector<WeightedEventCandidate>
+rank_weighted_events(const core::GameState& state) {
+    std::vector<WeightedEventCandidate> out;
+    out.reserve(state.events.size());
+
+    for (std::size_t i = 0; i < state.events.size(); ++i) {
+        const auto& def = state.events[i];
+        double weight = kBaseWeight;
+        for (const auto& wm : def.weight_modifiers) {
+            // Reuse the trigger_matches machinery: treat the
+            // modifier as a transient EventTrigger with the same
+            // target / op / value. trigger_matches returns false
+            // for unrecognised target / op / non-finite value, so
+            // those modifiers contribute zero — author typos are
+            // silent here (same defensive-false convention as
+            // M5.2; the M5.1 / RCR-1 save layer rejects malformed
+            // fixtures at load time).
+            core::EventTrigger probe;
+            probe.target = wm.target;
+            probe.op     = wm.op;
+            probe.value  = wm.value;
+            if (trigger_matches(state, probe)) {
+                weight += wm.weight_delta;
+            }
+        }
+        WeightedEventCandidate c;
+        c.event_index   = i;
+        c.event_id_code = def.id_code;
+        c.weight        = weight;
+        out.push_back(std::move(c));
+    }
+
+    // Stable sort by descending weight; ties retain original
+    // vector order (std::stable_sort with a `>` comparator
+    // achieves that without an explicit secondary key).
+    std::stable_sort(out.begin(), out.end(),
+                     [](const WeightedEventCandidate& a,
+                        const WeightedEventCandidate& b) {
+                         return a.weight > b.weight;
+                     });
     return out;
 }
 

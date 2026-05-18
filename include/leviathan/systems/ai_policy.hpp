@@ -89,6 +89,59 @@ struct Selection {
 core::Result<std::vector<Selection>>
 select_policies(const core::GameState& state);
 
+// RCR-1: AI policy apply path. Calls `select_policies(state)` and
+// then applies each `Selection` via the existing
+// `policy::apply_policy_effects(state, country, policy)` path so
+// every AI selection inherits M1.5 pre-flight atomicity + M1.15
+// `active_policies` bookkeeping.
+//
+// Returns a per-call summary: how many AI countries were
+// considered, how many had a successful apply, how many were
+// skipped (no matching policy in `state.policies`, or
+// `policy::apply_policy_effects` returned a failure).
+//
+// Atomicity:
+//   - Each per-country apply call is atomic in its own M1.5
+//     pre-flight sense (a failing effect leaves THAT country
+//     untouched).
+//   - Across countries, this function is FAIL-CONTINUE rather
+//     than FAIL-FAST: a failing apply on country `i` records
+//     the failure in the outcome but does not abort the
+//     remaining `[i+1..end)` apply calls. This mirrors the
+//     M5.6 `apply_event_effects` policy of "broken event for
+//     country X doesn't block country Y" and keeps the AI
+//     applicator from leaving the world half-AI'd.
+//   - The function never throws. Failures are reported through
+//     `ApplyOutcome.failed_countries`.
+//
+// Determinism: identical to `select_policies` — RNG-free, vector-
+// order, no time-based input. Same input state produces an
+// identical mutation sequence.
+//
+// What this function does NOT do:
+//   - apply to the player country (skipped via the same
+//     player-detection used in `select_policies`)
+//   - select more than one policy per country in this call
+//   - schedule policies for later application (no scheduler;
+//     reuses M1.15 active_policies expiry-tracking that the
+//     existing policy path already records)
+//   - emit logs / events.jsonl entries (consistent with the
+//     M3.4 / M5.6 "no log emission" invariant for this
+//     applicator's neighbours)
+//   - emit CSV rows
+//   - consult relationships / threat / military values (those
+//     fields exist on state but are inputs for a future smarter
+//     selection rule, not the current first-policy rule)
+struct ApplyOutcome {
+    std::size_t considered      = 0;  // non-player countries scanned
+    std::size_t applied         = 0;  // successful apply calls
+    std::size_t skipped         = 0;  // no policies / no selection
+    std::vector<core::CountryId> failed_countries;  // apply returned failure
+};
+
+core::Result<ApplyOutcome>
+apply_selected_policies(core::GameState& state);
+
 }  // namespace leviathan::systems::ai_policy
 
 #endif  // LEVIATHAN_SYSTEMS_AI_POLICY_HPP

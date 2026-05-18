@@ -75,6 +75,17 @@ struct GameState {
     // Loader does not populate this from the scenario manifest;
     // history is a runtime accumulation, not a scenario input.
     std::vector<EventInstance> event_history;
+
+    // RCR-1: RFC-090 §3.6 / §3.7 — pairwise inter-country
+    // relationship + threat record. Root-level so a future
+    // cross-border system can iterate without indexing through
+    // every country. Empty by default; scenario manifest may
+    // author entries via the optional `relationships` block
+    // (vector of `{from, to, relationship, threat}`). Save
+    // format v17 makes the block required at the save layer.
+    // No system drives these values yet — RCR-1 ships the data
+    // layer + round-trip only.
+    std::vector<CountryRelation> relationships;
 };
 
 // Builds a fresh GameState from `config`:

@@ -658,8 +658,8 @@ TEST_CASE("run: --factions-csv with empty state writes header-only file") {
 
 TEST_CASE("run: --factions-csv + scenario emits one row per faction per snapshot point") {
     // Snapshot cadence: start + each month_changed + final post-sanity.
-    // 31 days from 1930-01-01 crosses one month boundary → 3 snapshot
-    // points. Canonical scenario has 3 GER factions → 9 data rows.
+    // 31 days from 1930-01-01 crosses one month boundary ??3 snapshot
+    // points. Canonical scenario has 3 GER factions ??9 data rows.
     TempDir td("leviathan_runner_m116_canonical_factions_csv");
     rn::RunnerOptions opts;
     opts.config_path       = kCanonicalConfig;
@@ -817,7 +817,7 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
     // Save schema is now v16 - M6.2 added visible_report to event definitions.
-    CHECK(save.find("\"save_version\": 16") != std::string::npos);
+    CHECK(save.find("\"save_version\": 17") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1070,7 +1070,7 @@ TEST_CASE("run: save schema is now v16 (M6.2 bumped from v15 for EventDefinition
     const std::string save = read_file(td.path / "save.json");
     // Pin the current version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 16") != std::string::npos);
+    CHECK(save.find("\"save_version\": 17") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------
@@ -1725,7 +1725,7 @@ TEST_CASE("run: --replay inherits player_country from the loaded save when --pla
     opts.output_dir    = td.path;
     opts.scenario_path = kCanonicalScenario;
     opts.replay_path   = source_path;
-    // opts.player_id_code intentionally unset — should auto-inherit.
+    // opts.player_id_code intentionally unset ??should auto-inherit.
     REQUIRE(rn::run(opts).ok());
 
     auto loaded_r = leviathan::systems::save_system::load(td.path / "save.json");
@@ -2084,7 +2084,7 @@ TEST_CASE("run: --verify-tolerance tight enough catches a small mismatch") {
 // summary.csv / countries.csv / factions.csv when the replay fails
 // for any reason. End-to-end this falls out of the existing layout
 // (all artefact writes happen in `end_tick`, every replay failure
-// path returns before `end_tick` is reached) — these tests cement
+// path returns before `end_tick` is reached) ??these tests cement
 // the guarantee so a future refactor can't quietly regress it.
 // =====================================================================
 
@@ -2295,7 +2295,7 @@ namespace {
 // Build a source save whose applied_commands log lives at chosen
 // dates. Bypasses apply_pending so the test can stage entries with
 // arbitrary (monotonic) applied_on values that the canonical
-// scenario's start date precedes — exactly the shape M2.14
+// scenario's start date precedes ??exactly the shape M2.14
 // truncation needs to exercise.
 leviathan::core::GameState build_source_with_dated_log(
         const fs::path& save_path,
@@ -2416,7 +2416,7 @@ TEST_CASE("run: --target-date before the scenario start is rejected") {
     CHECK(r.error().find("--target-date")        != std::string::npos);
     CHECK(r.error().find("1929-12-31")           != std::string::npos);
     CHECK(r.error().find("scenario start")       != std::string::npos);
-    // Pre-end_tick failure: M2.9 contract — no artefacts on disk.
+    // Pre-end_tick failure: M2.9 contract ??no artefacts on disk.
     check_no_artifacts(paths);
 }
 
@@ -2426,7 +2426,7 @@ TEST_CASE("run: --target-date before the scenario start is rejected") {
 
 TEST_CASE("run: interest_groups.csv is written even without --scenario (header-only)") {
     // No scenario, so state.interest_groups is empty. The artefact is
-    // still produced — the contract is "the file always exists".
+    // still produced ??the contract is "the file always exists".
     TempDir td("leviathan_runner_m35_empty_interest_groups");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -2514,8 +2514,8 @@ TEST_CASE("run: scenario with hand-built interest groups produces one row per gr
     const auto r = rn::run_state(state, opts);
     REQUIRE(r.ok());
     // Snapshot cadence: start + each month_changed + final post-sanity.
-    // 31 days from 1930-01-01 crosses one month boundary → 3 snapshot
-    // points. 2 groups → 6 data rows.
+    // 31 days from 1930-01-01 crosses one month boundary ??3 snapshot
+    // points. 2 groups ??6 data rows.
     CHECK(r.value().interest_groups_csv_rows == 6u);
 
     const std::string text = read_file(td.path / "interest_groups.csv");
@@ -2664,7 +2664,7 @@ TEST_CASE("run: --summary-csv byte-stream is unchanged by interest_groups.csv wr
 // =====================================================================
 
 TEST_CASE("run: M3.6 trace CSVs are header-only for the empty world / short run") {
-    // No scenario + 0 days → no monthly tick fires, so no trace row
+    // No scenario + 0 days ??no monthly tick fires, so no trace row
     // is ever appended. Both files must still exist with the
     // documented headers.
     TempDir td("leviathan_runner_m36_empty");
@@ -2772,7 +2772,7 @@ TEST_CASE("run: M3.6 trace CSVs emit rows after a monthly boundary with active g
     opts.output_dir  = td.path;
     const auto r = rn::run_state(state, opts);
     REQUIRE(r.ok());
-    // One month boundary crossed → one row per system per
+    // One month boundary crossed ??one row per system per
     // updated country = 1 row each.
     CHECK(r.value().interest_group_country_feedback_csv_rows   == 1u);
     CHECK(r.value().interest_group_authority_pressure_csv_rows == 1u);
@@ -2961,7 +2961,7 @@ TEST_CASE("run: canonical scenario uses M4.3 per-owner palette in provinces.svg"
 TEST_CASE("run: canonical scenario emits M4.4 <text> labels in provinces.svg") {
     // M4.4 adds one <text> per ProvinceNode using the
     // XML-text-escaped name. The canonical 1930_minimal fixture
-    // names the three nodes "Berlin" / "Paris" / "Tokyo" — none
+    // names the three nodes "Berlin" / "Paris" / "Tokyo" ??none
     // contain XML special characters, so the labels appear
     // verbatim in the output.
     TempDir td("leviathan_runner_m44_canonical_labels");
@@ -3105,7 +3105,7 @@ TEST_CASE("run: canonical scenario carries the M4.6 minimal CSS in map.html") {
     CHECK(html.find("svg text {")                != std::string::npos);
     CHECK(html.find("font-family: sans-serif")   != std::string::npos);
 
-    // The standalone SVG stays CSS-free — the M4.6 styling
+    // The standalone SVG stays CSS-free ??the M4.6 styling
     // applies only to the HTML viewer.
     const std::string svg = read_file(td.path / "provinces.svg");
     CHECK(svg.find("<style")          == std::string::npos);
@@ -3160,12 +3160,11 @@ TEST_CASE("run: canonical scenario emits M4.7 legend listing GER / FRA / JPN in 
 }
 
 TEST_CASE("run: canonical scenario carries M4.8 data-* attrs on both provinces.svg AND map.html") {
-    // M4.8 widens the identity surface inside the SVG body —
-    // both <circle> and <text> now carry data-id /
+    // M4.8 widens the identity surface inside the SVG body ??    // both <circle> and <text> now carry data-id /
     // data-owner / data-owner-code / data-name. The change
     // happens inside `render_svg_root`, which both
-    // `render_provinces` (→ provinces.svg) and
-    // `render_map_html` (→ map.html) share, so the new
+    // `render_provinces` (??provinces.svg) and
+    // `render_map_html` (??map.html) share, so the new
     // attrs land in BOTH artefacts.
     TempDir td("leviathan_runner_m48_canonical_data_attrs");
     rn::RunnerOptions opts;
@@ -3268,12 +3267,12 @@ TEST_CASE("run: canonical scenario produces data rows in all three M3 CSVs") {
     // country (GER / FRA / JPN). A 31-day run from the canonical
     // 1930_minimal scenario crosses one month boundary, so:
     //
-    //   * interest_groups.csv: 3 groups × 3 snapshot points
+    //   * interest_groups.csv: 3 groups ? 3 snapshot points
     //     (start + month_changed + final post-sanity) = 9 rows.
     //   * interest_group_country_feedback.csv: one monthly tick,
     //     all 3 countries have at least one matching group with
     //     non-zero influence = 3 rows.
-    //   * interest_group_authority_pressure.csv: same — all 3
+    //   * interest_group_authority_pressure.csv: same ??all 3
     //     countries have a Bureaucracy group with non-zero
     //     influence = 3 rows.
     TempDir td("leviathan_runner_m38_canonical_data_rows");
@@ -3313,7 +3312,7 @@ TEST_CASE("run: canonical scenario produces data rows in all three M3 CSVs") {
 // events.jsonl semantic change; save carries the 2 canonical
 // event definitions.
 // =====================================================================
-TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; save carries 2 event definitions") {
+TEST_CASE("run: canonical scenario at M5.1 ??still 10 artefacts, no new ones; save carries 2 event definitions") {
     TempDir td("leviathan_runner_m5_canonical");
     rn::RunnerOptions opts;
     opts.config_path   = kCanonicalConfig;
@@ -3333,7 +3332,7 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
     CHECK(fs::exists(td.path / "provinces.svg"));
     CHECK(fs::exists(td.path / "map.html"));
 
-    // No new artefact in M5.1 — no events.json, no events
+    // No new artefact in M5.1 ??no events.json, no events
     // history file, no event definitions file.
     CHECK_FALSE(fs::exists(td.path / "events.json"));
     CHECK_FALSE(fs::exists(td.path / "event_definitions.json"));
@@ -3347,13 +3346,13 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
     // definitions, and an empty event_history (no auto-fire on
     // the canonical scenario).
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 16") != std::string::npos);
+    CHECK(save.find("\"save_version\": 17") != std::string::npos);
     CHECK(save.find("\"id_code\": \"low_stability_unrest\"")
           != std::string::npos);
     CHECK(save.find("\"id_code\": \"radical_interest_group_warning\"")
           != std::string::npos);
 
-    // events.jsonl semantics unchanged in M5.1 — it remains the
+    // events.jsonl semantics unchanged in M5.1 ??it remains the
     // M0.6 lifecycle log, not an event-firing log. No M5.1 event
     // id_codes leak into events.jsonl yet (event firing is
     // deferred to a future M5.x).
@@ -3364,7 +3363,7 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
           == std::string::npos);
 }
 
-TEST_CASE("run: canonical scenario at M5.1 — countries / interest_groups are NOT mutated by event loading") {
+TEST_CASE("run: canonical scenario at M5.1 ??countries / interest_groups are NOT mutated by event loading") {
     // Loading event definitions must not pre-fire any of their
     // effects. country.stability / country.legitimacy /
     // interest_group fields all stay at their canonical-fixture
@@ -3413,12 +3412,12 @@ TEST_CASE("run: canonical scenario at M5.4 - save.json carries empty event_histo
     // event_history block; M6.1 bumped v14 -> v15 for
     // EventDefinition.true_cause; M6.2 bumped v15 -> v16 for
     // EventDefinition.visible_report).
-    CHECK(save.find("\"save_version\": 16") != std::string::npos);
+    CHECK(save.find("\"save_version\": 17") != std::string::npos);
 
     // event_history is the new M5.4 root-level key. M5.4 ships
-    // the data layer only — no system creates EventInstance
-    // records yet — so canonical runs at M5.4 still emit
-    // `"event_history": []`. The day the M5.x firer lands,
+    // the data layer only ??no system creates EventInstance
+    // records yet ??so canonical runs at M5.4 still emit
+    // `"event_history": [], "relationships": []`. The day the M5.x firer lands,
     // THIS test should be the one that breaks first.
     CHECK(save.find("\"event_history\": []") != std::string::npos);
 
