@@ -14,7 +14,74 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.14 — DOM contract
+- Latest shipped sub-milestone: **M4.15 — keyboard focus
+  accessibility skeleton.** First keyboard-input surface
+  for the M4 viewer. Every `<circle>` and every `<text>`
+  in the SVG body now carries `tabindex="0"` (rendered in
+  `render_svg_root`, so the standalone `provinces.svg`
+  picks it up too); the inline `<script>` in `map.html`
+  registers a `keydown` listener alongside the existing
+  `click` listener so pressing **Enter** or **Space**
+  while focused on a province fires the same
+  `selectProvince + showDetails` pair the click runs. The
+  keydown handler calls `event.preventDefault()` for
+  Space to suppress the browser's default page-scroll.
+  The click and keydown handlers share a per-element
+  `activate()` closure so the effect cannot drift between
+  modalities. The M4.7 legend swatch `<circle>` elements
+  in `map.html` are emitted separately inside
+  `render_map_html` (not in `render_svg_root`) and lack
+  `tabindex`, so they stay out of the tab order — the
+  existing M4.10 selector `svg circle[data-id], svg
+  text[data-id]` already skipped them anyway. **This is
+  a skeleton, NOT a full ARIA polish.** Explicit
+  non-goals enforced by tests: no `role=`, no
+  `aria-label=`, no `aria-selected=`, no `aria-current=`,
+  no `aria-pressed=`, no `:focus` / `:focus-visible` CSS
+  (the browser's default focus ring is what users see),
+  no `tabindex` values other than `"0"` (no
+  programmatic-only focus; no manual ordering), no
+  keyboard shortcut for the panel, no skip-link, no focus
+  management between renders. Those land in a future
+  dedicated A11Y sub-milestone. M4.10's XSS-safe DOM API
+  (`createElement` + `textContent` only; no `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function`),
+  no-network discipline (no `fetch` / `XMLHttpRequest`),
+  asymmetric one-inline-script invariant, M4.12 transient
+  `.selected` surface, and the M4.8 + M4.13 five-attr DOM
+  contract all carry over unchanged (additive only). **M4
+  remains in progress** — no `docs/milestone-4-result.md`;
+  M4.15 is one more skeleton sub-milestone, not an exit.
+  Artefact set unchanged (still 10). Save format
+  unchanged (still v12) — `tabindex` is render-time only,
+  not a new field on `ProvinceNode`. `provinces.svg`
+  bytes DID change (new `tabindex="0"` on every
+  `<circle>` + `<text>` — additive only); `map.html`
+  bytes did change (same SVG body + the refactored
+  listener loop + new keydown wiring in the script). 9
+  new doctest cases (866 total: 6 svg_export + 3 in the
+  standalone-SVG / integration / etc. cluster). **No
+  state mutation, no commands, no AI, no events emitted
+  by keyboard activation, no selection persistence, no
+  multi-select / shift-Enter / right-click, no hover, no
+  tooltip, no animation, no save schema bump, no new
+  state field, no new artefact, no new fixture, no new
+  `InterestGroupKind` / `PlayerCommandKind`, no rename
+  of the M4.8 / M4.13 data-* keys, no second `<script>`,
+  no `<script src=>`, no `<script type=>`, no `<link>`,
+  no external CSS / font / `<iframe>` / `<img>`, no
+  `fetch` / XHR / storage / history / navigation APIs,
+  no `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function`, no inline event attributes
+  (`onkeydown=` / ...; the M4.15 keydown wiring uses
+  `addEventListener` exclusively), no per-element inline
+  `style="..."`, no `<meta name="viewport">`, no CSS
+  animations / transitions / media queries / `@import`
+  / `@font-face`, no neighbour / adjacency edges, no
+  terrain / resources / population overlays, no runner
+  CLI flag, no M4 close-out, no `docs/milestone-4-result.md`,
+  no "M4 closed" wording.**
+- Previously shipped: **M4.14 — DOM contract
   checkpoint refresh.** Mirrors M4.9's role for the M4
   reaction loop: zero new behaviour, just a refreshed
   status snapshot and one new integration assertion.
@@ -951,7 +1018,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.14): **M4.15** — open.
+- Next sub-milestone candidate (post-M4.15): **M4.16** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -965,20 +1032,24 @@
   five data-* attrs (added `data-owner-name`) and grew
   the details panel by one row; M4.14 refreshed the
   checkpoint doc to cover M4.10–M4.13 and added one new
-  integration assertion. Natural next steps include
+  integration assertion; M4.15 added `tabindex="0"` on
+  every `<circle>` + `<text>` and a keydown
+  Enter/Space activation listener (keyboard-focus
+  skeleton; no ARIA polish). Natural next steps include
   (a) hover state / tooltips reusing the same XSS-safe
-  DOM-API discipline, (b) keyboard navigation / focus
-  ring / `aria-*` polish on the clickable circles +
-  texts, (c) `.selected` persistence across reload (URL
-  fragment read on load, not write) without state
-  mutation, (d) richer node fields (neighbour adjacency,
-  terrain, population) once a renderer needs them,
-  (e) `<meta name="viewport">` + media queries for
-  responsive sizing. None committed; reviewer chooses.
+  DOM-API discipline, (b) full ARIA polish on the
+  clickable + focusable markers (role, aria-label,
+  aria-selected, focus-visible CSS), (c) `.selected`
+  persistence across reload (URL fragment read on load,
+  not write) without state mutation, (d) richer node
+  fields (neighbour adjacency, terrain, population) once
+  a renderer needs them, (e) `<meta name="viewport">` +
+  media queries for responsive sizing. None committed;
+  reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1009,7 +1080,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 shipped. Sixty-one sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 shipped. Sixty-two sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1156,6 +1227,61 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.15 keyboard focus accessibility skeleton — first
+keyboard-input surface for the M4 viewer. Every `<circle>`
+and every `<text>` in the SVG body now carries
+`tabindex="0"` (rendered in `render_svg_root`, so the
+standalone `provinces.svg` picks it up too); the inline
+`<script>` in `map.html` registers a `keydown` listener
+alongside the existing `click` listener so pressing Enter
+or Space while focused on a province fires the same
+`selectProvince + showDetails` pair the click runs. The
+keydown handler calls `event.preventDefault()` for Space
+to suppress the browser's default page-scroll. The click
+and keydown handlers share a per-element `activate()`
+closure so the effect cannot drift between modalities.
+The M4.7 legend swatch `<circle>` elements in `map.html`
+are emitted separately (inside `render_map_html`, not in
+`render_svg_root`) and lack `tabindex`, so they stay out
+of the tab order — the M4.10 selector
+`svg circle[data-id], svg text[data-id]` already skipped
+them anyway. **Explicit non-goal: NO ARIA polish** — no
+`role=`, `aria-label=`, `aria-selected=`, `aria-current=`,
+`aria-pressed=`, no `:focus`/`:focus-visible` CSS, no
+`tabindex` values other than `"0"`, no keyboard shortcut
+for the panel, no focus management between renders. That
+all lands in a future dedicated A11Y sub-milestone. M4.10's
+XSS-safe DOM API, no-network discipline, asymmetric
+one-inline-script invariant, M4.12's transient `.selected`
+surface, and the M4.8 + M4.13 five-attr DOM contract all
+carry over unchanged. **M4 remains in progress.**
+**Artefact set unchanged (still 10); save format unchanged
+(still v12)** — `tabindex` is render-time only, not a new
+field on `ProvinceNode`. M1.17 / M2.22 / M3.7
+byte-identical determinism contracts continue to pass.
+`provinces.svg` bytes DID change (new `tabindex="0"` on
+every `<circle>` + `<text>` — additive only); `map.html`
+bytes did change (same SVG body + refactored listener
+loop + new keydown wiring in the script). 9 new doctest
+cases (866 total: 6 svg_export + 1 integration test E + 2
+standalone-SVG / cross-checks). **No state mutation, no
+commands, no AI, no events emitted by keyboard
+activation, no selection persistence, no multi-select /
+shift-Enter / right-click, no hover, no tooltip, no
+animation, no save schema bump, no new state field /
+artefact / fixture / `InterestGroupKind` /
+`PlayerCommandKind`, no rename of the M4.8 / M4.13
+data-* keys, no second `<script>`, no `<script src=>` /
+`<script type=>`, no `<link>`, no external CSS / font /
+`<iframe>` / `<img>`, no `fetch` / XHR / storage /
+history / navigation APIs, no `innerHTML` / `outerHTML`
+/ `document.write` / `eval` / `Function`, no inline
+event attributes (`onkeydown=` / ...), no per-element
+inline `style="..."`, no `<meta name="viewport">`, no
+CSS animations / transitions / media queries / `@import`
+/ `@font-face`, no adjacency / terrain / overlays, no
+runner CLI flag, no M4 close-out, no
+`docs/milestone-4-result.md`, no "M4 closed" wording.**;
 **M4.14 DOM contract checkpoint refresh — mirrors M4.9's
 role: zero new behaviour, just a refreshed status snapshot
 + one new integration assertion.

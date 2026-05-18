@@ -217,8 +217,68 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.14
-  （DOM contract checkpoint refresh）** 對應 M4.9 在當時
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.15
+  （keyboard focus accessibility skeleton）** 是 M4 viewer
+  的**第一個鍵盤輸入面**。`render_svg_root` 現在會在每個
+  `<circle>` 與 `<text>` 上 emit `tabindex="0"`，所以
+  province marker 進入正常 tab order，standalone
+  `provinces.svg` 也會跟著拿到這個屬性；`map.html` 內 inline
+  `<script>` 在既有 `click` listener 旁邊再多註冊一個
+  `keydown` listener ── 當 `event.key === "Enter"` 或
+  `event.key === " "` 時，先呼叫 `event.preventDefault()`
+  （抑制 Space 預設往下捲動），然後執行與 click 完全相同
+  的 `selectProvince + showDetails` 配對。click 與 keydown
+  共用每個元素的 `activate()` closure，所以兩種輸入模式不
+  可能在效果上飄移。M4.7 legend swatch `<circle>` 元素是在
+  `render_map_html` 裡 emit（不在 `render_svg_root`），沒有
+  `tabindex`，所以維持不在 tab order；既有的 M4.10 selector
+  `svg circle[data-id], svg text[data-id]` 也早就把它們排
+  除掉了。**明確 non-goal：完全不做 ARIA 大改** ── 沒有
+  `role=` / `aria-label=` / `aria-selected=` / `aria-current=`
+  / `aria-pressed=`、沒有 `:focus` / `:focus-visible` CSS
+  （用瀏覽器預設 focus ring）、`tabindex` 只允許 `"0"`（不
+  做 programmatic-only focus、不做 manual 排序）、沒有 panel
+  快捷鍵、沒有 skip-link、沒有跨 render 的 focus 復原。這些
+  全部留給未來專門的 A11Y sub-milestone。M4.10 的 XSS-safe
+  DOM API（`createElement` + `textContent` only；沒有
+  `innerHTML` / `outerHTML` / `document.write` / `eval` /
+  `Function`）、no-network discipline（沒有 `fetch` /
+  `XMLHttpRequest`）、「`map.html` 有且只有一段 inline
+  `<script>`；`provinces.svg` 完全沒有 script」這條非對稱
+  invariant、M4.12 的 transient `.selected` 機制、以及
+  M4.8 + M4.13 的五個 data-* DOM contract 全部沿用，
+  完全 additive。**M4 仍在 in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.15 只是再多一個 skeleton
+  sub-milestone，不是 exit。**save 格式仍 v12** ── 
+  `tabindex` 是 render-time only，不是 `ProvinceNode` 上
+  的新欄位。`provinces.svg` bytes 有變（每個 `<circle>` +
+  `<text>` 多了一個 `tabindex="0"` ── additive only）；
+  `map.html` bytes 有變（同一份 SVG body + 重構過的
+  listener loop + 新的 keydown 線路）。**Artefact 數量
+  不變（仍 10）；save 格式不變（仍 v12）**；M1.17 / M2.22
+  / M3.7 byte-identical determinism contract 仍 by
+  construction 通過。9 個新 doctest cases（共 866：6 個
+  svg_export + 1 個 integration test E + 2 個 standalone-SVG
+  / cross-check）。**M4 in progress.**
+  **M4.15 不做** state mutation / commands / AI / 鍵盤
+  emit event / selection 持久化 / 多選 / shift-Enter /
+  右鍵 / hover / tooltip / animation / save schema bump
+  / 新 state field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / rename
+  M4.8 / M4.13 data-* key / 第二個 `<script>` /
+  `<script src=>` / `<script type=>` / `<link>` / 外部
+  CSS / font / `<iframe>` / `<img>` / `fetch` /
+  `XMLHttpRequest` / `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` / `navigator`
+  / `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function` / inline event attribute（用
+  `addEventListener` 取代）/ per-element inline
+  `style="..."` / `<meta name="viewport">` / CSS
+  animation / transition / media query / `@import` /
+  `@font-face` / 鄰接 edge / terrain / overlay /
+  runner CLI flag / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.14（DOM contract checkpoint refresh）** 對應 M4.9 在當時
   的角色：**零新行為**，只刷新狀態快照 + 補一個小型
   integration assertion。`docs/milestone-4-checkpoint.md`
   原本是 M4.9 寫的、釘住 M4.2–M4.8 的 SVG / HTML DOM

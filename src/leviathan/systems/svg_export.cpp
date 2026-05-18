@@ -147,11 +147,20 @@ std::string render_svg_root(const core::GameState& state) {
         const std::string owner_int_attr =
             std::to_string(owner_v);
 
+        // M4.15: emit tabindex="0" on every <circle> + <text>
+        // so keyboard users can Tab through province markers
+        // and fire the M4.10 click handler via Enter / Space.
+        // Lives on the SVG body (rendered by render_svg_root),
+        // so the standalone provinces.svg picks it up too; the
+        // M4.7 legend swatch <circle> elements lack data-id
+        // and are emitted in render_map_html separately, so
+        // they stay non-focusable.
         out << "  <circle"
                " cx=\"" << cx << "\""
                " cy=\"" << cy << "\""
                " r=\"8\""
                " fill=\"" << fill << "\""
+               " tabindex=\"0\""
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
@@ -162,6 +171,7 @@ std::string render_svg_root(const core::GameState& state) {
                " x=\"" << cx << "\""
                " y=\"" << ty << "\""
                " text-anchor=\"middle\""
+               " tabindex=\"0\""
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
@@ -372,6 +382,18 @@ std::string render_map_html(const core::GameState& state) {
     // purely DOM-level — never written back into GameState,
     // never persisted to localStorage / sessionStorage /
     // history / URL fragment, lost on reload by design.
+    //
+    // M4.15: the same per-node loop also wires a `keydown`
+    // listener. When `event.key` is `"Enter"` or `" "`
+    // (space), it calls `event.preventDefault()` (suppresses
+    // Space-scroll) and runs the same `selectProvince +
+    // showDetails` pair the click listener runs. The
+    // standalone provinces.svg + map.html both carry
+    // `tabindex="0"` on every <circle> + <text> (emitted in
+    // render_svg_root); the script wires the keyboard
+    // activation. No ARIA polish (no role= / aria-label= /
+    // aria-selected=) — that is a deliberate non-goal of
+    // this skeleton.
     out << "<script>\n";
     out << "(function() {\n";
     out << "  var details = document.getElementById(\"details\");\n";
@@ -415,10 +437,19 @@ std::string render_map_html(const core::GameState& state) {
     out << "    }\n";
     out << "  }\n";
     out << "  for (var j = 0; j < nodes.length; j++) {\n";
-    out << "    var el = nodes[j];\n";
-    out << "    el.addEventListener(\"click\","
-           " (function(e) { return function() {"
-           " selectProvince(e); showDetails(e); }; })(el));\n";
+    out << "    (function(el) {\n";
+    out << "      function activate() {\n";
+    out << "        selectProvince(el);\n";
+    out << "        showDetails(el);\n";
+    out << "      }\n";
+    out << "      el.addEventListener(\"click\", activate);\n";
+    out << "      el.addEventListener(\"keydown\", function(ev) {\n";
+    out << "        if (ev.key === \"Enter\" || ev.key === \" \") {\n";
+    out << "          ev.preventDefault();\n";
+    out << "          activate();\n";
+    out << "        }\n";
+    out << "      });\n";
+    out << "    })(nodes[j]);\n";
     out << "  }\n";
     out << "})();\n";
     out << "</script>\n";

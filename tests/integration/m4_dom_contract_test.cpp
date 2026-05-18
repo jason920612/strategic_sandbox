@@ -354,4 +354,57 @@ TEST_CASE("M4 DOM contract: map.html click-handler script carries the M4.13 five
     CHECK(svg.find("\"data-id\"")           == std::string::npos);
 }
 
+// =====================================================================
+// E. (M4.15) Keyboard focus end-to-end
+//
+//    Every canonical province <circle> + <text> carries
+//    tabindex="0" in BOTH provinces.svg and map.html (the
+//    M4.15 widening lives in render_svg_root, which both
+//    artefacts share). The legend swatch <circle> in
+//    map.html does NOT carry tabindex (it's emitted
+//    separately in render_map_html and lacks data-id).
+//    map.html's inline <script> wires keydown alongside
+//    click.
+// =====================================================================
+TEST_CASE("M4 DOM contract: M4.15 tabindex=\"0\" on every canonical province circle+text in both artefacts; legend swatch is NOT focusable; keydown listener wired in map.html") {
+    TempDir td("leviathan_m4_dom_keyboard_focus");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string svg  = read_file(td.path / "provinces.svg");
+    const std::string html = read_file(td.path / "map.html");
+
+    auto count_occurrences = [&](const std::string& body,
+                                 const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = body.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    // Canonical scenario has three provinces. Each renders
+    // one <circle> + one <text>, each carrying tabindex="0",
+    // so the SVG body contributes 6 occurrences. The legend
+    // swatch <circle> elements (3 of them in map.html) do
+    // NOT carry tabindex.
+    CHECK(count_occurrences(svg,  "tabindex=\"0\"") == 6u);
+    CHECK(count_occurrences(html, "tabindex=\"0\"") == 6u);
+
+    // map.html's inline <script> wires keydown + the key
+    // checks + preventDefault. The handler exists, but the
+    // standalone provinces.svg carries none of it.
+    CHECK(html.find("addEventListener(\"keydown\"") != std::string::npos);
+    CHECK(html.find("\"Enter\"")        != std::string::npos);
+    CHECK(html.find("preventDefault")   != std::string::npos);
+    CHECK(svg.find("addEventListener")  == std::string::npos);
+    CHECK(svg.find("keydown")           == std::string::npos);
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR
