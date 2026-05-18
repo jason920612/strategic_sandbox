@@ -6,15 +6,61 @@
 
 ## Status
 
-- Phase: **Milestone 4 — SVG map + UI (in progress, RFC-090
-  §M4).** M0 / M1 / M2 / M3 all closed; M4 opens with
-  M4.1 introducing the typed `ProvinceNode` map-node data
-  layer. M4 will go on to add an SVG exporter, an HTML viewer
-  / clickable map, and the gameplay-side surfaces that the
-  RFC-090 §M4 description calls out. See
-  `docs/milestone-3-result.md` for the M3 exit report and
-  `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.22 — close-out
+- Phase: **Milestone 4 — SVG map + UI (CLOSED, RFC-090
+  §M4).** M0 / M1 / M2 / M3 / M4 all closed. M4 delivered
+  in 23 sub-milestones (M4.1–M4.23) a deterministic
+  10-artefact viewer stack consisting of: typed
+  `ProvinceNode` data layer (save v11→v12 at M4.1); SVG
+  renderer + `provinces.svg` as 9th artefact (M4.2); HTML
+  viewer wrapper + `map.html` as 10th artefact (M4.5); a
+  shared `render_svg_root` helper between the two; a
+  five-attribute DOM identity surface on every `<circle>`
+  + `<text>` (M4.8 + M4.13); a single-inline-`<script>`
+  interactivity layer with click + Enter/Space + hover
+  listeners (M4.10/M4.15/M4.20); a `<div id="details">`
+  panel + `<p id="hover-status">` text bar; a transient
+  `.selected` highlight (M4.12); CSS `:focus-visible` +
+  `:hover` rings (M4.16/M4.19); a `tabindex="0"` +
+  `role="button"` + composed `aria-label` accessibility
+  surface (M4.15/M4.17); a `<meta name="viewport">` + one
+  responsive `@media (max-width: 1040px)` rule (M4.21).
+  Asymmetric JS boundary established at M4.10 holds end
+  to end: `provinces.svg` stays fully inert (no
+  `<script>` / `<style>` / `font-family`); `map.html`
+  carries EXACTLY ONE inline `<script>` (no `src=`, no
+  `type=`). The XSS-safe DOM API contract holds:
+  `getAttribute` to read, `createElement` + `textContent`
+  + `classList` to write; never `innerHTML` / `eval` /
+  `fetch` / storage / navigation. Selection / hover /
+  focus are purely DOM-level (lost on reload). See
+  `docs/milestone-4-result.md` for the **M4 exit report**
+  (full ledger, dataflow, contract, invariants,
+  deferred items, neutral next-milestone candidates),
+  `docs/milestone-3-result.md` / `docs/milestone-2-result.md`
+  / `docs/milestone-1-result.md` for prior exit reports,
+  and `docs/milestone-4-checkpoint.md` (now annotated
+  as historical) for the in-progress snapshots that
+  preceded the close-out.
+- Latest shipped sub-milestone: **M4.23 — M4 exit /
+  close-out.** Docs-only PR mirroring M1.17 / M2.22 /
+  M3.9 in shape. Publishes
+  `docs/milestone-4-result.md` (the M4 exit report —
+  seven sections: M4.1–M4.23 ledger, final dataflow,
+  10-artefact contract, save-format v12 floor,
+  architectural invariants every future milestone must
+  preserve, deferred items categorised A/B/C, neutral
+  next-milestone candidates). Annotates
+  `docs/milestone-4-checkpoint.md` as historical with a
+  top-of-file pointer to the exit report. Flips this
+  README + `docs/README.md` + `rfc/README.md` to "M4
+  closed". No code, no formula, no fixture, no test
+  change (892 doctest cases / 61742 assertions identical
+  with M4.22). `provinces.svg` + `map.html` bytes
+  byte-identical with M4.22. **M4 closes here.** **No
+  M5 in progress** — M5 starts in its own deliberate
+  first sub-milestone PR when the reviewer decides;
+  M4.23 makes no claim about which milestone is next.
+- Previously shipped: **M4.22 — close-out
   readiness checkpoint.** Mirrors M3.7's role for the M3
   reaction loop: docs + 1 integration test, no renderer
   behaviour change. After M4.21 the M4 viewer stack is
@@ -1524,18 +1570,22 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.22): **M4 close-out
-  (M4.23?)** awaiting explicit reviewer "do M4 close-out"
-  go-ahead. Per the M4.22 checkpoint section 9.6, the
-  reviewer's decision options are: (1) M4 close-out
-  (publish `docs/milestone-4-result.md` exit report
-  mirroring `milestone-3-result.md` + flip three READMEs
-  to "M4 closed"), (2) one more polish PR from
-  checkpoint section 9.2 category B (broader ARIA,
-  pair-hover, position-aware tooltip, keyboard polish,
-  selection persistence, mobile-only layouts, dark-mode,
-  CSS animations), or (3) stop M4 and move to M5.
-  Historical context (M4.1–M4.22):
+- Next milestone direction: **TBD — awaits explicit
+  reviewer direction.** Per `milestone-4-result.md` §7,
+  candidates include (a) **RFC-090 M5** (event engine —
+  natural neighbour to the M3 reaction loop and would
+  unlock the "interest-group thresholds trigger events"
+  deferred item from M3); (b) **post-M4 viewer-polish
+  follow-up** sourced from `milestone-4-result.md` §6
+  category B (broader ARIA, pair-hover, position-aware
+  tooltip, selection persistence, keyboard polish,
+  mobile-only layouts, dark-mode); (c) **gameplay-domain
+  category A items** (neighbour adjacency, terrain,
+  ownership dynamics) under RFC-090 §M5 or §M6 numbering.
+  M4.23 deliberately does NOT open or claim any of
+  these. M5 starts in its own deliberate first
+  sub-milestone PR when the reviewer says so.
+  Historical context (M4.1–M4.23):
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1570,24 +1620,15 @@
   assertion; M4.22 added a close-out readiness
   assessment + consolidated integration test G "M4
   viewer contract complete" + fixed the PR #87 reviewer
-  flag about the 1040px math wording. Natural next
-  steps include
-  (a) broader ARIA polish (`aria-selected` on the M4.12
-  `.selected` markers, `aria-live` region on the
-  details panel for click-update announcements,
-  `aria-current` / `aria-pressed` if needed for the
-  selection model), (b) hover state / tooltips reusing
-  the same XSS-safe DOM-API discipline, (c) `.selected`
-  persistence across reload (URL fragment read on load,
-  not write) without state mutation, (d) richer node
-  fields (neighbour adjacency, terrain, population)
-  once a renderer needs them, (e) `<meta name="viewport">`
-  + media queries for responsive sizing. None committed;
-  reviewer chooses.
+  flag about the 1040px math wording; M4.23 published
+  the M4 exit report (`docs/milestone-4-result.md`),
+  annotated `docs/milestone-4-checkpoint.md` as
+  historical, and flipped the three READMEs to "M4
+  closed". M4 closes here.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
-  shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 shipped. See
+  shipped. **M4 closed** with M4.1 + M4.2 + M4.3 +
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 + M4.23 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1617,8 +1658,8 @@ prototype, RFC-090 §M2) is also complete with M2.1–M2.22
 merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
-**Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 shipped. Sixty-nine sub-milestones shipped:
+**Milestone 4** (SVG map + UI, RFC-090 §M4) is complete
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 + M4.23 shipped. Seventy sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1765,6 +1806,43 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.23 M4 exit / close-out — docs-only PR mirroring
+M1.17 / M2.22 / M3.9 in shape. Publishes
+`docs/milestone-4-result.md` (the M4 exit report, 7
+sections: M4.1–M4.23 ledger / final dataflow /
+10-artefact contract / save-format v12 floor /
+architectural invariants every future milestone must
+preserve / deferred items categorised A/B/C / neutral
+next-milestone candidates). Annotates
+`docs/milestone-4-checkpoint.md` as historical with a
+top-of-file pointer to the exit report; keeps the
+checkpoint body verbatim for archaeology. Flips this
+README + `docs/README.md` + `rfc/README.md` to "M4
+closed". **No code, no formula, no fixture, no test
+change** (892 doctest cases / 61742 assertions
+identical with M4.22; `provinces.svg` + `map.html`
+bytes byte-identical with M4.22). The 2026-05-17
+force-reset lesson (see `milestone-3-result.md` §7)
+is the documented reason for "don't write the exit
+report until the milestone is actually exiting" — a
+previous attempt at M3.7+ drifted into premature
+close-out + invented M4.X numbers + a 9th artefact
+and was force-reset; the recovery pattern was a
+dedicated final close-out PR that does nothing else.
+M1.17 / M2.22 / M3.9 all followed that pattern;
+M4.23 follows it for M4. **M4 closes here.** **No
+"M5 in progress" wording** lands in this PR; M5 starts
+in its own deliberate first sub-milestone PR when the
+reviewer says so; M4.23 makes no claim about which
+milestone is next. **No new system, no new formula,
+no new artefact (still 10), no save schema bump (still
+v12), no new state field / fixture /
+`InterestGroupKind` / `PlayerCommandKind`, no renderer
+behaviour change, no rename of any data-* attribute,
+no change to `provinces.svg` or `map.html` bytes, no
+new test (close-out PR is docs-only — M4.22 already
+added integration test G as the consolidated "M4
+viewer contract complete" pin).**;
 **M4.22 close-out readiness checkpoint — mirrors M3.7's
 role for the M3 reaction loop: docs + 1 integration
 test, no renderer behaviour change. After M4.21 the M4
