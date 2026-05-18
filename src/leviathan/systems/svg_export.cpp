@@ -300,6 +300,12 @@ std::string render_map_html(const core::GameState& state) {
     out << "<html lang=\"en\">\n";
     out << "<head>\n";
     out << "  <meta charset=\"UTF-8\">\n";
+    // M4.21: viewport meta makes mobile / narrow-screen
+    // browsers lay the page out at device-width instead of
+    // a default ~980px desktop emulation. initial-scale=1
+    // disables the default zoom-out on first paint.
+    out << "  <meta name=\"viewport\""
+           " content=\"width=device-width, initial-scale=1\">\n";
     out << "  <title>Leviathan Map</title>\n";
     out << "  <style>\n";
     out << "  body { margin: 0; padding: 20px;"
@@ -391,6 +397,19 @@ std::string render_map_html(const core::GameState& state) {
     out << "  svg text:focus-visible"
            " { outline: 2px solid #1976d2;"
            " outline-offset: 2px; }\n";
+    // M4.21: one small responsive rule. The 1040px
+    // threshold is the SVG's 1000px viewBox-width plus
+    // body padding (20px each side) plus the 1px border
+    // each side. Below that, the SVG would either be
+    // cropped or force horizontal scroll; scaling it to
+    // 100% of the column with auto height preserves the
+    // aspect ratio via the existing viewBox. No
+    // breakpoint cascade, no mobile-only layout, no
+    // container queries, no JS resize listener.
+    out << "  @media (max-width: 1040px) {\n";
+    out << "    svg { width: 100%; max-width: 100%;"
+           " height: auto; }\n";
+    out << "  }\n";
     out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";

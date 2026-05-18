@@ -141,14 +141,35 @@
 // form) stay absent. The hover-status bar is a separate
 // element from the M4.10 details panel — hover never
 // mutates the panel's content, so the click semantics
-// stay clean. No state field, no new artefact, no
-// save-schema bump. Future M4 sub-milestones
-// (pair-hover, live-region announcements,
-// position-aware tooltip near cursor, persistent
-// selection state, neighbour-adjacency lines, terrain,
-// etc.) will extend the renderer further.
+// stay clean. M4.21 (this revision) makes `map.html`
+// render usably on narrow / mobile screens. Two
+// additions: (a) `<meta name="viewport"
+// content="width=device-width, initial-scale=1">` in
+// `<head>` so mobile browsers lay the page out at the
+// device's actual width instead of the default
+// desktop-emulation viewport; (b) one small `@media
+// (max-width: 1040px)` rule in the `<style>` block
+// that scales the SVG to `width: 100%; height: auto`
+// so it fits the column without horizontal scroll (the
+// existing `viewBox` preserves the aspect ratio). The
+// 1040px threshold is the SVG's 1000px content width
+// plus body padding (20px each side) plus the 1px
+// border each side. **Narrowly reverses the M4.5–M4.20
+// "no `<meta name=viewport>`, no media queries"
+// non-goal** ── only the one viewport tag and the one
+// media query ship; broader responsive work (mobile-
+// specific layouts, breakpoint cascade, container
+// queries, responsive font sizing, JS resize listener,
+// viewport-aware repositioning of details/hover-status
+// / legend) stays deferred. No state field, no new
+// artefact, no save-schema bump. Future M4
+// sub-milestones (pair-hover, live-region
+// announcements, position-aware tooltip near cursor,
+// persistent selection state, neighbour-adjacency
+// lines, terrain, broader responsive layout, etc.)
+// will extend the renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 / M4.19 / M4.20 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 / M4.19 / M4.20 / M4.21 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -275,7 +296,9 @@
 //   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend;
 //     M4.10 adds clickable details panel + click handler):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
-//         `<head>` (`<meta charset="UTF-8">` + `<title>` +
+//         `<head>` (`<meta charset="UTF-8">` + `<meta
+//         name="viewport" content="width=device-width,
+//         initial-scale=1">` (M4.21) + `<title>` +
 //         `<style>` block).
 //       - The `<style>` block carries the M4.6 / M4.7 rules
 //         plus four M4.10 rules:
@@ -321,6 +344,9 @@
 //         `svg text:focus-visible
 //            { outline: 2px solid #1976d2;
 //              outline-offset: 2px; }`                    (M4.16)
+//         `@media (max-width: 1040px) {
+//             svg { width: 100%; max-width: 100%;
+//                   height: auto; } }`                    (M4.21)
 //       - `<body>` contains, in order:
 //           1. The **exact same** `<svg>...</svg>` body as
 //              `provinces.svg`, but WITHOUT the XML prolog

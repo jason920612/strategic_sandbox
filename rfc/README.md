@@ -217,8 +217,85 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.20
-  （hover tooltip skeleton）** 在 `map.html` 加入一個小型
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.21
+  （responsive viewport skeleton）** 讓 `map.html` 在窄
+  螢幕 / 行動裝置上能正常顯示。兩個小改動：(a) `<head>`
+  裡新增 `<meta name="viewport"
+  content="width=device-width, initial-scale=1">`（位置
+  在 `<meta charset>` 之後、`<title>` 之前），讓行動瀏覽器
+  以裝置實際寬度排版（而不是預設約 980px 的桌面模擬
+  viewport），並用 `initial-scale=1` 取消初次載入的
+  auto-zoom-out；(b) `<style>` block 結尾新增一條
+  `@media (max-width: 1040px)` 規則：`svg { width: 100%;
+  max-width: 100%; height: auto; }`，讓 SVG 在窄螢幕上
+  填滿欄寬而不會出現水平捲動。1040px 的 threshold = 1000
+  （SVG 寬度）+ 20*2（body padding）+ 1*2（border）。
+  threshold 以上 M4.6 桌面 rule（`margin: 0 auto`）會贏；
+  threshold 以下 M4.21 的 @media 規則會贏。既有的
+  `viewBox` 讓百分比寬度下 SVG aspect ratio 自然保留。
+  legend / details panel / hover-status bar 都靠既有的
+  `max-width: 1000px; margin: 0 auto` 自然繼承欄寬，所以
+  不需要為它們寫額外的 mobile rule。**narrowly reverses
+  了 M4.5–M4.20「no `<meta viewport>`、no media queries」
+  的非目標** ── 只 ship 一個 viewport meta + 一個 @media
+  block。更廣的 responsive surface（mobile-only layout、
+  breakpoint cascade、`@container` container queries、
+  `prefers-color-scheme` / `prefers-reduced-motion`、
+  responsive font sizing 用 `clamp()` / `vw` / `vh`、JS
+  responsive 用 `matchMedia` / `ResizeObserver` /
+  `window.innerWidth` / `"resize"` listener）全部仍然
+  deferred。**純 CSS** ── 沒有 JS responsive 邏輯。
+  M4.10/M4.11/M4.12/M4.13/M4.15/M4.16/M4.17/M4.19/M4.20
+  invariant 全部沿用，完全 additive。依照
+  `feedback_checkpoint_drift` 規則，
+  `docs/milestone-4-checkpoint.md` 在這個 PR 裡 **inline
+  刷新**（`<head>` 加 viewport meta；`<style>` 加 @media
+  rule；selector-count 措辭從「20 selectors」改成「20
+  plain selectors plus one @media block」；VISUAL POLISH
+  deferred bucket 改寫成「viewport + 1 @media 已 ship；
+  broader responsive 仍 deferred」；invariants 區段把
+  「no <meta viewport>, no media queries」改寫成「only
+  one viewport meta + one @media block」；"Refreshed at"
+  stamp 延伸到 M4.21）。**M4 仍在 in progress** ── 沒有
+  寫 `docs/milestone-4-result.md`，M4.21 只是再多一個
+  skeleton sub-milestone，不是 exit。**save 格式仍
+  v12**。`provinces.svg` bytes 與 M4.20 完全相同
+  （viewport meta + @media 只在 `render_map_html`）；
+  `map.html` bytes 有變（多 1 個 meta tag、1 條
+  @media block）。**Artefact 數量不變（仍 10）；save
+  格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 仍 by construction
+  通過。5 個新 doctest cases（共 891、61678 assertions；
+  依照 `feedback_ctest_masks_doctest` 規則 **用直接 run
+  `leviathan_tests.exe` 驗證**）。
+  **M4 in progress.**
+  **M4.21 不做** 第二個 viewport meta / @media block /
+  `@container` / `@supports` / `min-width:` queries
+  （只用 `max-width`）/ `orientation:` /
+  `prefers-color-scheme` / `prefers-reduced-motion` /
+  responsive font sizing (`clamp()` / `vw` / `vh`) / JS
+  responsive surface（`matchMedia` / `ResizeObserver`
+  / `window.innerWidth` / `window.innerHeight` /
+  `"resize"` listener / `.onresize`）/ mobile-only
+  layout rule（legend / details / hover-status 都靠既有
+  max-width 自然 wrap）/ fluid font / CSS animation /
+  transition / `@import` / `@font-face` / `<link>` /
+  外部 CSS / font / inline event attribute / per-element
+  inline `style="..."` / save schema bump / 新 state
+  field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / rename
+  M4.8 / M4.13 data-* key / 第二個 `<script>` /
+  `<script src=>` / `<script type=>` / `fetch` /
+  `XMLHttpRequest` / `localStorage` / `sessionStorage`
+  / `history.pushState` / `window.location` /
+  `navigator` / `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function` /
+  `insertAdjacentHTML` / 更廣的 ARIA（仍 deferred）/
+  state mutation / commands / AI / events / selection
+  持久化 / 鄰接 edge / terrain / overlay / runner CLI
+  flag / 動 `provinces.svg` bytes / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.20（hover tooltip skeleton）** 在 `map.html` 加入一個小型
   hover-status 文字條。在 inline SVG 與 M4.10 details
   panel 之間 emit `<p id="hover-status"
   class="hover-status">&nbsp;</p>`；inline `<script>` 在

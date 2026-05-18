@@ -6,7 +6,8 @@ Refreshed at **M4.18** (companion notes for
 `feature/rfc090-m4-18-accessibility-checkpoint-refresh`),
 **inline-refreshed at M4.19** for the hover affordance
 surface, **inline-refreshed at M4.20** for the
-hover-status text bar surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
+hover-status text bar surface, **inline-refreshed at
+M4.21** for the responsive viewport surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
 DOM contract); refreshed at M4.14 to cover M4.10–M4.13
 (first JavaScript, decoupled labels, transient
 `.selected`, fifth `data-owner-name`); refreshed at M4.18
@@ -70,6 +71,13 @@ M4.20  hover tooltip skeleton — <p id="hover-status">
        to the bar via textContent (XSS-safe). Narrowly
        reverses M4.19's "no JS hover handler" non-goal.
        Still no SVG <title> child.
+M4.21  responsive viewport skeleton — <meta name="viewport"
+       content="width=device-width, initial-scale=1"> in
+       <head> + one @media (max-width: 1040px) rule that
+       scales the SVG to width: 100%; height: auto.
+       Narrowly reverses the M4.5–M4.20 "no <meta viewport>,
+       no media queries" non-goal — only ONE meta + ONE
+       media query ship.
 ```
 
 ## 2. Current artefact contract
@@ -183,6 +191,8 @@ additive — no removed or renamed attribute.
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport"                                           // M4.21
+        content="width=device-width, initial-scale=1">
   <title>Leviathan Map</title>
   <style>
   body      { margin: 0; padding: 20px; background-color: #f0f0f0; }
@@ -221,6 +231,9 @@ additive — no removed or renamed attribute.
   svg text:focus { outline: none; }                               // M4.16
   svg text:focus-visible { outline: 2px solid #1976d2;            // M4.16
                             outline-offset: 2px; }
+  @media (max-width: 1040px) {                                    // M4.21
+    svg { width: 100%; max-width: 100%; height: auto; }
+  }
   </style>
 </head>
 <body>
@@ -293,12 +306,17 @@ additive — no removed or renamed attribute.
 
 where:
 
-- `<style>` block now carries **20 selectors** (M4.6 three
-  + M4.7 three + M4.10 six + M4.12 two + M4.16 four +
-  M4.19 two + M4.20 one; was 13 at M4.14, 17 at M4.18,
-  19 at M4.19). All are layout / state rules — no
-  animations, no transitions, no media queries, no
-  `@import`, no `@font-face`.
+- `<style>` block now carries **20 plain selectors plus one
+  `@media` block** (M4.6 three + M4.7 three + M4.10 six +
+  M4.12 two + M4.16 four + M4.19 two + M4.20 one + M4.21
+  one media query wrapping one nested rule; was 13 at
+  M4.14, 17 at M4.18, 19 at M4.19, 20 at M4.20). All
+  plain selectors are layout / state rules — no animations,
+  no transitions, no `@import`, no `@font-face`. **One
+  media query** (M4.21 `max-width: 1040px` → `svg
+  { width: 100%; height: auto; }`) — broader responsive
+  surface (mobile-only layouts, breakpoint cascade,
+  container queries) stays deferred.
 - The inline SVG body is byte-identical to
   `provinces.svg` minus the XML prolog (M4.15 / M4.17
   attributes are included in the shared body, so both
@@ -476,8 +494,17 @@ the ARIA surface stays narrow — role="button" and
    to a dedicated future A11Y sub-milestone  (M4.17)
 no <link>, no inline event attributes (onclick= / onkeydown=
    / ...) on either artefact
-no <meta name="viewport">, no CSS animations / transitions
-   / media queries / @import / @font-face on either artefact
+no CSS animations / transitions / @import / @font-face on
+   either artefact. provinces.svg has no <style> block at all
+   so no <meta name="viewport"> / @media query reach it
+   either. map.html carries EXACTLY ONE <meta name="viewport">
+   (M4.21 width=device-width, initial-scale=1) and EXACTLY
+   ONE @media block (M4.21 max-width: 1040px → svg
+   width:100%; height:auto). Broader responsive surface
+   (mobile-only layouts, breakpoint cascade, container
+   queries, prefers-color-scheme / prefers-reduced-motion,
+   matchMedia / ResizeObserver / window.innerWidth in JS)
+   still deferred.
 ```
 
 ## 7. Deferred items
@@ -546,12 +573,25 @@ DOM EXTENSIONS
     defensive fallback for hand-built bad states, not a
     modelled "neutral" status)
 
-VISUAL POLISH
-  <meta name="viewport"> + media queries for responsive sizing
+VISUAL POLISH (M4.21 shipped <meta name="viewport"> + one
+                @media rule scaling the SVG to fit on narrow
+                screens; broader responsive surface still
+                deferred)
+  mobile-only layouts (the M4.21 @media only resizes the
+    SVG; the legend / details panel / hover-status bar
+    keep their desktop layout on narrow screens)
+  breakpoint cascade (only one threshold at 1040px)
+  container queries (@container)
+  prefers-color-scheme dark-mode variant
+  prefers-reduced-motion (would matter once any
+    animation / transition is added)
   CSS animations / transitions on the .selected highlight
     or the M4.16 focus ring
   font-family / font-size on the SVG <text> elements themselves
     (M4.4 contract preserved; only CSS selectors set fonts)
+  responsive font sizing (no font-size: clamp() / vw units)
+  JS responsive surface — matchMedia, ResizeObserver,
+    window.innerWidth reads, "resize" event listener
 
 INFRASTRUCTURE
   atomic end_tick writes (deferred since M2.9)
@@ -622,9 +662,14 @@ no new feature surface (M4.18 is docs + 1 integration test only)
 no rename of any data-* attribute
 no change to the SVG body / click handler / details panel
    / .selected CSS / focus-visible CSS / role / aria-label
-   bytes (M4.15–M4.17 shapes byte-identical)
-no <meta name="viewport">
-no CSS animations / transitions / media queries / @import
+   / hover-status / @media bytes (M4.15–M4.21 shapes
+   byte-identical since the last surface-changing PR)
+no second `<meta name="viewport">` (M4.21 shipped one)
+no second @media block (M4.21 shipped one); no broader
+   responsive surface (mobile-only layouts, breakpoint
+   cascade, container queries, prefers-color-scheme,
+   prefers-reduced-motion)
+no CSS animations / transitions / @import
 no neighbour / adjacency edges
 no terrain / resources / population overlays
 no events / AI / command integration
