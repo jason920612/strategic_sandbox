@@ -33,6 +33,7 @@ add_library(leviathan_systems STATIC
     data_loader.cpp
     diagnostics.cpp
     economy_system.cpp
+    event_effects.cpp
     event_evaluator.cpp
     event_firer.cpp
     internal/json_helpers.cpp

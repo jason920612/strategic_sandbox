@@ -8,7 +8,7 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.5). M5 has shipped five decoupled
+  in progress (at M5.6). M5 has shipped six decoupled
   surfaces so far: **M5.1** opened M5 with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
@@ -39,32 +39,43 @@
   `GameState::event_history` append-only vector; save
   format bumped v13 → v14 with event_history required at
   the save layer; `diagnostics::compare_states` walks
-  `event_history`. **M5.5** adds the **event firer
+  `event_history`. **M5.5** added the **event firer
   skeleton** — a new `leviathan::systems::event_firer`
   module with `record_match(state, EventMatch, fired_on)`
   + `record_matches(state, vector<EventMatch>, fired_on)`
   → `FireOutcome { recorded }` that converts the M5.3
   `EventMatch` (with per-trigger actor binding) into an
   M5.4 `EventInstance` and appends it to
-  `state.event_history`. The firer is the missing brick
-  that ties the M5.1 schema, M5.2 evaluator, M5.3 actor
-  binding, and M5.4 data layer into a usable pipeline —
-  minus the runner integration. **Still no effects
-  application, no log entry on fire (no `state.logs`
-  append), no `state.applied_commands` append, no
-  `events.jsonl` change, no runner / monthly integration,
-  no auto-fire cadence, no new artefact (still 10), no
-  save bump (still v14), no new `PlayerCommandKind`** —
-  M5.5 ships the conversion brick stand-alone; canonical
+  `state.event_history`. **M5.6** adds the **event
+  effects applicator skeleton** — a new
+  `leviathan::systems::event_effects` module with
+  `apply_event_effects(state, instance, definition)` that
+  applies the matching `EventDefinition`'s effects to the
+  first actor's country in `instance.actors`, using the
+  shared M1.5 / M5.6-extracted
+  `policy::apply_effects_to_actor` helper (so events
+  inherit the M1.5 target/op grammar and pre-flight
+  atomicity without dragging in the M1.15
+  `active_policies` bookkeeping that's policy-specific).
+  **Still no runner / monthly integration, no
+  `events.jsonl` change, no log entry on apply (no
+  `state.logs` append), no `state.applied_commands`
+  append, no `state.event_history` mutation, no
+  `country.active_policies` append from the event path,
+  no new artefact (still 10), no save bump (still v14),
+  no new `PlayerCommandKind`** — M5.6 ships the
+  effects-applicator brick stand-alone; canonical
   scenarios still emit `"event_history": []` because no
-  system invokes the firer yet. See
+  system invokes the M5.5 firer + M5.6 applicator
+  composition yet. See
   `docs/m5-1-event-definition-schema-foundation.md`,
   `docs/m5-2-trigger-evaluator-skeleton.md`,
   `docs/m5-3-event-match-actor-binding-skeleton.md`,
   `docs/m5-4-event-instance-history-data-skeleton.md`,
-  and `docs/m5-5-event-firer-skeleton.md` for the M5
-  design notes, and `docs/milestone-4-result.md` /
-  `docs/milestone-3-result.md` /
+  `docs/m5-5-event-firer-skeleton.md`, and
+  `docs/m5-6-event-effects-applicator-skeleton.md` for
+  the M5 design notes, and `docs/milestone-4-result.md`
+  / `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
   reports. (`docs/milestone-5-checkpoint.md` is still
@@ -73,7 +84,92 @@
   reads better alongside the runner-integration PR where
   the composition becomes load-bearing for canonical
   runs.)
-- Latest shipped sub-milestone: **M5.5 — event firer
+- Latest shipped sub-milestone: **M5.6 — event
+  effects applicator skeleton.** Sixth M5 PR. Closes the
+  inner loop of the M5 pipeline by adding the
+  `EventInstance + EventDefinition → state mutation` brick
+  that applies an event's effects through the existing
+  M1.5 policy machinery. New
+  `leviathan::systems::event_effects` module
+  (`include/leviathan/systems/event_effects.hpp` +
+  `src/leviathan/systems/event_effects.cpp`). Public
+  API: `struct ApplyOutcome { int effects_applied; int
+  faction_targets_updated; }`,
+  `core::Result<ApplyOutcome> apply_event_effects(state,
+  instance, definition)`. **Reuse-via-extract refactor**:
+  pulls the actor-validate + pre-flight + apply core out
+  of `policy::apply_policy_effects` into a new public
+  `policy::apply_effects_to_actor(state, actor,
+  vector<PolicyEffect>)` helper. Both
+  `apply_policy_effects` (existing, M1.5) and
+  `event_effects::apply_event_effects` (new, M5.6) call
+  it. The helper does NOT append a
+  `country.active_policies` entry — that's the policy-
+  specific bookkeeping `apply_policy_effects` does AFTER
+  calling the helper. Events inherit the M1.5 target/op
+  grammar (`country.<field>` / `country.budget.<cat>` /
+  `faction:<type>.<field>` + `add` / `set` + ratio
+  clamping + faction broadcast no-op-on-zero) and the
+  pre-flight atomicity (any failing effect leaves state
+  untouched) without inheriting the M1.15
+  `ActivePolicy` lifecycle. **Actor-selection policy**:
+  ALL effects in `definition.effects` apply to ONE
+  country — the country resolved from
+  `instance.actors.front().country_id_code` via linear
+  scan of `state.countries`. Multi-actor cross-product
+  / per-effect selection / weighted / random are
+  deferred to a dedicated selection-policy
+  sub-milestone (per PR #92 review). Empty
+  `instance.actors` → success with `effects_applied =
+  0` (vacuous case; mirrors M5.5 fire-with-empty-actors).
+  Unresolvable `country_id_code` → `Result::failure`
+  with the offending id_code in the message. State
+  unchanged on any failure (M1.5 atomicity inherited).
+  M1.5 `apply_policy_effects` post-refactor: identical
+  external behaviour; the only mechanical difference is
+  that errors now come from `apply_effects_to_actor`
+  prefix rather than `apply_policy_effects` (no M1.5
+  test checked that). **20 new doctest cases (1016
+  total, 62209 assertions; verified via direct
+  `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule): happy path on
+  every target shape (country.* / IG-owning-country.* /
+  multi-effect / budget category / ratio clamp);
+  pre-flight atomicity (non-finite / unknown target /
+  unknown op); edge cases (empty actors no-op; empty
+  country_id_code rejected; unresolvable id_code
+  rejected; empty effects no-op); first-actor-wins
+  policy pinned with a two-actor instance; no side
+  effects on event_history / logs / applied_commands /
+  active_policies; M5.2 → M5.5 → M5.6 end-to-end
+  composition; two M1.5 regression tests (apply_policy_
+  effects still appends ActivePolicy; still rejects
+  bad duration_days without touching state); two
+  `apply_effects_to_actor` direct tests pinning that
+  it does NOT touch active_policies and that it
+  rejects invalid actor index. New
+  `docs/m5-6-event-effects-applicator-skeleton.md`
+  design note. **No runner / monthly integration, no
+  events.jsonl change, no log entry on apply (no
+  state.logs append), no state.applied_commands
+  append, no state.event_history mutation, no
+  country.active_policies append from the event path,
+  no auto-fire cadence, no new artefact (still 10),
+  no save format bump (still v14), no new
+  `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no new state field, no
+  per-effect actor selection, no multi-actor cross-
+  product / weighted / random selection, no
+  event_history-driven gating (caller policy), no
+  chained events / choices / RNG outcomes, no broader
+  trigger ops / targets / actor kinds, no balance
+  pass, no UI surface, no changes to event_evaluator
+  / event_firer / scenario_loader / canonical fixtures
+  / M1/M2/M3/M4 systems' external behaviour, no
+  `docs/milestone-5-checkpoint.md` (still deferred —
+  reads better alongside runner-integration).** M5
+  remains in progress.
+- Previously shipped: **M5.5 — event firer
   skeleton.** Fifth M5 PR. Adds the `EventMatch →
   EventInstance` conversion bridge. New
   `leviathan::systems::event_firer` module
