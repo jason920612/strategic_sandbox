@@ -1940,3 +1940,100 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.20 hover-st
     CHECK(svg_text.find("mouseout")      == std::string::npos);
     CHECK(svg_text.find("textContent")   == std::string::npos);
 }
+
+// =====================================================================
+// M4.21 — responsive viewport skeleton
+// =====================================================================
+// M4.21 makes map.html render usably on narrow / mobile
+// screens:
+//   - <meta name="viewport" content="width=device-width,
+//     initial-scale=1"> in <head>
+//   - one @media (max-width: 1040px) rule in the <style>
+//     block scaling the SVG to width: 100%; height: auto
+//     (the existing viewBox preserves the aspect ratio)
+// Narrowly reverses the M4.5–M4.20 "no <meta viewport>, no
+// media queries" non-goal — only ONE viewport tag and ONE
+// media query ship.
+
+TEST_CASE("render_map_html: M4.21 emits <meta name=\"viewport\"> with width=device-width + initial-scale=1") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+          != std::string::npos);
+
+    // The viewport tag sits inside <head>, after the
+    // <meta charset> tag and before <title>.
+    const auto charset_at  = html.find("<meta charset=\"UTF-8\">");
+    const auto viewport_at = html.find("<meta name=\"viewport\"");
+    const auto title_at    = html.find("<title>");
+    REQUIRE(charset_at  != std::string::npos);
+    REQUIRE(viewport_at != std::string::npos);
+    REQUIRE(title_at    != std::string::npos);
+    CHECK(charset_at < viewport_at);
+    CHECK(viewport_at < title_at);
+}
+
+TEST_CASE("render_map_html: M4.21 <style> block carries the @media (max-width: 1040px) responsive rule") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The breakpoint literal appears verbatim.
+    CHECK(html.find("@media (max-width: 1040px)") != std::string::npos);
+    // The rule body scales the SVG to fit the column.
+    CHECK(html.find("svg { width: 100%; max-width: 100%; height: auto; }")
+          != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.21 carries only ONE @media rule and ONE viewport tag (no breakpoint cascade)") {
+    // Narrowly-scoped responsive surface — broader
+    // responsive work (mobile-only layouts, breakpoint
+    // cascade, container queries) stays deferred. Count
+    // both literals to pin the narrow scope.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = html.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences("@media")           == 1u);
+    CHECK(count_occurrences("<meta name=\"viewport\"") == 1u);
+    // Still-deferred responsive patterns stay absent.
+    CHECK(html.find("@container")               == std::string::npos);
+    CHECK(html.find("@supports")                == std::string::npos);
+    CHECK(html.find("min-width:")               == std::string::npos);
+    CHECK(html.find("orientation:")             == std::string::npos);
+    CHECK(html.find("prefers-color-scheme")     == std::string::npos);
+    CHECK(html.find("prefers-reduced-motion")   == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.21 responsive surface is pure CSS — no JS resize / matchMedia / ResizeObserver") {
+    // Pin the explicit non-goals: no JS resize listener, no
+    // matchMedia query, no ResizeObserver. Pure CSS via the
+    // @media rule.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("\"resize\"")       == std::string::npos);
+    CHECK(html.find("matchMedia")       == std::string::npos);
+    CHECK(html.find("ResizeObserver")   == std::string::npos);
+    CHECK(html.find("onresize")         == std::string::npos);
+    CHECK(html.find("window.innerWidth") == std::string::npos);
+    CHECK(html.find("window.innerHeight") == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.21 viewport / media query") {
+    // Viewport meta + media query live in render_map_html
+    // only — the standalone SVG carries neither.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("viewport")               == std::string::npos);
+    CHECK(svg_text.find("device-width")           == std::string::npos);
+    CHECK(svg_text.find("initial-scale")          == std::string::npos);
+    CHECK(svg_text.find("@media")                 == std::string::npos);
+    CHECK(svg_text.find("max-width: 1040px")      == std::string::npos);
+}

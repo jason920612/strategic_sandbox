@@ -14,7 +14,88 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.20 — hover tooltip
+- Latest shipped sub-milestone: **M4.21 — responsive
+  viewport skeleton.** Makes `map.html` render usably on
+  narrow / mobile screens. Two small additions: (a)
+  `<meta name="viewport" content="width=device-width,
+  initial-scale=1">` in `<head>` (mobile browsers lay
+  the page out at device-width instead of the default
+  desktop-emulated ~980px; `initial-scale=1` disables
+  auto-zoom-out on first paint); (b) one `@media
+  (max-width: 1040px)` rule in the `<style>` block that
+  scales the SVG to `width: 100%; max-width: 100%;
+  height: auto` so it fits the column without
+  horizontal scroll (the existing `viewBox` preserves
+  the aspect ratio for free). The 1040px threshold is
+  `1000 (SVG width) + 20*2 (body padding) + 1*2
+  (border)`. Above 1040px the original M4.6 `svg {
+  ...; margin: 0 auto; ...}` rule centres the
+  fixed-size SVG (desktop layout preserved); at and
+  below 1040px the @media rule activates. Legend /
+  details panel / hover-status bar all inherit the
+  column width via their existing `max-width: 1000px;
+  margin: 0 auto` — no per-element mobile rule needed.
+  **Narrowly reverses the M4.5–M4.20 "no `<meta
+  viewport>`, no media queries" non-goal** — only ONE
+  viewport meta and ONE @media block ship. Broader
+  responsive surface (mobile-only layouts, breakpoint
+  cascade, container queries, `prefers-color-scheme` /
+  `prefers-reduced-motion`, responsive font sizing,
+  JS responsive surface — `matchMedia` /
+  `ResizeObserver` / `window.innerWidth` / `"resize"`)
+  all stay deferred. **Pure CSS** — no JS resize
+  listener, no `matchMedia`, no `ResizeObserver`. No
+  external CSS / font / `<link>`. M4.10/M4.11/M4.12/
+  M4.13/M4.15/M4.16/M4.17/M4.19/M4.20 invariants all
+  carry over unchanged (additive only). Per the
+  `feedback_checkpoint_drift` rule,
+  `docs/milestone-4-checkpoint.md` is refreshed
+  **inline** in this PR (`<head>` shape adds viewport
+  meta; `<style>` block adds @media rule; selector-
+  count wording becomes "20 plain selectors plus one
+  @media block"; VISUAL POLISH deferred bucket
+  rewrites with M4.21 shipped; invariants section
+  rewrites "no <meta viewport>, no media queries" rule
+  to "exactly one viewport meta, exactly one @media
+  block"). **M4 remains in progress** — no
+  `docs/milestone-4-result.md`; M4.21 is one more
+  skeleton sub-milestone, not an exit. Artefact set
+  unchanged (still 10). Save format unchanged (still
+  v12). `provinces.svg` bytes UNCHANGED from M4.20
+  (viewport + @media live in `render_map_html` only);
+  `map.html` bytes did change (one new meta + one new
+  @media block). **5 new doctest cases (891 total,
+  61678 assertions; verified via direct
+  `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule). **No second
+  `<meta name="viewport">`, no second @media block, no
+  `@container` / container queries, no `@supports`, no
+  `min-width:` media queries (only `max-width`), no
+  `orientation:` queries, no `prefers-color-scheme`,
+  no `prefers-reduced-motion`, no responsive font
+  sizing (`clamp()`, `vw` / `vh` units), no JS
+  responsive surface, no mobile-only layout rules for
+  legend / details panel / hover-status bar (they
+  inherit the column via existing max-width +
+  centring), no fluid font / font-size CSS, no CSS
+  animations / transitions, no `@import` /
+  `@font-face`, no `<link>` / external CSS / font, no
+  inline event attributes, no per-element inline
+  `style="..."`, no save schema bump, no new state
+  field / artefact / fixture / `InterestGroupKind` /
+  `PlayerCommandKind`, no rename of the M4.8 / M4.13
+  data-* keys, no second `<script>`, no `<script
+  src=>`, no `<script type=>`, no `fetch` / XHR /
+  storage / history / navigation APIs, no `innerHTML`
+  / `outerHTML` / `document.write` / `eval` /
+  `Function` / `insertAdjacentHTML`, no broader ARIA
+  (still deferred), no state mutation, no commands,
+  no AI, no events, no selection persistence, no
+  adjacency / terrain / overlays, no runner CLI flag,
+  no change to `provinces.svg` bytes, no M4
+  close-out, no `docs/milestone-4-result.md`, no "M4
+  closed" wording.**
+- Previously shipped: **M4.20 — hover tooltip
   skeleton.** Adds a small **hover-status text bar**
   (`<p id="hover-status" class="hover-status">`) between
   the inline SVG and the M4.10 details panel. The inline
@@ -1368,7 +1449,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.20): **M4.21** — open.
+- Next sub-milestone candidate (post-M4.21): **M4.22** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1395,8 +1476,10 @@
   mouse users see a grey-stroke / underline affordance
   before they click; M4.20 added the `<p id="hover-status">`
   text bar that updates on `mouseover` with the composed
-  `"<name> (<owner-name>)"` label; M4.18 refreshed the
-  checkpoint doc to
+  `"<name> (<owner-name>)"` label; M4.21 added a viewport
+  meta + one responsive `@media (max-width: 1040px)` rule
+  so `map.html` renders usably on narrow / mobile screens;
+  M4.18 refreshed the checkpoint doc to
   cover M4.15–M4.17 and added one new integration
   assertion. Natural next steps include
   (a) broader ARIA polish (`aria-selected` on the M4.12
@@ -1414,7 +1497,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1445,7 +1528,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 shipped. Sixty-seven sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 shipped. Sixty-eight sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1592,6 +1675,72 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.21 responsive viewport skeleton — makes `map.html`
+render usably on narrow / mobile screens. Two small
+additions: (a) `<meta name="viewport"
+content="width=device-width, initial-scale=1">` in
+`<head>` (right after `<meta charset>`, before `<title>`)
+— mobile browsers lay out at the device's actual width
+instead of the default ~980px desktop emulation;
+`initial-scale=1` disables auto-zoom-out; (b) one
+`@media (max-width: 1040px)` rule in the `<style>`
+block scaling the SVG to `width: 100%; max-width: 100%;
+height: auto` so it fits the column without horizontal
+scroll. The 1040px threshold is `1000 (SVG width) + 2 *
+20 (body padding) + 2 * 1 (border)`. Above 1040px the
+M4.6 desktop rule (`margin: 0 auto`) wins; at and below
+the @media rule wins. The existing `viewBox` preserves
+the SVG aspect ratio for free under the percentage
+width. Legend / details panel / hover-status bar inherit
+the column via their existing `max-width: 1000px;
+margin: 0 auto` — no per-element mobile rule. **Narrowly
+reverses the M4.5–M4.20 "no `<meta viewport>`, no media
+queries" non-goal** — only ONE viewport meta and ONE
+@media block ship. Broader responsive surface (mobile-
+only layouts, breakpoint cascade, container queries,
+`prefers-*` features, responsive font sizing, JS
+responsive surface — `matchMedia` / `ResizeObserver` /
+`window.innerWidth` / `"resize"`) all stay deferred.
+**Pure CSS** — no JS resize listener. Per
+`feedback_checkpoint_drift`, `docs/milestone-4-checkpoint.md`
+refreshed **inline** in this PR (`<head>` shape adds
+viewport meta; `<style>` block adds @media rule;
+selector-count wording becomes "20 plain selectors plus
+one @media block"; VISUAL POLISH deferred bucket
+rewrites; invariants section rewrites "no <meta
+viewport>, no media queries" rule). M4.10/M4.11/M4.12/
+M4.13/M4.15/M4.16/M4.17/M4.19/M4.20 invariants all
+carry over unchanged (additive only). **M4 remains in
+progress.** **Artefact set unchanged (still 10); save
+format unchanged (still v12);** M1.17 / M2.22 / M3.7
+byte-identical determinism contracts continue to pass.
+`provinces.svg` bytes UNCHANGED from M4.20 (viewport +
+@media live in `render_map_html` only); `map.html`
+bytes did change (one new meta + one new @media block).
+**5 new doctest cases (891 total, 61678 assertions;
+verified via direct `leviathan_tests.exe` run** per the
+`feedback_ctest_masks_doctest` rule). **No second
+viewport meta / @media block, no `@container` /
+`@supports`, no `min-width:` queries (only `max-width`),
+no `orientation:` / `prefers-color-scheme` /
+`prefers-reduced-motion`, no responsive font sizing
+(`clamp()` / `vw` / `vh`), no JS responsive surface, no
+mobile-only layout rules, no fluid font CSS, no CSS
+animations / transitions, no `@import` / `@font-face`,
+no `<link>` / external CSS / font, no inline event
+attributes, no per-element inline `style="..."`, no
+save schema bump, no new state field / artefact /
+fixture / `InterestGroupKind` / `PlayerCommandKind`,
+no rename of the M4.8 / M4.13 data-* keys, no second
+`<script>`, no `<script src=>` / `<script type=>`, no
+`fetch` / XHR / storage / history / navigation APIs,
+no `innerHTML` / `outerHTML` / `document.write` /
+`eval` / `Function` / `insertAdjacentHTML`, no broader
+ARIA (still deferred), no state mutation, no commands,
+no AI, no events, no selection persistence, no
+adjacency / terrain / overlays, no runner CLI flag, no
+change to `provinces.svg` bytes, no M4 close-out, no
+`docs/milestone-4-result.md`, no "M4 closed" wording.**;
 **M4.20 hover tooltip skeleton — adds a `<p
 id="hover-status" class="hover-status">` text bar
 between the inline SVG and the M4.10 details panel.
