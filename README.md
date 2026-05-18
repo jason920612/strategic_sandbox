@@ -8,7 +8,7 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.2). M5 has shipped two decoupled
+  in progress (at M5.3). M5 has shipped three decoupled
   surfaces so far: **M5.1** opened M5 with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
@@ -16,29 +16,122 @@
   scenario manifest gains optional `events[]`;
   `diagnostics::compare_states` walks `state.events`;
   canonical fixture wired into both 1930 manifests).
-  **M5.2** adds the **trigger evaluator skeleton** — a
+  **M5.2** added the **trigger evaluator skeleton** — a
   small read-only API (`event_evaluator::trigger_matches`
   / `evaluate` / `match_events`) that reads `state.events`
   and reports which event definitions' triggers all match
   the current state. AND across `def.triggers`,
   ANY-entity-satisfies for country.* / interest_group.*
   targets, supports the M5.1 op allowlist
-  (`lt` / `lte` / `gt` / `gte`). **Still no firing, no
-  history, no effects application, no runner / monthly
-  integration, no `events.jsonl` change, no save bump
-  (still v13), no new artefact (still 10), no new
-  `PlayerCommandKind`** — M5.2 is observation-only. See
-  `docs/m5-1-event-definition-schema-foundation.md` and
-  `docs/m5-2-trigger-evaluator-skeleton.md` for the M5
-  design notes, and `docs/milestone-4-result.md` /
-  `docs/milestone-3-result.md` /
+  (`lt` / `lte` / `gt` / `gte`). **M5.3** extends the
+  evaluator return shape with **actor binding** —
+  `EventMatch` (replaces the old `TriggerMatch`) now
+  carries a `triggers` vector of
+  `TriggerEvaluation { trigger_index, actor }` recording
+  the first satisfying country / interest group per
+  trigger; new `trigger_actor` / `evaluate_match` free
+  functions return `std::optional<TriggerActor>` /
+  `std::optional<EventMatch>` for the enrichment path.
+  **Still no firing, no history, no effects application,
+  no runner / monthly integration, no `events.jsonl`
+  change, no save bump (still v13), no new artefact
+  (still 10), no new `PlayerCommandKind`** — M5.3 is
+  still observation-only; the gate semantics
+  (which entities satisfy) are unchanged from M5.2 —
+  only the return shape is richer. See
+  `docs/m5-1-event-definition-schema-foundation.md`,
+  `docs/m5-2-trigger-evaluator-skeleton.md`, and
+  `docs/m5-3-event-match-actor-binding-skeleton.md` for
+  the M5 design notes, and `docs/milestone-4-result.md`
+  / `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
   reports. (`docs/milestone-5-checkpoint.md` is still
   deliberately deferred — premature at this stage; M3
   and M4 opened their checkpoints mid-milestone at M3.7
   / M4.9.)
-- Latest shipped sub-milestone: **M5.2 — trigger
+- Latest shipped sub-milestone: **M5.3 — EventMatch
+  actor-binding skeleton.** Third M5 PR. Extends the
+  M5.2 `event_evaluator` module return shape so a future
+  firer / effects-applicator knows **which entity** to
+  direct effects at. New `enum class TriggerActorKind {
+  Country, InterestGroup }`, `struct TriggerActor {
+  TriggerActorKind kind; std::string id_code;
+  core::CountryId country; std::size_t index; }`, and
+  `struct TriggerEvaluation { std::size_t
+  trigger_index; TriggerActor actor; }`. The old M5.2
+  `TriggerMatch` is **renamed to `EventMatch`** and gains
+  a `std::vector<TriggerEvaluation> triggers` field (one
+  per `def.triggers` when ALL match); the
+  `event_index` + `event_id_code` field names are
+  preserved verbatim so M5.2-style read sites continue to
+  compile unchanged. Two new free functions: `std::optional<TriggerActor>
+  trigger_actor(state, EventTrigger)` returns the first
+  satisfying entity (nullopt iff none satisfies / unknown
+  target / op / non-finite); `std::optional<EventMatch>
+  evaluate_match(state, EventDefinition)` returns the
+  per-trigger actor binding (nullopt iff any trigger
+  fails). `match_events` keeps its name; its return type
+  widens from `vector<TriggerMatch>` to
+  `vector<EventMatch>` and now carries the full actor
+  binding per match. **Actor selection policy is "first
+  in vector order"** — deterministic because
+  `state.countries` and `state.interest_groups` are
+  canonically ordered (insertion order from scenario
+  load, preserved by the save layer). Carrying every
+  satisfying entity per trigger (instead of just the
+  first) is deferred to a future M5.x; the first-match
+  choice mirrors how M5.2's bool predicate
+  short-circuited, so there is no semantic change at the
+  gate — M5.3 only exposes WHICH first-match entity the
+  M5.2 predicate already implicitly chose. Both bool
+  predicates (`trigger_matches`, `evaluate`) are
+  retained verbatim from M5.2 as cheap "did it match at
+  all?" probes. For kind `InterestGroup`, the actor's
+  `country` field is the **owning** country (an IG always
+  has one in M3.1+); for kind `Country`, the `country`
+  field equals the actor's own id. This makes the future
+  "apply this IG-trigger's effect to the IG's owning
+  country" path trivial without a re-lookup. **16 new
+  doctest cases (965 total, 62006 assertions; verified
+  via direct `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule): per-target actor
+  binding (country / IG); nullopt on no-match / unknown
+  target / op / non-finite / empty entity list; duplicate
+  id_code disambiguation (index is the canonical handle);
+  `evaluate_match` nullopt vs populated; cross-scope
+  binding (country trigger + IG trigger pick different
+  actors); empty triggers vacuously true with empty
+  actors; shared-actor case (multiple triggers on the
+  same country all bind to that country, indices
+  preserved in def order); `match_events` carries the
+  per-trigger binding in canonical event order;
+  canonical-shape no-fire regression still holds (M5.3
+  doesn't change the gate); no-mutate regression on
+  countries / IGs / events / logs / applied_commands;
+  evaluate_match still doesn't consult effects vector;
+  match_events still doesn't append to `state.logs` /
+  `state.applied_commands`. New
+  `docs/m5-3-event-match-actor-binding-skeleton.md`
+  design note. **No event firing, no log entry on match,
+  no `events.jsonl` change, no history append, no
+  effects application, no "all satisfying entities" per
+  trigger (M5.3 records only the first), no selection-
+  policy options (hard-coded "first"; no random /
+  weighted / `for_country:GER` yet), no runner / monthly
+  integration, no auto-evaluation cadence, no save
+  format bump (still v13), no new artefact (still 10),
+  no new `RunnerOptions` field / new CLI flag, no new
+  `PlayerCommandKind`, no new state field, no broader
+  trigger ops, no broader trigger targets, no trigger
+  logical operators, no event author tooling, no UI
+  surface, no balance pass, no changes to the M5.1
+  schema or M5.2 gate semantics, no changes to
+  M1/M2/M3/M4 systems, no changes to `scenario_loader`
+  / `save_system` / `diagnostics`, no
+  `docs/milestone-5-checkpoint.md` (still deferred —
+  premature framing at M5.3).** M5 remains in progress.
+- Previously shipped: **M5.2 — trigger
   evaluator skeleton.** Second M5 PR. New
   `leviathan::systems::event_evaluator` module
   (`include/leviathan/systems/event_evaluator.hpp` +
