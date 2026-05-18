@@ -398,6 +398,166 @@ parse_event_file(std::string_view json_text,
             ev.effects.push_back(std::move(eff));
         }
 
+        // RCR-1 (RFC-090 §5.3): optional weight_modifiers[].
+        if (e.contains("weight_modifiers")) {
+            if (!e.at("weight_modifiers").is_array()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".weight_modifiers is not an array"));
+            }
+            const json& wm_arr = e.at("weight_modifiers");
+            ev.weight_modifiers.reserve(wm_arr.size());
+            for (std::size_t wi = 0; wi < wm_arr.size(); ++wi) {
+                const std::string wctx =
+                    ctx + ".weight_modifiers[" + std::to_string(wi) + "]";
+                const json& w = wm_arr[wi];
+                if (!w.is_object()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, wctx + " is not an object"));
+                }
+                core::WeightModifier wm;
+                if (!w.contains("target") || !w.at("target").is_string()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                wctx + ".target missing or not a string"));
+                }
+                wm.target = w.at("target").get<std::string>();
+                if (!w.contains("op") || !w.at("op").is_string()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                wctx + ".op missing or not a string"));
+                }
+                wm.op = w.at("op").get<std::string>();
+                if (!w.contains("value") || !w.at("value").is_number()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                wctx + ".value missing or not a number"));
+                }
+                wm.value = w.at("value").get<double>();
+                if (!std::isfinite(wm.value)) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, wctx + ".value must be finite"));
+                }
+                if (!w.contains("weight_delta")
+                    || !w.at("weight_delta").is_number()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                wctx + ".weight_delta missing or not a number"));
+                }
+                wm.weight_delta = w.at("weight_delta").get<double>();
+                if (!std::isfinite(wm.weight_delta)) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                wctx + ".weight_delta must be finite"));
+                }
+                ev.weight_modifiers.push_back(std::move(wm));
+            }
+        }
+
+        // RCR-1 (RFC-090 §5.4 / §5.8): optional options[].
+        if (e.contains("options")) {
+            if (!e.at("options").is_array()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label, ctx + ".options is not an array"));
+            }
+            const json& opts_arr = e.at("options");
+            ev.options.reserve(opts_arr.size());
+            for (std::size_t oi = 0; oi < opts_arr.size(); ++oi) {
+                const std::string octx =
+                    ctx + ".options[" + std::to_string(oi) + "]";
+                const json& o = opts_arr[oi];
+                if (!o.is_object()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, octx + " is not an object"));
+                }
+                core::EventOption opt;
+                if (!o.contains("id_code") || !o.at("id_code").is_string()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                octx + ".id_code missing or not a string"));
+                }
+                opt.id_code = o.at("id_code").get<std::string>();
+                if (opt.id_code.empty()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, octx + ".id_code must be non-empty"));
+                }
+                if (!o.contains("label") || !o.at("label").is_string()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                octx + ".label missing or not a string"));
+                }
+                opt.label = o.at("label").get<std::string>();
+                if (!o.contains("effects") || !o.at("effects").is_array()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label,
+                                octx + ".effects missing or not an array"));
+                }
+                const json& oe_arr = o.at("effects");
+                opt.effects.reserve(oe_arr.size());
+                for (std::size_t oei = 0; oei < oe_arr.size(); ++oei) {
+                    const std::string oectx =
+                        octx + ".effects[" + std::to_string(oei) + "]";
+                    const json& f = oe_arr[oei];
+                    if (!f.is_object()) {
+                        return core::Result<std::vector<ManifestEvent>>::failure(
+                            fmt_err(source_label, oectx + " is not an object"));
+                    }
+                    core::PolicyEffect eff;
+                    if (!f.contains("target") || !f.at("target").is_string()) {
+                        return core::Result<std::vector<ManifestEvent>>::failure(
+                            fmt_err(source_label,
+                                    oectx + ".target missing or not a string"));
+                    }
+                    eff.target = f.at("target").get<std::string>();
+                    if (!f.contains("op") || !f.at("op").is_string()) {
+                        return core::Result<std::vector<ManifestEvent>>::failure(
+                            fmt_err(source_label,
+                                    oectx + ".op missing or not a string"));
+                    }
+                    eff.op = f.at("op").get<std::string>();
+                    if (!f.contains("value") || !f.at("value").is_number()) {
+                        return core::Result<std::vector<ManifestEvent>>::failure(
+                            fmt_err(source_label,
+                                    oectx + ".value missing or not a number"));
+                    }
+                    eff.value = f.at("value").get<double>();
+                    if (!std::isfinite(eff.value)) {
+                        return core::Result<std::vector<ManifestEvent>>::failure(
+                            fmt_err(source_label,
+                                    oectx + ".value must be finite"));
+                    }
+                    opt.effects.push_back(std::move(eff));
+                }
+                ev.options.push_back(std::move(opt));
+            }
+        }
+
+        // RCR-1 (RFC-090 §5.12): optional followup_event_ids[].
+        if (e.contains("followup_event_ids")) {
+            if (!e.at("followup_event_ids").is_array()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".followup_event_ids is not an array"));
+            }
+            const json& fu_arr = e.at("followup_event_ids");
+            ev.followup_event_ids.reserve(fu_arr.size());
+            for (std::size_t fi = 0; fi < fu_arr.size(); ++fi) {
+                const std::string fctx = ctx + ".followup_event_ids[" +
+                                         std::to_string(fi) + "]";
+                const json& v = fu_arr[fi];
+                if (!v.is_string()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, fctx + " is not a string"));
+                }
+                std::string s = v.get<std::string>();
+                if (s.empty()) {
+                    return core::Result<std::vector<ManifestEvent>>::failure(
+                        fmt_err(source_label, fctx + " must be non-empty"));
+                }
+                ev.followup_event_ids.push_back(std::move(s));
+            }
+        }
+
         out.push_back(std::move(ev));
     }
     return core::Result<std::vector<ManifestEvent>>::success(std::move(out));
@@ -956,13 +1116,17 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                         " event files");
                 }
                 core::EventDefinition ev;
-                ev.id_code        = entry.id_code;
-                ev.name           = entry.name;
-                ev.description    = entry.description;
-                ev.visible_report = entry.visible_report;   // M6.2
-                ev.true_cause     = entry.true_cause;
-                ev.triggers    = entry.triggers;
-                ev.effects     = entry.effects;
+                ev.id_code            = entry.id_code;
+                ev.name               = entry.name;
+                ev.description        = entry.description;
+                ev.visible_report     = entry.visible_report;   // M6.2
+                ev.true_cause         = entry.true_cause;
+                ev.triggers           = entry.triggers;
+                ev.effects            = entry.effects;
+                // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12):
+                ev.weight_modifiers   = entry.weight_modifiers;
+                ev.options            = entry.options;
+                ev.followup_event_ids = entry.followup_event_ids;
                 event_index.emplace(ev.id_code, state.events.size());
                 state.events.push_back(std::move(ev));
             }

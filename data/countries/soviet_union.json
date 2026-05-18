@@ -1,0 +1,24 @@
+{
+  "id":                        "SOV",
+  "name":                      "Soviet Union",
+  "display_name":              "Union of Soviet Socialist Republics",
+  "initial_gdp":               75.0,
+  "initial_stability":         0.50,
+  "legal_tax_burden":          0.30,
+  "fiscal_capacity":           0.50,
+  "administrative_efficiency": 0.50,
+  "central_control":           0.75,
+  "corruption":                0.30,
+  "legitimacy":                0.50,
+  "military_power":            0.55,
+  "threat_perception":         0.45,
+  "budget": {
+    "administration":  0.25,
+    "military":        0.30,
+    "education":       0.10,
+    "welfare":         0.08,
+    "intelligence":    0.10,
+    "infrastructure":  0.10,
+    "industry":        0.07
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "scenario": {
+    "countries": [
+      "countries/germany.json",
+      "countries/france.json",
+      "countries/japan.json",
+      "countries/italy.json",
+      "countries/great_britain.json",
+      "countries/united_states.json",
+      "countries/soviet_union.json",
+      "countries/poland.json",
+      "countries/china.json",
+      "countries/spain.json",
+      "countries/turkey.json",
+      "countries/brazil.json",
+      "countries/argentina.json",
+      "countries/mexico.json",
+      "countries/canada.json",
+      "countries/india.json",
+      "countries/netherlands.json",
+      "countries/belgium.json",
+      "countries/czechoslovakia.json",
+      "countries/sweden.json"
+    ],
+    "factions": [
+      "factions/ger_military.json",
+      "factions/ger_workers.json",
+      "factions/ger_bureaucracy.json"
+    ],
+    "policies": [
+      "policies/increase_military_budget.json",
+      "policies/cut_military_budget.json",
+      "policies/raise_taxes.json",
+      "policies/lower_taxes.json",
+      "policies/expand_welfare.json",
+      "policies/increase_education.json",
+      "policies/administrative_reform.json",
+      "policies/intelligence_expansion.json",
+      "policies/press_censorship.json",
+      "policies/press_freedom.json",
+      "policies/industrial_subsidy.json",
+      "policies/infrastructure_investment.json",
+      "policies/agricultural_subsidy.json",
+      "policies/labor_protections.json",
+      "policies/corruption_crackdown.json",
+      "policies/centralize_authority.json",
+      "policies/propaganda_campaign.json",
+      "policies/fiscal_consolidation.json",
+      "policies/security_tightening.json",
+      "policies/decentralize_governance.json"
+    ],
+    "events": [
+      "events/1930_core_events.json",
+      "events/1930_rfc_extended_events.json"
+    ],
+    "interest_groups": [
+      { "id_code": "ger_bureaucracy",  "name": "German Bureaucracy",        "kind": "Bureaucracy", "country": "GER", "influence": 0.55, "loyalty": 0.50, "radicalism": 0.10 },
+      { "id_code": "fra_bureaucracy",  "name": "French Bureaucracy",        "kind": "Bureaucracy", "country": "FRA", "influence": 0.55, "loyalty": 0.50, "radicalism": 0.10 },
+      { "id_code": "jpn_bureaucracy",  "name": "Japanese Bureaucracy",      "kind": "Bureaucracy", "country": "JPN", "influence": 0.55, "loyalty": 0.50, "radicalism": 0.10 },
+      { "id_code": "gbr_workers",      "name": "British Trade Unions",      "kind": "Workers",     "country": "GBR", "influence": 0.50, "loyalty": 0.45, "radicalism": 0.20 },
+      { "id_code": "usa_business",     "name": "American Business",         "kind": "Business",    "country": "USA", "influence": 0.60, "loyalty": 0.55, "radicalism": 0.10 },
+      { "id_code": "sov_military",     "name": "Soviet Military",           "kind": "Military",    "country": "SOV", "influence": 0.55, "loyalty": 0.55, "radicalism": 0.15 },
+      { "id_code": "chn_farmers",      "name": "Chinese Peasantry",         "kind": "Farmers",     "country": "CHN", "influence": 0.45, "loyalty": 0.40, "radicalism": 0.25 },
+      { "id_code": "ita_media",        "name": "Italian Press",             "kind": "Media",       "country": "ITA", "influence": 0.40, "loyalty": 0.50, "radicalism": 0.15 },
+      { "id_code": "ind_religious",    "name": "Indian Religious Bodies",   "kind": "Religious",   "country": "IND", "influence": 0.50, "loyalty": 0.50, "radicalism": 0.15 },
+      { "id_code": "swe_technocrats",  "name": "Swedish Technocrats",       "kind": "Technocrats", "country": "SWE", "influence": 0.45, "loyalty": 0.60, "radicalism": 0.10 }
+    ]
+  }
+}

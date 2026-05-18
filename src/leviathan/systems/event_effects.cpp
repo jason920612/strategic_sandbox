@@ -82,4 +82,67 @@ core::Result<ApplyOutcome> apply_event_effects(
     return core::Result<ApplyOutcome>::success(std::move(out));
 }
 
+const core::EventOption*
+select_default_option(const core::EventDefinition& definition) {
+    if (definition.options.empty()) {
+        return nullptr;
+    }
+    return &definition.options.front();
+}
+
+core::Result<ApplyOutcome> apply_default_option_effects(
+        core::GameState&             state,
+        const core::EventInstance&   instance,
+        const core::EventDefinition& definition) {
+    const auto* option = select_default_option(definition);
+    if (option == nullptr) {
+        return core::Result<ApplyOutcome>::success(ApplyOutcome{});
+    }
+    if (instance.actors.empty()) {
+        return core::Result<ApplyOutcome>::success(ApplyOutcome{});
+    }
+
+    const auto& head_country_id_code = instance.actors.front().country_id_code;
+    if (head_country_id_code.empty()) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_default_option_effects: '" + instance.event_id_code +
+            "': first actor has empty country_id_code");
+    }
+    const core::CountryId actor =
+        find_country_by_id_code(state, head_country_id_code);
+    if (!actor.valid()) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_default_option_effects: '" + instance.event_id_code +
+            "': first actor's country_id_code '" + head_country_id_code +
+            "' does not resolve to any country in state.countries");
+    }
+
+    auto inner = policy::apply_effects_to_actor(state, actor,
+                                                option->effects);
+    if (!inner) {
+        return core::Result<ApplyOutcome>::failure(std::move(inner.error()));
+    }
+    const auto& v = inner.value();
+    ApplyOutcome out;
+    out.effects_applied         = v.effects_applied;
+    out.faction_targets_updated = v.faction_targets_updated;
+    return core::Result<ApplyOutcome>::success(std::move(out));
+}
+
+std::vector<std::size_t>
+resolve_followup_ids(const core::GameState&       state,
+                     const core::EventDefinition& definition) {
+    std::vector<std::size_t> out;
+    out.reserve(definition.followup_event_ids.size());
+    for (const auto& id_code : definition.followup_event_ids) {
+        for (std::size_t i = 0; i < state.events.size(); ++i) {
+            if (state.events[i].id_code == id_code) {
+                out.push_back(i);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 }  // namespace leviathan::systems::event_effects

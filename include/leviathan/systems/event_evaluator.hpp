@@ -179,6 +179,65 @@ evaluate_match(const core::GameState&       state,
 // it.
 std::vector<EventMatch> match_events(const core::GameState& state);
 
+// RCR-1: RFC-090 §5.3 / §5.6 / §5.7 — deterministic weighted
+// ranker. For each event in `state.events`, compute a numeric
+// `weight` as `kBaseWeight + sum(modifier.weight_delta)` over
+// every `WeightModifier` whose `target` / `op` / `value`
+// comparison currently holds against any country / interest
+// group in `state` (same ANY-entity-satisfies aggregation as
+// `trigger_matches`). Modifiers with unrecognised targets / ops
+// contribute 0. The result is sorted by descending weight, with
+// original event vector order as the deterministic tie-break.
+//
+// `kBaseWeight` is `1.0` — author-supplied modifiers raise or
+// lower priority from there. Empty `weight_modifiers` keeps
+// the event at base weight.
+//
+// RCR-1 is RNG-free: no random draw, no `state.rng` consumption.
+// A future weighted-random-draw extension would sit on top of
+// this ranker (consume `state.rng` and pick from the ranked
+// candidates); that extension is explicitly out of scope here
+// to preserve M1.17 / M2 / M3 / M4 / M5 byte-identical
+// determinism baselines.
+//
+// Returns one entry per event in `state.events`, even when an
+// event's weight is exactly the base weight. Callers that only
+// care about events whose triggers currently match should
+// compose this with `match_events`.
+struct WeightedEventCandidate {
+    std::size_t event_index = 0;
+    std::string event_id_code;
+    double      weight = 0.0;
+};
+
+inline constexpr double kBaseWeight = 1.0;
+
+std::vector<WeightedEventCandidate>
+rank_weighted_events(const core::GameState& state);
+
+// RCR-1: RFC-090 §5.7 — deterministic weighted selector. Calls
+// `rank_weighted_events` and returns the **highest-weight
+// candidate whose triggers currently match** (the intersection
+// of "weighted ranking" with M5.2's `match_events`). When the
+// intersection is empty — no event currently matches, or
+// `state.events` is empty — returns `std::nullopt`.
+//
+// Selection rule:
+//   1. Build the M5.2 match set (vector of EventMatch for events
+//      whose triggers currently fire).
+//   2. Walk the M5.3-shaped ranked list in descending-weight
+//      order; return the first candidate that is in the match set.
+//   3. Ties between candidates with the same weight resolve to
+//      the lower event vector index (deterministic via
+//      stable_sort in `rank_weighted_events`).
+//
+// RNG-free; no `state.rng` consumption. A future weighted-random-
+// draw extension would consume `state.rng` and pick stochastically
+// among the top-weight candidates; that extension is out of scope
+// for RCR-1 to preserve M1–M5 byte-identical determinism baselines.
+std::optional<WeightedEventCandidate>
+select_weighted_event(const core::GameState& state);
+
 }  // namespace leviathan::systems::event_evaluator
 
 #endif  // LEVIATHAN_SYSTEMS_EVENT_EVALUATOR_HPP

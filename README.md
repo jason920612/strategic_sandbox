@@ -8,21 +8,30 @@
 
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are
 > closed as **implementation milestones**, not as full
-> original RFC-090 / RFC-010 acceptance milestones. M3 and
-> M5 in particular drifted from their RFC-090 task lists:
-> M3 shipped an interest-group reaction loop rather than
-> the 20–30-country multi-country simulation listed in
-> RFC-090 §M3, and M5 shipped an event-engine skeleton
-> rather than the weighted-selection / options /
-> 10-events / followup-chains scope listed in RFC-090 §M5.
-> RFC-010 v0.1 acceptance floors (20 countries / 20
-> policies / 10 events / 6+ factions / AI auto-policy
-> selection / annual statistics CSV) also remain deferred.
-> The full deferred-scope backlog is tracked in
+> original RFC-090 / RFC-010 acceptance milestones. The
+> compliance audit lives in
 > [`docs/rfc-090-010-compliance-audit.md`](docs/rfc-090-010-compliance-audit.md);
-> issue #105 is the corresponding audit ticket. Future
-> milestone close-out docs cross-link there rather than
-> re-litigating the gap.
+> issue #105 is the corresponding audit ticket.
+>
+> **RCR-1 was a one-time corrective PR**, NOT a new
+> long-running recovery track. It closed the RFC-090 §M3 /
+> §M5 / RFC-010 v0.1 compliance gap in a single batch:
+> 20-country / 20-policy / 10-event / 10-cross-country-IG
+> floors via new `data/scenarios/1930_rfc_compliance.json`;
+> AI policy selection + apply (`leviathan::systems::ai_policy`);
+> relationships matrix + military_strength + EventOption +
+> WeightModifier + followup-event-ids under a single save
+> schema bump v16 → v17; new
+> `leviathan::systems::annual_stats` module + new
+> `annual_world_stats.csv` unconditional artefact (artefact
+> contract 10 → 11); `event_evaluator::rank_weighted_events`
+> deterministic weighted ranker; `event_firer` now emits
+> per-fire `event_fired` LogEntries into `events.jsonl`;
+> integration tests pin a deterministic byte-identical
+> 1930–2000 sweep on the 20-country compliance scenario
+> plus a 10-year event stress run. After RCR-1, execution
+> returns to the M-numbered milestone sequence — **M6.6
+> resumes per RFC-090 §6.6 on explicit go-ahead**.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**

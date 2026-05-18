@@ -158,16 +158,18 @@ If you're new to the codebase:
 
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are closed
 > as **implementation milestones**, not as full original
-> RFC-090 / RFC-010 acceptance milestones. M3 and M5 in
-> particular diverged from RFC-090 §M3 / §M5 task lists
-> (multi-country simulation, event content / options /
-> followup chains); RFC-010 v0.1 floors (20 countries / 20
-> policies / 10 events / 6+ factions / AI auto-policy /
-> annual statistics CSV) remain deferred. The full
-> deferred-scope backlog is tracked in
+> RFC-090 / RFC-010 acceptance milestones. The audit doc lives
+> at
 > [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md);
-> issue #105 is the corresponding audit ticket. New
-> milestone work should read the audit doc first.
+> issue #105 is the corresponding audit ticket.
+>
+> **RCR-1 was a one-time corrective PR** that closed the
+> audit-doc compliance gap in a single batch — not the first
+> of a long-running recovery track. After RCR-1 lands,
+> execution returns to the M-numbered milestone sequence
+> (M6.6 resumes per RFC-090 §6.6 on explicit go-ahead). See
+> the audit doc §5.1 for the framing rule and §6 for the
+> per-item per-PR status.
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.

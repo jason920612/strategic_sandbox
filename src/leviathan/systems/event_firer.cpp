@@ -8,8 +8,11 @@
 #include "leviathan/systems/event_firer.hpp"
 
 #include <cstddef>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include "leviathan/core/log_entry.hpp"
 
 namespace leviathan::systems::event_firer {
 namespace {
@@ -84,6 +87,49 @@ void record_match(core::GameState&                                state,
     for (const auto& te : match.triggers) {
         inst.actors.push_back(to_actor(state, te));
     }
+
+    // RCR-1: RFC-090 §5.9 — emit one per-fire LogEntry into
+    // `state.logs` so the M0.6 events.jsonl artefact surfaces
+    // event firings. Canonical scenarios at M5 deliberately
+    // tuned their events to NOT fire, so canonical events.jsonl
+    // bytes stay byte-identical with the M5 close-out (the
+    // canonical-non-fire property is the load-bearing invariant
+    // that keeps M1.17 / M2 / M3 / M4 / M5 determinism baselines
+    // green). Only scenarios where events fire receive these
+    // new entries.
+    //
+    // kind="event_fired"; metadata is a stable insertion-order
+    // sequence of:
+    //   event_id_code
+    //   actor_kind         (kind of actors[0], or "<none>" when
+    //                       actors is empty)
+    //   actor_id_code      (id_code of actors[0], or "")
+    //   country_id_code    (country_id_code of actors[0], or "")
+    //
+    // Multi-actor events emit ONE log entry with the first
+    // actor's surface attached; the EventInstance in
+    // state.event_history records the full actor list. This
+    // keeps events.jsonl per-fire records compact while leaving
+    // the full audit trail in the save artefact.
+    core::LogEntry entry;
+    entry.date     = fired_on;
+    entry.category = "event_fired";
+    entry.source   = "event_firer";
+    entry.message  = std::string("event ") + match.event_id_code +
+                     " fired";
+    entry.metadata.push_back({"event_id_code", match.event_id_code});
+    if (!inst.actors.empty()) {
+        const auto& a0 = inst.actors.front();
+        entry.metadata.push_back({"actor_kind",      a0.kind});
+        entry.metadata.push_back({"actor_id_code",   a0.id_code});
+        entry.metadata.push_back({"country_id_code", a0.country_id_code});
+    } else {
+        entry.metadata.push_back({"actor_kind",      std::string("<none>")});
+        entry.metadata.push_back({"actor_id_code",   std::string()});
+        entry.metadata.push_back({"country_id_code", std::string()});
+    }
+    state.logs.push_back(std::move(entry));
+
     state.event_history.push_back(std::move(inst));
 }
 
@@ -97,6 +143,42 @@ FireOutcome record_matches(
         out.recorded += 1;
     }
     return out;
+}
+
+void record_followup(core::GameState&             state,
+                     const core::EventInstance&   parent_instance,
+                     const core::EventDefinition& followup_definition,
+                     const core::GameDate&        fired_on) {
+    core::EventInstance inst;
+    inst.event_id_code = followup_definition.id_code;
+    inst.fired_on      = fired_on;
+    inst.actors        = parent_instance.actors;   // inherit from parent
+
+    // Same log emission shape as record_match. Use the parent's
+    // first-actor surface so events.jsonl can be filtered by
+    // country_id_code consistently across base + followup fires.
+    core::LogEntry entry;
+    entry.date     = fired_on;
+    entry.category = "event_fired";
+    entry.source   = "event_firer";
+    entry.message  = std::string("event ") + followup_definition.id_code +
+                     " fired (followup of " +
+                     parent_instance.event_id_code + ")";
+    entry.metadata.push_back({"event_id_code", followup_definition.id_code});
+    entry.metadata.push_back({"followup_of",   parent_instance.event_id_code});
+    if (!inst.actors.empty()) {
+        const auto& a0 = inst.actors.front();
+        entry.metadata.push_back({"actor_kind",      a0.kind});
+        entry.metadata.push_back({"actor_id_code",   a0.id_code});
+        entry.metadata.push_back({"country_id_code", a0.country_id_code});
+    } else {
+        entry.metadata.push_back({"actor_kind",      std::string("<none>")});
+        entry.metadata.push_back({"actor_id_code",   std::string()});
+        entry.metadata.push_back({"country_id_code", std::string()});
+    }
+    state.logs.push_back(std::move(entry));
+
+    state.event_history.push_back(std::move(inst));
 }
 
 }  // namespace leviathan::systems::event_firer

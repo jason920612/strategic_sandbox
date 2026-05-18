@@ -111,6 +111,84 @@ core::Result<ApplyOutcome> apply_event_effects(
     const core::EventInstance&   instance,
     const core::EventDefinition& definition);
 
+// RCR-1: RFC-090 §5.4 / §5.8 — deterministic default option
+// selector. Returns a pointer into `definition.options[0]` if the
+// options vector is non-empty, or `nullptr` if the definition has
+// no options (which mirrors the M5.6-era contract where
+// `definition.effects` was the only effect path).
+//
+// Pure read; never mutates `definition`. The returned pointer is
+// non-owning and stable across the call but invalidated by any
+// subsequent mutation of `definition.options`.
+//
+// Future expansion: a smarter selector could take a player choice
+// or AI heuristic. RCR-1 ships the deterministic first-option
+// rule per the user's instruction "deterministic default option
+// selection helper".
+const core::EventOption*
+select_default_option(const core::EventDefinition& definition);
+
+// RCR-1: RFC-090 §5.4 / §5.8 — apply the default option's
+// effects to the actor's country.
+//
+// Composes `select_default_option(definition)` with the M1.5 /
+// M5.6 `policy::apply_effects_to_actor` machinery. The actor is
+// resolved from `instance.actors.front().country_id_code`
+// (same first-actor-wins convention as `apply_event_effects`).
+//
+// Semantics:
+//   - definition.options empty -> success with effects_applied=0
+//     (no option to choose); `state` unchanged.
+//   - instance.actors empty -> success with effects_applied=0;
+//     `state` unchanged.
+//   - first option's effects[] applied via
+//     policy::apply_effects_to_actor, inheriting M1.5 pre-flight
+//     atomicity. On failure the whole call returns Result::failure
+//     with `state` unchanged.
+//
+// The applicator deliberately does NOT call `apply_event_effects`
+// in addition — `definition.effects` (the base effect list) and
+// `options[i].effects` are independent surfaces. A future runner-
+// policy that wants to fire both base + option-default effects
+// would call this helper alongside `apply_event_effects`. RCR-1
+// ships the deterministic primitive; runner wiring is intentionally
+// out of scope (consistent with the rest of the event-engine
+// surface in this corrective batch).
+core::Result<ApplyOutcome> apply_default_option_effects(
+    core::GameState&             state,
+    const core::EventInstance&   instance,
+    const core::EventDefinition& definition);
+
+// RCR-1: RFC-090 §5.12 — followup-event-id resolver. Given a
+// definition's `followup_event_ids` vector, returns the matching
+// `state.events` indices for every id_code that resolves
+// successfully. Unresolvable id_codes are skipped (the M5.4-era
+// "EventInstance.event_id_code is NOT cross-checked against
+// state.events on load" tolerance applies here too — followup
+// chains across scenario reloads are legitimate).
+//
+// Returns a vector of size <= `definition.followup_event_ids.size()`;
+// the result preserves the order of `definition.followup_event_ids`.
+// Empty input → empty output. Pure read.
+//
+// Scope split between resolver + firer:
+//   - `resolve_followup_ids` (THIS function) only resolves
+//     followup id_code strings to `state.events` indices.
+//   - `event_firer::record_followup` is the matching firing
+//     primitive: takes one resolved followup definition + the
+//     parent instance + a date, and appends one EventInstance
+//     to event_history plus one `event_fired` LogEntry to
+//     state.logs (RCR-1 deterministic chain firing).
+//   - Automatic recursive runner cascade (looping
+//     record_followup over resolved chains every tick) remains
+//     out of scope for RCR-1 — wiring it into
+//     `event_engine::tick_events` would change M5.7
+//     snapshot-evaluation semantics and is intentionally
+//     deferred.
+std::vector<std::size_t>
+resolve_followup_ids(const core::GameState&       state,
+                     const core::EventDefinition& definition);
+
 }  // namespace leviathan::systems::event_effects
 
 #endif  // LEVIATHAN_SYSTEMS_EVENT_EFFECTS_HPP

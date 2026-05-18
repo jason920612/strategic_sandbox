@@ -315,7 +315,7 @@ TEST_CASE("M5.5 record_matches: end-to-end with match_events on canonical-shape 
 // no side effects: firer touches only state.event_history
 // =====================================================================
 
-TEST_CASE("M5.5 record_matches: does NOT modify countries / IGs / events / logs / applied_commands / current_date") {
+TEST_CASE("M5.5 record_matches: does NOT modify countries / IGs / events / applied_commands / current_date (logs migrated to RCR-1)") {
     GameState s;
     s.current_date = GameDate(1932, 5, 5);
     s.countries.push_back(make_country(0, "GER", /*stab*/0.20, /*legit*/0.30));
@@ -341,7 +341,15 @@ TEST_CASE("M5.5 record_matches: does NOT modify countries / IGs / events / logs 
     CHECK(s.countries[0].legitimacy        == c_legit_before);
     CHECK(s.interest_groups[0].radicalism  == ig_rad_before);
     CHECK(s.events.size()                  == events_size_before);
-    CHECK(s.logs.size()                    == logs_size_before);
+    // RCR-1 (RFC-090 §5.9): record_matches now appends ONE
+    // LogEntry per fired event into state.logs. The original
+    // M5.5 "no logs append" invariant is deliberately
+    // superseded by RCR-1 — events.jsonl is the visible record
+    // surface for fired events. The remaining invariants
+    // (countries / IGs / events / applied_commands /
+    // current_date all unchanged) still hold.
+    CHECK(s.logs.size()                    == logs_size_before + 1);
+    CHECK(s.logs.back().category           == "event_fired");
     CHECK(s.applied_commands.size()        == cmds_size_before);
     CHECK(s.current_date                   == date_before);
 }

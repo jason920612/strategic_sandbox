@@ -125,6 +125,15 @@ struct CountryState {
     double military_power     = 0.0;
     double threat_perception  = 0.0;
 
+    // RCR-1: RFC-090 §3.8 "simple military values" — absolute
+    // scalar (>= 0) distinct from the `military_power` ratio
+    // above. Hand-authored per-country baseline; no system drives
+    // it yet (no war / no force-projection model in RCR-1). Round-
+    // trips through the save layer (v17). Loader treats it as
+    // optional with default 0.0 so older country JSONs continue
+    // to load; SaveSystem requires the field at save layer.
+    double military_strength  = 0.0;
+
     // Most recent gdp_growth_rate written by economy::tick (M1.12).
     // Fractional, e.g. 0.0035 = +0.35% monthly. Starts at 0.0 so the
     // first stability::tick sees "no growth signal yet" (RFC-080 §5
@@ -267,6 +276,46 @@ struct EventTrigger {
     double      value = 0.0;
 };
 
+// RCR-1: RFC-090 §5.3 WeightModifier. Per-event multiplicative-or-
+// additive adjustment to event firing weight when a target field
+// (country.* / interest_group.*, same allowlist as EventTrigger)
+// satisfies a comparison. Schema-only at the LOAD layer in RCR-1;
+// `event_evaluator::rank_weighted_events` consumes them to produce
+// a deterministic descending-weight ranking (tie-break = original
+// event vector order). No RNG-based random draw is performed —
+// RCR-1 keeps the existing match_events evaluator unchanged and
+// adds rank_weighted_events as a separate read-only helper.
+//
+// `target` / `op` allowlist matches EventTrigger (5 targets, 4
+// ops). `value` is the comparison threshold (finite). `weight_delta`
+// is added to the base weight when the modifier matches; positive
+// values raise priority, negative values lower it. Multiple
+// modifiers compose additively.
+struct WeightModifier {
+    std::string target;
+    std::string op;
+    double      value        = 0.0;
+    double      weight_delta = 0.0;
+};
+
+// RCR-1: RFC-090 §5.4 EventOption. One author-defined choice on
+// an event. `id_code` is the stable identifier; `label` is the
+// human-readable button text; `effects` is the per-option effect
+// list (same shape as `EventDefinition::effects`, applied via
+// the same `policy::apply_effects_to_actor` path).
+//
+// RCR-1 ships the schema + a deterministic default-option helper
+// (`event_effects::select_default_option` returns the first
+// option, or std::nullopt for an empty list). No UI prompt path;
+// no player-choice command kind. Empty `options` is allowed at
+// load — events that don't offer choices behave exactly like
+// pre-RCR-1 events did.
+struct EventOption {
+    std::string               id_code;
+    std::string               label;
+    std::vector<PolicyEffect> effects;
+};
+
 // One event definition loaded from a scenario fixture and stored
 // in `GameState::events`. M5.1 shipped the schema (loader + save
 // round-trip); M5.2-M5.8 added evaluator + firer + effects
@@ -277,10 +326,17 @@ struct EventTrigger {
 // second step of M6 "hidden truth / information distortion".
 // Field ordering reflects public-to-private narrative: name →
 // description → visible_report → true_cause → triggers → effects.
-// M6.2 itself is schema-only: `visible_report` is stored and
-// round-tripped through the save layer but no system consumes it.
-// Later M6 sub-milestones (6.3 information_accuracy, 6.4 reported
-// value, 6.5 bias/noise, etc.) will read it.
+// RCR-1 (RFC-090 §5.3 / §5.4 / §5.12) appended three optional
+// vectors at the end: `weight_modifiers`, `options`,
+// `followup_event_ids`. All three may be empty; pre-RCR-1 event
+// JSONs that omit them still load (loader treats them as
+// optional). Save layer (v17) requires each block to be present
+// as a JSON array (possibly empty) so save round-trip is
+// byte-stable. RCR-1 itself is schema-mostly: a thin set of
+// helpers consumes the new fields (`rank_weighted_events`,
+// `select_default_option`, `resolve_followup_ids`); the
+// canonical evaluator / firer / applicator / monthly wiring
+// stays unchanged.
 //
 // M0 had an `{ EventId id; std::string name; }` stub here; M5.1
 // upgraded it in place. `id_code` is the natural string identifier
@@ -294,6 +350,12 @@ struct EventDefinition {
     std::string               true_cause;   // M6.1 (RFC-090 §6.1) — non-empty at load
     std::vector<EventTrigger> triggers;   // non-empty at load
     std::vector<PolicyEffect> effects;    // may be empty (warning-only)
+
+    // RCR-1 additions:
+    std::vector<WeightModifier> weight_modifiers;    // may be empty
+    std::vector<EventOption>    options;             // may be empty
+    std::vector<std::string>    followup_event_ids;  // may be empty;
+                                                     // entries are non-empty strings
 };
 
 // M5.4: one fired event's recorded actor (the country or interest
@@ -404,6 +466,40 @@ struct InterestGroupState {
     double influence  = 0.5;
     double loyalty    = 0.5;
     double radicalism = 0.0;
+};
+
+// RCR-1: RFC-090 §3.6 / §3.7 — pairwise inter-country relationship
+// + threat record. Stored as a root-level vector on `GameState`
+// (not nested inside each country) so a future cross-border
+// system can iterate efficiently and authors can omit
+// unimportant pairs.
+//
+// `from` / `to` are numeric handles resolved at scenario-load
+// time from country id_codes. Vector order is (from, to) with
+// from-then-to as the primary key — `diagnostics::compare_states`
+// walks the vector in insertion order and the save layer
+// (v17) preserves that order.
+//
+// `relationship` is in `[-1.0, 1.0]`: -1 = openly hostile,
+//   0 = neutral, +1 = formally allied. Initial default = 0.0.
+// `threat` is in `[0.0, 1.0]`: 0 = no perceived threat from
+//   `from` to `to`, 1 = maximum threat. Initial default = 0.0.
+//
+// Self-pairs (`from == to`) are allowed at the data layer
+// (loader tolerates them) but conventionally not authored —
+// `diagnostics::sanity_check` does not flag them. The save
+// layer permits any from / to indices that index into
+// `state.countries`.
+//
+// RCR-1 ships the data layer + load / save / diagnostics
+// round-trip + scenario manifest support. No system *drives*
+// these values yet (no diplomacy AI, no war, no monthly
+// drift). That driver is on the M8 / RFC-040 roadmap.
+struct CountryRelation {
+    CountryId from;
+    CountryId to;
+    double    relationship = 0.0;  // [-1, 1]
+    double    threat       = 0.0;  // [0, 1]
 };
 
 }  // namespace leviathan::core

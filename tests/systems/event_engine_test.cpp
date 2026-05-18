@@ -330,8 +330,14 @@ TEST_CASE("M5.7 tick_events: does NOT append to state.logs or state.applied_comm
     const auto logs_before = s.logs.size();
     const auto cmds_before = s.applied_commands.size();
     REQUIRE(eng::tick_events(s));
-    CHECK(s.logs.size()             == logs_before);
+    // RCR-1 (RFC-090 §5.9): event_firer now emits ONE
+    // per-fire LogEntry into state.logs, so logs grows by
+    // exactly the number of recorded events. The M5.7 "no log
+    // append" invariant migrates here to "log append equals
+    // recorded events count".
+    CHECK(s.logs.size()             == logs_before + 1);
     CHECK(s.applied_commands.size() == cmds_before);
+    CHECK(s.logs.back().category    == "event_fired");
 }
 
 // =====================================================================

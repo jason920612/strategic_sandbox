@@ -1,0 +1,14 @@
+{
+  "id":            "security_tightening",
+  "name":          "Security Tightening Decree",
+  "category":      "security",
+  "duration_days": 60,
+  "admin_cost":    0.12,
+  "effects": [
+    { "target": "country.budget.intelligence",      "op": "add", "value":  0.02 },
+    { "target": "country.stability",                "op": "add", "value":  0.01 },
+    { "target": "country.legitimacy",               "op": "add", "value": -0.02 },
+    { "target": "faction:military.support",         "op": "add", "value":  0.04 },
+    { "target": "faction:students.support",         "op": "add", "value": -0.03 }
+  ]
+}

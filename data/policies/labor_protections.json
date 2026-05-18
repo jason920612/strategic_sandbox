@@ -1,0 +1,12 @@
+{
+  "id":            "labor_protections",
+  "name":          "Labor Protections Act",
+  "category":      "labor",
+  "duration_days": 120,
+  "admin_cost":    0.10,
+  "effects": [
+    { "target": "faction:workers.support",          "op": "add", "value":  0.06 },
+    { "target": "faction:local_elites.support",     "op": "add", "value": -0.03 },
+    { "target": "country.stability",                "op": "add", "value":  0.02 }
+  ]
+}

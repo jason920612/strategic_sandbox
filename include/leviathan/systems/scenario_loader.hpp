@@ -164,6 +164,13 @@ struct ManifestEvent {
     std::string                      true_cause;       // M6.1
     std::vector<core::EventTrigger>  triggers;
     std::vector<core::PolicyEffect>  effects;
+    // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12): optional event-extension
+    // blocks. All three may be omitted (default empty vector) so
+    // pre-RCR-1 event JSONs still load. Present blocks are
+    // validated and parsed per the same shape as the save layer.
+    std::vector<core::WeightModifier> weight_modifiers;
+    std::vector<core::EventOption>    options;
+    std::vector<std::string>          followup_event_ids;
 };
 
 // Parsed manifest. Paths are stored verbatim from JSON; resolving

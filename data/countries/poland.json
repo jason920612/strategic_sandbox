@@ -1,0 +1,24 @@
+{
+  "id":                        "POL",
+  "name":                      "Poland",
+  "display_name":              "Second Polish Republic",
+  "initial_gdp":               25.0,
+  "initial_stability":         0.50,
+  "legal_tax_burden":          0.20,
+  "fiscal_capacity":           0.45,
+  "administrative_efficiency": 0.50,
+  "central_control":           0.55,
+  "corruption":                0.30,
+  "legitimacy":                0.50,
+  "military_power":            0.40,
+  "threat_perception":         0.55,
+  "budget": {
+    "administration":  0.25,
+    "military":        0.35,
+    "education":       0.10,
+    "welfare":         0.08,
+    "intelligence":    0.05,
+    "infrastructure":  0.10,
+    "industry":        0.07
+  }
+}
