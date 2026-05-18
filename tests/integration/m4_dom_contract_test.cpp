@@ -297,4 +297,61 @@ TEST_CASE("M4 DOM contract: provinces.svg stays fully inert; map.html carries on
     CHECK(html.find("<script type=") == std::string::npos);
 }
 
+// =====================================================================
+// D. (M4.14) Click-handler fields contract
+//
+//    Pins the M4.13-era five-entry fields list inside the
+//    inline <script>. Each of the five data-* attribute
+//    names AND each of the five human-readable labels must
+//    appear inside the click-handler script in the
+//    canonical map.html. Catches accidental shrinkage back
+//    to the M4.10/M4.11 four-entry form, label drift (e.g.
+//    "Owner Name" reverting to raw "data-owner-name"), or a
+//    future refactor that quietly drops a row.
+//
+//    This integration check is the end-to-end mirror of the
+//    M4.11/M4.13 svg_export_test unit cases — it confirms
+//    the labels reach the actual canonical artefact via the
+//    runner, not just via direct render_map_html invocation.
+// =====================================================================
+TEST_CASE("M4 DOM contract: map.html click-handler script carries the M4.13 five-entry fields list with the canonical labels") {
+    TempDir td("leviathan_m4_dom_fields_contract");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string html = read_file(td.path / "map.html");
+
+    // Five attribute names (raw data-* keys, NOT renamed
+    // since M4.8 / M4.13).
+    CHECK(html.find("\"data-id\"")         != std::string::npos);
+    CHECK(html.find("\"data-owner\"")      != std::string::npos);
+    CHECK(html.find("\"data-owner-code\"") != std::string::npos);
+    CHECK(html.find("\"data-owner-name\"") != std::string::npos);
+    CHECK(html.find("\"data-name\"")       != std::string::npos);
+
+    // Five human-readable labels (M4.11 introduced four;
+    // M4.13 added Owner Name).
+    CHECK(html.find("\"Province ID\"")   != std::string::npos);
+    CHECK(html.find("\"Owner Index\"")   != std::string::npos);
+    CHECK(html.find("\"Owner Code\"")    != std::string::npos);
+    CHECK(html.find("\"Owner Name\"")    != std::string::npos);
+    CHECK(html.find("\"Province Name\"") != std::string::npos);
+
+    // provinces.svg carries none of the click handler — the
+    // fields list lives inside the inline <script>, which
+    // is map.html-only. The JS-literal forms (the attribute
+    // name and the label surrounded by matching quotes)
+    // must NOT appear; the bare SVG attribute form
+    // `data-owner-name="..."` still does, as M4.13 pinned.
+    const std::string svg = read_file(td.path / "provinces.svg");
+    CHECK(svg.find("\"Owner Name\"")        == std::string::npos);
+    CHECK(svg.find("\"Province ID\"")       == std::string::npos);
+    CHECK(svg.find("\"data-owner-name\"")   == std::string::npos);
+    CHECK(svg.find("\"data-id\"")           == std::string::npos);
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR
