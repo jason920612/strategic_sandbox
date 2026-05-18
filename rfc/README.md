@@ -217,7 +217,76 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.2
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.3
+  （EventMatch actor-binding skeleton）** 是 M5 的
+  第三個 sub-milestone。擴充 M5.2 `event_evaluator`
+  module 的回傳形狀，讓未來的 firer / effects-applicator
+  知道效果該套到 **哪個 entity**。新增
+  `enum class TriggerActorKind { Country, InterestGroup }`、
+  `struct TriggerActor { TriggerActorKind kind;
+  std::string id_code; core::CountryId country;
+  std::size_t index; }`、`struct TriggerEvaluation {
+  std::size_t trigger_index; TriggerActor actor; }`。
+  原 M5.2 `TriggerMatch` **改名為 `EventMatch`** 並新增
+  `std::vector<TriggerEvaluation> triggers`（每條
+  `def.triggers` 一筆，僅 ALL match 時 populated）；
+  `event_index` 與 `event_id_code` field 名一字不改，
+  讓 M5.2 樣的 read site 仍能直接 compile。新增兩支
+  free function：`std::optional<TriggerActor>
+  trigger_actor(state, EventTrigger)` 回傳首個滿足
+  trigger 的 entity（nullopt = 沒有滿足者 / 未知
+  target / op / 非有限值）；`std::optional<EventMatch>
+  evaluate_match(state, EventDefinition)` 回傳整個
+  per-trigger actor binding（nullopt = 任一 trigger
+  fail）。`match_events` 名字不變，回傳型別由
+  `vector<TriggerMatch>` 寬化為 `vector<EventMatch>`，
+  攜帶完整 per-match actor binding。**Actor selection
+  policy = "first in vector order"** ── deterministic，
+  因為 `state.countries` / `state.interest_groups` 是
+  canonical scenario-load 順序（save layer
+  byte-stably 保留）。把每個 trigger 所有滿足者都收
+  下來（而非只首個）deferred 到未來 M5.x；first-match
+  選擇與 M5.2 bool predicate short-circuit 一致，所以
+  gate 語意 0 變動，M5.3 只暴露 M5.2 predicate 隱含
+  選的 first-match。原兩支 bool predicate
+  （`trigger_matches`、`evaluate`）保留作為便宜的
+  「是否 match」probe。對 kind `InterestGroup` 的 actor，
+  `country` field 是其 **owning** country（M3.1+ 起
+  IG 必有 owning country）；對 kind `Country` 則為
+  該 actor 自己的 id。這讓「IG-trigger 觸發時把效果
+  套到 IG 所屬國家」這條未來路徑不必再 lookup。
+  **16 個新 doctest case（965 total，62006 assertions；
+  per `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：per-target actor
+  binding / nullopt 邊界 / 重複 id_code 釐清（index
+  是 canonical handle）/ `evaluate_match` nullopt vs
+  populated / cross-scope binding / 空 triggers
+  vacuous true 但 actors 為空 / 共享 actor case（多條
+  trigger 同打一國皆綁該國，indices 按 def 順序）/
+  `match_events` 攜帶 binding 並按 canonical 順序 /
+  canonical no-fire regression 仍成立（M5.3 不改
+  gate）/ no-mutate regression / evaluator 仍不
+  consult effects / `match_events` 仍不 append 到
+  `state.logs` / `state.applied_commands`。新
+  `docs/m5-3-event-match-actor-binding-skeleton.md`
+  design note。**沒有 event firing / log entry on
+  match / `events.jsonl` 變動 / history append /
+  effects application / 「每個 trigger 收集所有滿足
+  entity」（M5.3 只收 first）/ selection policy
+  options（hard-coded "first"；無 random / weighted
+  / `for_country:GER`）/ runner 或 monthly 整合 /
+  auto-evaluation cadence / save format bump（仍 v13）
+  / 新 artefact（仍 10）/ 新 `RunnerOptions` field /
+  CLI flag / 新 `PlayerCommandKind` / 新 state field
+  / 更廣 trigger op / target / logical operator /
+  event author tooling / UI surface / balance pass /
+  對 M5.1 schema 或 M5.2 gate 語意的變動 / 對
+  M1/M2/M3/M4 system 的變動 / 對 `scenario_loader`
+  / `save_system` / `diagnostics` 的變動 /
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  在 M5.3 開 checkpoint 仍是 premature framing）**。
+  M5 remains in progress。
+- **M5（歷史進行中）** — **M5.2
   （trigger evaluator skeleton）** 是 M5 的第二個
   sub-milestone。新增 `leviathan::systems::event_evaluator`
   module（header `include/leviathan/systems/event_evaluator.hpp`

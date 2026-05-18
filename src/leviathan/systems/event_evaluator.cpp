@@ -1,15 +1,15 @@
 // M5.2: EventEvaluator implementation.
-//
-// See include/leviathan/systems/event_evaluator.hpp for the public
-// contract (semantics, allowlists, aggregation rules, deliberate
-// non-goals). This file is the small dispatcher behind it: a per-op
-// numeric compare, a per-target state-slice selector with "any
-// entity satisfies" semantics, and the AND-across-triggers fold.
+// M5.3: actor-binding extension — the existing per-op / per-target
+// dispatch grows a "which entity satisfied" return path so the
+// future firer / effects-applicator knows where to direct an
+// effect. See include/leviathan/systems/event_evaluator.hpp for
+// the public contract.
 
 #include "leviathan/systems/event_evaluator.hpp"
 
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,8 +17,8 @@ namespace leviathan::systems::event_evaluator {
 namespace {
 
 // Numeric comparison for the M5.1 op allowlist. Returns false on
-// any unknown op string and on any non-finite operand — keeps NaN
-// out of the gate (per the header comment, NaN never matches).
+// any unknown op string and on any non-finite operand — keeps
+// NaN out of the gate.
 bool op_compare(const std::string& op, double lhs, double rhs) {
     if (!std::isfinite(lhs) || !std::isfinite(rhs)) {
         return false;
@@ -30,9 +30,8 @@ bool op_compare(const std::string& op, double lhs, double rhs) {
     return false;
 }
 
-// Project a target string + a country into the country-side double
-// it names. Returns std::nan if the target is not a recognised
-// country-side leaf; the caller treats nan as "skip this entity".
+// Project a target string + a country into the country-side
+// double it names. Returns nan for non-country-side leaves.
 double pick_country_value(const std::string&        target,
                           const core::CountryState& c) {
     if (target == "country.stability")  { return c.stability;  }
@@ -63,6 +62,44 @@ bool target_is_interest_group_scope(const std::string& target) {
         || target == "interest_group.loyalty";
 }
 
+// M5.3: find the index of the first country (in vector order)
+// that satisfies the trigger; returns std::nullopt if none do
+// or if the target is not country-scoped.
+std::optional<std::size_t>
+first_country_index_satisfying(const core::GameState&    state,
+                               const core::EventTrigger& trig) {
+    if (!target_is_country_scope(trig.target)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < state.countries.size(); ++i) {
+        const double v = pick_country_value(trig.target,
+                                            state.countries[i]);
+        if (op_compare(trig.op, v, trig.value)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+// M5.3: find the index of the first interest group (in vector
+// order) that satisfies the trigger; returns std::nullopt if
+// none do or if the target is not IG-scoped.
+std::optional<std::size_t>
+first_interest_group_index_satisfying(const core::GameState&    state,
+                                      const core::EventTrigger& trig) {
+    if (!target_is_interest_group_scope(trig.target)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
+        const double v = pick_interest_group_value(
+            trig.target, state.interest_groups[i]);
+        if (op_compare(trig.op, v, trig.value)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 bool trigger_matches(const core::GameState&    state,
@@ -70,38 +107,53 @@ bool trigger_matches(const core::GameState&    state,
     if (!std::isfinite(trig.value)) {
         return false;
     }
-
     if (target_is_country_scope(trig.target)) {
-        for (const auto& c : state.countries) {
-            const double v = pick_country_value(trig.target, c);
-            if (op_compare(trig.op, v, trig.value)) {
-                return true;
-            }
-        }
-        return false;
+        return first_country_index_satisfying(state, trig).has_value();
     }
-
     if (target_is_interest_group_scope(trig.target)) {
-        for (const auto& g : state.interest_groups) {
-            const double v = pick_interest_group_value(trig.target, g);
-            if (op_compare(trig.op, v, trig.value)) {
-                return true;
-            }
-        }
-        return false;
+        return first_interest_group_index_satisfying(state, trig).has_value();
     }
-
-    // Target not in the M5.1 allowlist — defensive false. The
-    // M5.1 loader is the gate; the evaluator does not duplicate
-    // the allowlist error messaging.
     return false;
+}
+
+std::optional<TriggerActor>
+trigger_actor(const core::GameState&    state,
+              const core::EventTrigger& trig) {
+    if (!std::isfinite(trig.value)) {
+        return std::nullopt;
+    }
+    if (target_is_country_scope(trig.target)) {
+        const auto idx = first_country_index_satisfying(state, trig);
+        if (!idx.has_value()) {
+            return std::nullopt;
+        }
+        const auto& c = state.countries[*idx];
+        TriggerActor a;
+        a.kind    = TriggerActorKind::Country;
+        a.id_code = c.id_code;
+        a.country = c.id;
+        a.index   = *idx;
+        return a;
+    }
+    if (target_is_interest_group_scope(trig.target)) {
+        const auto idx =
+            first_interest_group_index_satisfying(state, trig);
+        if (!idx.has_value()) {
+            return std::nullopt;
+        }
+        const auto& g = state.interest_groups[*idx];
+        TriggerActor a;
+        a.kind    = TriggerActorKind::InterestGroup;
+        a.id_code = g.id_code;
+        a.country = g.country;
+        a.index   = *idx;
+        return a;
+    }
+    return std::nullopt;
 }
 
 bool evaluate(const core::GameState&        state,
               const core::EventDefinition&  def) {
-    // Empty triggers: vacuously true (the M5.1 loader rejects
-    // empty triggers, so this case is unreachable through canonical
-    // load paths — pinned by a test for defensive readers).
     for (const auto& t : def.triggers) {
         if (!trigger_matches(state, t)) {
             return false;
@@ -110,16 +162,35 @@ bool evaluate(const core::GameState&        state,
     return true;
 }
 
-std::vector<TriggerMatch> match_events(const core::GameState& state) {
-    std::vector<TriggerMatch> out;
+std::optional<EventMatch>
+evaluate_match(const core::GameState&       state,
+               const core::EventDefinition& def) {
+    EventMatch m;
+    m.event_index   = 0;             // caller fills if needed
+    m.event_id_code = def.id_code;
+    m.triggers.reserve(def.triggers.size());
+    for (std::size_t ti = 0; ti < def.triggers.size(); ++ti) {
+        auto actor_opt = trigger_actor(state, def.triggers[ti]);
+        if (!actor_opt.has_value()) {
+            return std::nullopt;
+        }
+        TriggerEvaluation te;
+        te.trigger_index = ti;
+        te.actor         = std::move(*actor_opt);
+        m.triggers.push_back(std::move(te));
+    }
+    return m;
+}
+
+std::vector<EventMatch> match_events(const core::GameState& state) {
+    std::vector<EventMatch> out;
     out.reserve(state.events.size());
     for (std::size_t i = 0; i < state.events.size(); ++i) {
         const auto& def = state.events[i];
-        if (evaluate(state, def)) {
-            TriggerMatch m;
-            m.event_index   = i;
-            m.event_id_code = def.id_code;
-            out.push_back(std::move(m));
+        auto m = evaluate_match(state, def);
+        if (m.has_value()) {
+            m->event_index = i;
+            out.push_back(std::move(*m));
         }
     }
     return out;
