@@ -217,8 +217,60 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.13
-  （details panel owner-name polish）** 把 M4.8 的 identity
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.14
+  （DOM contract checkpoint refresh）** 對應 M4.9 在當時
+  的角色：**零新行為**，只刷新狀態快照 + 補一個小型
+  integration assertion。`docs/milestone-4-checkpoint.md`
+  原本是 M4.9 寫的、釘住 M4.2–M4.8 的 SVG / HTML DOM
+  contract；M4.14 把它擴充到覆蓋 M4.10（`map.html` 第一段
+  inline `<script>`；非對稱 JS 邊界 ── `provinces.svg`
+  仍完全沒有 script）、M4.11（details panel 的 `<dt>` 標籤
+  從 raw `data-*` key 解耦成 `Province ID` / `Owner Index`
+  / `Owner Code` / `Owner Name`（M4.13）/ `Province Name`
+  共五個 human-readable label）、M4.12（transient
+  `.selected` class + `circle.selected` / `text.selected`
+  CSS + `selectProvince(el)` helper ── 純粹 DOM 層級，
+  不持久化），以及 M4.13（每個 `<circle>` 與 `<text>`
+  多帶第五個 `data-owner-name` 屬性，內容從
+  `state.countries[owner].name` 解析）。刷新後的 checkpoint
+  doc 列出 `<style>` block 裡 13 條 selector（M4.9 時是
+  6 條）、一個新的 interactivity-surface 區塊枚舉
+  `<div id="details">` / `.selected` / `selectProvince`
+  / `showDetails` / 5 列 `fields` 陣列，以及把 deferred
+  items 依 HOVER+TOOLTIPS / KEYBOARD+A11Y / PERSISTENT
+  SELECTION / DOM EXTENSIONS / VISUAL POLISH /
+  INFRASTRUCTURE 六大類重新整理。在
+  `tests/integration/m4_dom_contract_test.cpp` 加一個
+  新的 integration assertion（test D）：canonical
+  `map.html` 的 inline `<script>` 必須帶 M4.13 之後的
+  五列 `fields` 陣列 ── 五個 raw `data-*` 屬性名稱與
+  五個 human-readable label 都必須在 script body 裡出現；
+  `provinces.svg` 則完全沒有任何 JS literal 形式。這條
+  test 是 M4.11/M4.13 svg_export_test 單元測試的
+  end-to-end 對應，透過實際 runner / canonical fixture
+  路徑驗證。**M4 仍在 in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.14 是 checkpoint
+  refresh 不是 exit。**renderer bytes 與 M4.13 完全相同**
+  ── 這次只加 docs + 1 個 integration test。
+  **Artefact 數量不變（仍 10）；save 格式不變（仍 v12）**；
+  M1.17 / M2.22 / M3.7 byte-identical determinism contract
+  仍 by construction 通過。1 個新 doctest case（共 857）。
+  **M4 in progress.**
+  **M4.14 不做** 新 system / 新 formula / 新 artefact /
+  save schema bump / 新 state field / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / 新 feature
+  surface（M4.14 是 docs + 1 integration test 而已）/
+  rename 任何 data-* attribute / 動 click handler /
+  details panel / `.selected` CSS / `fields` array 的
+  bytes / `<meta name="viewport">` / CSS animation /
+  transition / media query / 鄰接 edge / terrain /
+  overlay / events / AI / commands / hover / tooltip /
+  keyboard nav / `aria-*` polish / selection 跨 reload
+  持久化 / runner CLI flag / atomic `end_tick` write /
+  M4 close-out / `docs/milestone-4-result.md` /
+  「M4 closed」字樣 / 動 `provinces.svg` 或 `map.html`
+  bytes。
+  **M4.13（details panel owner-name polish）** 把 M4.8 的 identity
   surface 再加寬一個屬性，並把 M4.11 details panel 的
   `fields` 陣列再加一列。`render_svg_root` emit 出來的每個
   `<circle>` 與每個 `<text>` 現在都會多帶

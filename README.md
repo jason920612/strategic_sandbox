@@ -14,7 +14,66 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.13 — details panel
+- Latest shipped sub-milestone: **M4.14 — DOM contract
+  checkpoint refresh.** Mirrors M4.9's role for the M4
+  reaction loop: zero new behaviour, just a refreshed
+  status snapshot and one new integration assertion.
+  Refreshes `docs/milestone-4-checkpoint.md` from its
+  original M4.2–M4.8 scope to cover the four surfaces
+  that landed in M4.10–M4.13: first inline `<script>` in
+  `map.html` (asymmetric JS boundary —
+  `provinces.svg` stays script-free); details panel
+  `<dt>` labels decoupled from raw `data-*` keys
+  (`Province ID` / `Owner Index` / `Owner Code` /
+  `Province Name` / new `Owner Name` at M4.13); transient
+  `.selected` class + `circle.selected` / `text.selected`
+  CSS + `selectProvince(el)` helper (purely DOM-level —
+  no `localStorage` / `sessionStorage` / cookie / URL
+  fragment); fifth `data-owner-name` attribute on every
+  `<circle>` and `<text>` derived from
+  `state.countries[owner].name`. The checkpoint doc now
+  enumerates 13 CSS selectors in the `<style>` block (was
+  6 at M4.9), an interactivity-surface section listing
+  `<div id="details">` / `.selected` / `selectProvince`
+  / `showDetails` / the 5-entry `fields` array, and a
+  reworked deferred-items list bucketed into HOVER+TOOLTIPS,
+  KEYBOARD+A11Y, PERSISTENT SELECTION, DOM EXTENSIONS,
+  VISUAL POLISH, INFRASTRUCTURE. Adds **one** new
+  integration assertion in
+  `tests/integration/m4_dom_contract_test.cpp` (test D)
+  that pins the M4.13-era five-entry fields list inside
+  the canonical `map.html` script — both the five raw
+  `data-*` attribute names and the five human-readable
+  labels appear verbatim; `provinces.svg` carries none of
+  the JS-literal forms. Test D is the end-to-end mirror
+  of the M4.11/M4.13 svg_export_test unit cases —
+  catches accidental shrinkage back to a four-entry
+  fields array or label drift through the actual runner
+  path. **M4 remains in progress** — no
+  `docs/milestone-4-result.md`; M4.14 is a checkpoint
+  refresh, not an exit. **Renderer bytes byte-identical
+  with M4.13** — only tests + docs ship. Artefact set
+  unchanged (still 10). Save format unchanged (still
+  v12). M1.17 / M2.22 / M3.7 byte-identical determinism
+  contracts continue to pass. 1 new doctest case (857
+  total). **No new system, no new formula, no new
+  artefact, no save schema bump, no new state field, no
+  new fixture, no new `InterestGroupKind` /
+  `PlayerCommandKind`, no new feature surface (M4.14 is
+  docs + 1 integration test), no rename of any data-*
+  attribute, no change to the click handler / details
+  panel / `.selected` CSS / fields array bytes, no
+  `<meta name="viewport">`, no CSS animations /
+  transitions / media queries / `@import` / `@font-face`,
+  no neighbour / adjacency edges, no terrain / resources
+  / population overlays, no events / AI / command
+  integration, no hover state / tooltips / keyboard
+  navigation / `aria-*` polish, no selection persistence
+  across reloads, no runner CLI flag, no atomic
+  `end_tick` writes, no M4 close-out, no
+  `docs/milestone-4-result.md`, no "M4 closed" wording,
+  no change to `provinces.svg` or `map.html` bytes.**
+- Previously shipped: **M4.13 — details panel
   owner-name polish.** Widens the M4.8 identity surface by
   one attribute and the M4.11 details-panel `fields`
   array by one row. Every `<circle>` and every `<text>`
@@ -892,7 +951,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.13): **M4.14** — open.
+- Next sub-milestone candidate (post-M4.14): **M4.15** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -904,10 +963,12 @@
   `.selected` class + CSS highlight on the clicked
   province pair; M4.13 widened the identity surface to
   five data-* attrs (added `data-owner-name`) and grew
-  the details panel by one row. Natural next steps
-  include (a) hover state / tooltips reusing the same
-  XSS-safe DOM-API discipline, (b) keyboard navigation /
-  focus ring / `aria-*` polish on the clickable circles +
+  the details panel by one row; M4.14 refreshed the
+  checkpoint doc to cover M4.10–M4.13 and added one new
+  integration assertion. Natural next steps include
+  (a) hover state / tooltips reusing the same XSS-safe
+  DOM-API discipline, (b) keyboard navigation / focus
+  ring / `aria-*` polish on the clickable circles +
   texts, (c) `.selected` persistence across reload (URL
   fragment read on load, not write) without state
   mutation, (d) richer node fields (neighbour adjacency,
@@ -917,7 +978,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -948,7 +1009,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 shipped. Sixty sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 shipped. Sixty-one sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1095,6 +1156,56 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.14 DOM contract checkpoint refresh — mirrors M4.9's
+role: zero new behaviour, just a refreshed status snapshot
++ one new integration assertion.
+`docs/milestone-4-checkpoint.md` was originally written at
+M4.9 to pin the M4.2–M4.8 SVG / HTML DOM contract. M4.14
+refreshes it to cover what landed in M4.10 (first inline
+`<script>` in `map.html` + asymmetric JS boundary), M4.11
+(decoupled `<dt>` labels — `Province ID` / `Owner Index`
+/ `Owner Code` / `Province Name` / `Owner Name` at M4.13),
+M4.12 (transient `.selected` class + `circle.selected` /
+`text.selected` CSS + `selectProvince(el)` helper —
+purely DOM-level, no persistence), and M4.13 (fifth
+`data-owner-name` attribute on every `<circle>` and
+`<text>`, derived from `state.countries[owner].name`).
+The refreshed checkpoint enumerates 13 CSS selectors in
+the `<style>` block (was 6 at M4.9), an
+interactivity-surface section listing `<div id="details">`
+/ `.selected` / `selectProvince` / `showDetails` / the
+5-entry `fields` array, and a reworked deferred-items
+list bucketed into HOVER+TOOLTIPS / KEYBOARD+A11Y /
+PERSISTENT SELECTION / DOM EXTENSIONS / VISUAL POLISH /
+INFRASTRUCTURE. Adds **one** new integration assertion
+(`tests/integration/m4_dom_contract_test.cpp` test D):
+the canonical `map.html` script carries the M4.13-era
+five-entry fields list — both the five raw `data-*`
+attribute names and the five human-readable labels
+appear verbatim inside the inline `<script>`;
+`provinces.svg` carries none of the JS-literal forms.
+End-to-end mirror of the M4.11/M4.13 svg_export_test
+unit cases through the actual runner / canonical fixture
+path. **M4 remains in progress** — no
+`docs/milestone-4-result.md`; M4.14 is a checkpoint
+refresh, not an exit. Renderer bytes byte-identical with
+M4.13 — only tests + docs ship. **Artefact set unchanged
+(still 10); save format unchanged (still v12);** M1.17 /
+M2.22 / M3.7 byte-identical determinism contracts
+continue to pass. 1 new doctest case (857 total). **No
+new system / formula / artefact / state field /
+fixture, no save schema bump, no new
+`InterestGroupKind` / `PlayerCommandKind`, no new
+feature surface, no rename of any data-* attribute, no
+change to the click handler / details panel / `.selected`
+CSS / fields array bytes, no `<meta name="viewport">`,
+no CSS animations / transitions / media queries, no
+adjacency / terrain / overlays, no events / AI /
+commands, no hover / tooltip / keyboard nav / `aria-*`
+polish, no selection persistence, no runner CLI flag, no
+atomic `end_tick` writes, no M4 close-out, no
+`docs/milestone-4-result.md`, no "M4 closed" wording, no
+change to `provinces.svg` or `map.html` bytes.**;
 **M4.13 details panel owner-name polish — widens the M4.8
 identity surface by one attribute and the M4.11
 details-panel `fields` array by one row. Every `<circle>`
