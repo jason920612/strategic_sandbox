@@ -153,8 +153,9 @@
 // so it fits the column without horizontal scroll (the
 // existing `viewBox` preserves the aspect ratio). The
 // 1040px threshold is the SVG's 1000px content width
-// plus body padding (20px each side) plus the 1px
-// border each side. **Narrowly reverses the M4.5–M4.20
+// plus 2 * 20px body padding (the SVG's 1px border
+// lives INSIDE that padded column, not adding to its
+// layout width). **Narrowly reverses the M4.5–M4.20
 // "no `<meta name=viewport>`, no media queries"
 // non-goal** ── only the one viewport tag and the one
 // media query ship; broader responsive work (mobile-

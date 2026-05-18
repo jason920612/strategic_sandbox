@@ -217,8 +217,75 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.21
-  （responsive viewport skeleton）** 讓 `map.html` 在窄
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.22
+  （close-out readiness checkpoint）** 對應 M3.7 在 M3
+  反應 loop 的角色：docs + 1 個 integration test，
+  **零 renderer 行為變更**。M4.21 之後 M4 viewer stack
+  已經結構完整，M4.22 正式評估準備度、用一個 consolidated
+  end-to-end integration test（test G "M4 viewer contract
+  complete"）鎖住目前的 contract、修掉 PR #87 reviewer
+  flag 出來的 1040px 數學寫法（實作一直都用 1040 =
+  1000 + 2×20，只有 doc 文字 drift 成「1000 + 20×2 +
+  1×2 = 1042」；現在跨 svg_export.cpp / svg_export.hpp
+  / 三份 READMEs / m4-21 design note 全部修正），並
+  把 M4 exit report（`docs/milestone-4-result.md`）
+  **故意延後** 等 reviewer 給「do M4 close-out」綠燈
+  才開新 PR 寫。`docs/milestone-4-checkpoint.md` 多
+  一個新的 section 9「Close-out readiness assessment」
+  含四個 subsection：(9.1) M4 ship 的一句話總結 ──
+  deterministic 10-artefact viewer stack，包含 5 個
+  data-* identity surface、click+keydown+hover
+  listeners、transient `.selected` / `:focus-visible`
+  / `:hover` CSS rings、`role="button"` + `aria-label`、
+  hover-status text bar、viewport meta + 1 條
+  responsive `@media`；(9.2) 仍 deferred items 分三類
+  ── Category A（defer-to-M5+ gameplay-domain：鄰接
+  edge、terrain、ownership dynamics、event integration）、
+  Category B（recommended post-M4 follow-up polish：
+  broader ARIA `aria-selected` / `aria-current` /
+  `aria-pressed` / `aria-live` / `aria-describedby`、
+  pair-hover、position-aware tooltip、selection 持久化、
+  keyboard polish、mobile-only layouts、dark-mode、CSS
+  animations）、Category C（not-needed-for-close
+  nice-to-haves：container queries、`@supports`、
+  responsive font sizing、JS responsive surface、hover
+  delay）；(9.3) verdict ── **M4 結構上已準備好 close-out**；
+  (9.4) PR #87 數學寫法修正。Integration test G 在 canonical
+  scenario 上一次性檢查所有 M4.x surface marker（viewBox、
+  circle、text、5 個 data-* 屬性、tabindex、role、
+  aria-label、details panel、legend、click+keydown+
+  mouseover+mouseout listeners、hover-status、`.selected`
+  CSS、`:focus-visible`、`:hover`、fields-array labels、
+  viewport meta、`@media` block）並釘住 `provinces.svg`
+  **完全不帶** HTML-wrapper surface、所有 7 個
+  unconditional artefact 都存在、`save_version: 12`。
+  **reviewer 接下來的決策有三條路**：(1) **M4 close-out
+  PR**（publish `docs/milestone-4-result.md`，鏡像
+  `milestone-3-result.md` shape；翻三份 README 為「M4
+  closed」）；(2) **再多一個 polish PR**（從 checkpoint
+  section 9.2 Category B 挑一項）；(3) **停 M4，前往 M5**。
+  M4.22 不替 reviewer 做選擇。**M4 在這個 PR 結束時仍
+  in progress** ── 沒有寫 `docs/milestone-4-result.md`，
+  沒有「M4 closed」字樣。renderer bytes 與 M4.21 完全
+  相同 ── svg_export.cpp 的改動是純註解。**Artefact
+  數量不變（仍 10）；save 格式不變（仍 v12）**；M1.17 /
+  M2.22 / M3.7 byte-identical determinism contract 仍 by
+  construction 通過。1 個新 doctest case（共 892、61742
+  assertions；依照 `feedback_ctest_masks_doctest` 規則
+  **用直接 run `leviathan_tests.exe` 驗證**）。
+  **M4 in progress.**
+  **M4.22 不做** M4 close-out / `docs/milestone-4-result.md`
+  / 「M4 closed」字樣 / 新 feature surface（M4.22 只是
+  docs + 1 個 integration test + 1 個 math wording fix）
+  / 新 system / 新 formula / 新 artefact / 新 state field
+  / 新 fixture / save schema bump / 新 `InterestGroupKind`
+  / `PlayerCommandKind` / rename 任何 data-* attribute /
+  renderer 行為變更 / broader ARIA / pair-hover /
+  position-aware tooltip / keyboard polish / selection
+  持久化 / hover delay / dark-mode（全部按 checkpoint
+  section 9.2 deferred）/ 動 `provinces.svg` 或
+  `map.html` bytes。
+  **M4.21（responsive viewport skeleton）** 讓 `map.html` 在窄
   螢幕 / 行動裝置上能正常顯示。兩個小改動：(a) `<head>`
   裡新增 `<meta name="viewport"
   content="width=device-width, initial-scale=1">`（位置
@@ -229,7 +296,9 @@ M0 / M1 中落地，部分仍是未來工作：
   `@media (max-width: 1040px)` 規則：`svg { width: 100%;
   max-width: 100%; height: auto; }`，讓 SVG 在窄螢幕上
   填滿欄寬而不會出現水平捲動。1040px 的 threshold = 1000
-  （SVG 寬度）+ 20*2（body padding）+ 1*2（border）。
+  （SVG 寬度）+ 2 × 20px（body padding）= 1040px
+  （SVG 的 1px border 在 padded column 內部，不會額外
+  增加 layout 寬度）。
   threshold 以上 M4.6 桌面 rule（`margin: 0 auto`）會贏；
   threshold 以下 M4.21 的 @media 規則會贏。既有的
   `viewBox` 讓百分比寬度下 SVG aspect ratio 自然保留。
