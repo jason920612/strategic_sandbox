@@ -902,13 +902,33 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     namespace dl = leviathan::systems::data_loader;
 
     // ---- 0. Reject pre-populated state -----------------------------
-    if (!state.countries.empty() || !state.factions.empty()
-        || !state.policies.empty()) {
-        return core::Result<ScenarioLoadOutcome>::failure(
-            manifest_path.string() +
-            ": load_into_state requires an empty GameState"
-            " (state.countries / state.factions / state.policies"
-            " must all be empty)");
+    // Issue #110 §4: every loader-populated root container on
+    // GameState must be empty on entry, not just the first three.
+    // The 7 loader-populated containers are: countries, provinces,
+    // factions, policies, events, interest_groups, relationships.
+    // The remaining root containers (logs, applied_commands,
+    // event_history) are runtime accumulations and NOT in scope.
+    {
+        std::string non_empty;
+        auto note = [&](const char* name, bool flag) {
+            if (flag) {
+                if (!non_empty.empty()) { non_empty += ", "; }
+                non_empty += name;
+            }
+        };
+        note("countries",       !state.countries.empty());
+        note("provinces",       !state.provinces.empty());
+        note("factions",        !state.factions.empty());
+        note("policies",        !state.policies.empty());
+        note("events",          !state.events.empty());
+        note("interest_groups", !state.interest_groups.empty());
+        note("relationships",   !state.relationships.empty());
+        if (!non_empty.empty()) {
+            return core::Result<ScenarioLoadOutcome>::failure(
+                manifest_path.string() +
+                ": load_into_state requires an empty GameState"
+                " (non-empty containers: " + non_empty + ")");
+        }
     }
 
     // ---- 1. Read + parse manifest ----------------------------------

@@ -42,18 +42,37 @@
 //   * Every loaded faction's `country_id_code` must match a loaded
 //     country's `id_code`; FactionState::country is set to the
 //     numeric CountryId of that match.
-//   * `state.countries` / `state.factions` / `state.policies` must
-//     all be empty on entry to load_into_state. The M1.11 loader
-//     does not append; callers that want incremental loading must
-//     build their own pipeline.
+//   * Every loader-populated root container on GameState must be
+//     empty on entry to load_into_state. Issue #110 §4 widened the
+//     preflight from {countries, factions, policies} to the full
+//     7-container set:
+//
+//       state.countries
+//       state.provinces
+//       state.factions
+//       state.policies
+//       state.events
+//       state.interest_groups
+//       state.relationships
+//
+//     If ANY of these is non-empty, load_into_state returns
+//     Result::failure with a message that names every non-empty
+//     container. The loader does NOT append; callers that want
+//     incremental loading must build their own pipeline.
+//
+//     The remaining root containers — state.logs,
+//     state.applied_commands, state.event_history — are runtime
+//     accumulations (M0.6 / M2.4 / M5.4) and are NOT in the
+//     empty-state contract; the loader does not populate them.
 //
 // What this loader does NOT do:
 //   * Schedule policies over time. Entries in `starting_policies`
 //     are applied exactly once at load time via M1.5's
-//     `apply_policy_effects`. There is NO duration queue, NO
-//     monthly scheduler, NO AI / event-triggered enactment. Policies
-//     not named in `starting_policies` remain inert templates in
-//     `state.policies` until a future system enacts them.
+//     `apply_policy_effects`. There is NO duration queue and NO
+//     monthly scheduler at the loader layer. Issue #110 wires the
+//     monthly tick to call `ai_policy::apply_selected_policies`,
+//     so policies NAMED in `state.policies` may be enacted by the
+//     AI after load — but the LOADER itself doesn't enact them.
 //   * Touch RNG, logs, or the date. The save-format version is
 //     owned by SaveSystem (`kSaveFormatVersion`) and is not
 //     changed by scenario loading; M1.13 introduces no new

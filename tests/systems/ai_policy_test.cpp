@@ -68,7 +68,8 @@ TEST_CASE("RCR-1 ai_policy: policies but no countries produces empty selections"
 // RCR-1 ai_policy::select_policies — happy path
 // =====================================================================
 
-TEST_CASE("RCR-1 ai_policy: 3 countries no player gets one selection each, all to policies[0]") {
+TEST_CASE("ai_policy: 3 countries no player produces one selection each "
+          "(synthetic empty policies score 0; vector-order tie-break picks policies[0])") {
     GameState state = leviathan::core::make_game_state(
         leviathan::core::SimulationConfig{});
     state.countries.push_back(make_country("GER"));

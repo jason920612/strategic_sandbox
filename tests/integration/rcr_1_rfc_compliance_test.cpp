@@ -21,9 +21,11 @@
 //     are exercised through the runner via the compliance
 //     scenario.
 //   - RFC-090 §3.6 / §3.7 relationships block survives save
-//     round-trip (the compliance scenario authors zero
-//     relationship entries by default; the data layer +
-//     save layer are exercised through the empty-block path).
+//     round-trip. The compliance scenario authors 10 pairwise
+//     relationship records (GER↔FRA, GER↔POL, JPN↔CHN,
+//     USA↔GBR, SOV↔POL — five pairs, both directions); the
+//     scorer reads each `to`-country's inbound `threat` so AI
+//     selection actually responds to authored hostility.
 //   - RFC-090 §3.8 military_strength survives save round-trip
 //     (every country JSON authors a value; the save layer
 //     emits and re-reads it).

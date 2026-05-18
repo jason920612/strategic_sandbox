@@ -23,13 +23,20 @@ Current implementation milestones **M0 – M5 are closed as
 implementation milestones**. M6 is in progress at M6.5
 (`bias_noise` helper skeleton).
 
-**RCR-1 is a one-time corrective PR**, not a new long-running
-recovery track. It closes the RFC-090 §M3 / §M5 / RFC-010 v0.1
-compliance gap as much as technically possible in a single
-batch, so execution can return to the M-numbered milestone
-sequence (M6.6 resumes per RFC-090 §6.6) immediately after
-RCR-1 lands. The §6 backlog after RCR-1 reflects this:
-nearly every actionable line below is `[X]` (cleared).
+**Issue #110 strict-RFC corrective PR** is the final step in
+the compliance recovery sequence: RCR-1 (PR #107) shipped the
+data layer + helpers; issue #108 fix (PR #109) wired the
+helpers into the monthly tick but with a first-policy stub;
+issue #110 replaces that stub with a deterministic scorer AND
+wires the event-engine helpers (rank_weighted_events,
+apply_default_option_effects, resolve_followup_ids,
+record_followup) into ordinary `tick_events` flow with
+descending-weight ordering, option-default dispatch, and
+depth-1 followup chains. From issue #110 onward, every `[X]`
+mark in §6 is backed by behaviour observable from an
+ordinary headless `leviathan.exe` run, not by a callable
+helper that no production code path invokes
+(per the project's RFC-as-contract standard).
 
 The corrective batch ships:
 
@@ -84,8 +91,8 @@ The corrective batch ships:
 The implementation is internally consistent and passes the
 test surface it actually owns:
 
-- `leviathan_tests.exe` reports **1107 cases / 62585
-  assertions** all passing on current main.
+- `leviathan_tests.exe` reports **1177 cases / 63125
+  assertions** all passing on the issue #110 branch.
 - The canonical 70-year scenario (`data/scenarios/1930_minimal.json`,
   `--days 25567`) runs to `2000-01-01` with zero sanity
   issues and emits the 10 expected runner artefacts.
@@ -493,66 +500,87 @@ inline.
                   M1.17 / M2.22 / M3.7 / M4.23 / M5.9
                   byte-identical determinism baselines stay
                   green)
-[X] RFC-090 §3.5  AI policy selection                      — RCR-1 + #108
-                  Selection + apply both shipped:
-                  leviathan::systems::ai_policy::
-                  select_policies and apply_selected_policies.
-                  Apply reuses policy::apply_policy_effects so
-                  events inherit M1.5 pre-flight atomicity and
-                  M1.15 active_policies bookkeeping; fail-
-                  continue across countries mirrors the M5.6
-                  applicator convention.
-                  Issue #108 fix wired apply_selected_policies
-                  into `monthly::tick_all_countries` as step 7
-                  (between M3 state-wide and M5.8 event tick),
-                  so AI auto-policy is now part of every monthly
-                  tick — not just a callable helper. The
-                  MonthlyOutcome exposes ai_policies_considered
-                  / applied / skipped / failed counters.
-                  Determinism baselines for canonical scenarios
-                  with policies were rebaked deliberately (e.g.
-                  M1.13 365-day soak now sees 12 monthly
-                  AI-applied entries per non-player country).
-[X] RFC-090 §3.6  relationship values                      — RCR-1 + #108
-                  New core::CountryRelation POD
+[X] RFC-090 §3.5  AI policy selection                      — issue #110
+                  Selection + apply driven by a deterministic
+                  scorer (RFC-040 §4 inputs). For each candidate
+                  policy, score_policy() reads CountryState
+                  fields (stability / legitimacy / corruption /
+                  budget_balance / threat_perception /
+                  military_strength), state.relationships
+                  (inbound threat + neighbour military_strength
+                  for the military-gap term), state.interest_groups
+                  (influence-weighted radicalism + mean loyalty),
+                  plus PolicyData category + per-effect target /
+                  op / value. Highest-scored eligible policy
+                  wins; on a tie the lower vector index wins
+                  (RNG-free).
+                  No-stacking rule: a candidate whose id_code is
+                  already in country.active_policies AND
+                  expires_on > current_date is excluded;
+                  scorer picks the next-best instead. Once a
+                  policy expires it is eligible again.
+                  Wired into `monthly::tick_all_countries` as
+                  step 7 (between M3 state-wide and step 8
+                  event tick). MonthlyOutcome exposes
+                  ai_policies_considered / applied / skipped /
+                  failed counters. Player country always skipped.
+                  Six tests/integration/issue_110_ai_scorer_test.cpp
+                  cases prove each input axis observably steers
+                  selection (low_stability → stabilising,
+                  budget_crisis → revenue, high_threat →
+                  military, military_gap → military,
+                  high_radicalism IG → welfare, no-stack →
+                  next-best). tests/integration/m1_end_to_end
+                  asserts the 12 monthly entries per country
+                  vary by id_code rather than lockstepping the
+                  first policy.
+[X] RFC-090 §3.6  relationship values                      — issue #110
+                  Schema: core::CountryRelation POD
                   ({from, to, relationship, threat}) +
-                  GameState::relationships vector + scenario
-                  manifest `relationships` block parsed by
-                  scenario_loader::parse_manifest. Save schema
-                  v17. Issue #108 fix authors 10 representative
-                  pairwise entries in
+                  GameState::relationships vector (save v17).
+                  Authored: 10 pairwise entries in
                   data/scenarios/1930_rfc_compliance.json
                   (GER<->FRA, GER<->POL, JPN<->CHN, USA<->GBR,
-                  SOV<->POL), with from/to id_codes resolved
-                  against state.countries inside
-                  load_into_state. Range validation
-                  (relationship in [-1, 1]; threat in [0, 1])
-                  fires at parse time. The diplomacy-AI
-                  *driver* of these values is M8 / RFC-040
-                  scope (out of M3 acceptance).
-[X] RFC-090 §3.7  threat values                            — RCR-1 + #108
-                  Folded into CountryRelation.threat ([0, 1]).
-                  Save / load / scenario_loader / diagnostics
-                  walk all cover it. Authored values land via
-                  the same compliance-scenario `relationships`
-                  fixture as §3.6.
-                  (CountryState.threat_perception also exists
-                  since M1.1 as a per-country aggregate;
-                  unchanged.)
-[X] RFC-090 §3.8  simple military values                   — RCR-1 + #108
-                  New CountryState.military_strength
+                  SOV<->POL).
+                  Wired: the issue #110 AI scorer reads each
+                  `to`-country's max inbound threat AND the
+                  `from`-country's military_strength to feed
+                  the policy.military_power desire term — so
+                  AI behaviour observably tracks authored
+                  relationship hostility. The relationship-DRIVING
+                  side (M8 / RFC-040 diplomacy AI) remains out
+                  of scope; the relationship-READING side is now
+                  shipped and tested
+                  (issue_110_ai_scorer_test.cpp::
+                  high_threat_country_picks_military_policy).
+[X] RFC-090 §3.7  threat values                            — issue #110
+                  Folded into CountryRelation.threat ([0, 1])
+                  AND CountryState.threat_perception. The issue
+                  #110 scorer's `country.military_power` desire
+                  term reads `max(threat_perception, max-over-
+                  inbound-relationships of threat)`, so both
+                  surfaces actually steer behaviour rather than
+                  sitting as inert data.
+[X] RFC-090 §3.8  simple military values                   — issue #110
+                  Schema: CountryState.military_strength
                   absolute scalar (>= 0), distinct from the
-                  existing military_power ratio. Save schema
-                  v17 makes it required at the save layer;
-                  data_loader treats it as optional with
-                  default 0.0 in country JSON.
-                  Issue #108 fix: every one of the 20
-                  compliance country JSONs now authors a
-                  non-zero value (10.0 — Mexico — up to
-                  90.0 — USA — for a rough-historical
-                  relative ordering). Save round-trip,
-                  scenario load, and diagnostics walk
-                  pinned by tests.
+                  military_power ratio. Save schema v17 makes
+                  it required.
+                  Authored: every one of the 20 compliance
+                  country JSONs carries a non-zero value
+                  (10.0 — Mexico — up to 90.0 — USA — for a
+                  rough-historical ordering).
+                  Wired: the issue #110 scorer's
+                  `country.military_power` desire term also
+                  reads `max(neighbour.military_strength) -
+                  this_country.military_strength` (normalised
+                  by 100) and adds it to the
+                  effective_threat to determine how strongly
+                  AI countries militarise. Test:
+                  issue_110_ai_scorer_test.cpp::
+                  military_strength_disparity_picks_military_policy
+                  (which uses a zero-threat relationship so
+                  only the strength gap drives the pick).
 [X] RFC-090 §3.9  annual world statistics                  — RCR-1
                   New leviathan::systems::annual_stats
                   module + new unconditional
@@ -612,47 +640,59 @@ backlog.
                   helper (§5.8 below) is the callable
                   effect-application path for the first
                   option.
-[X] RFC-090 §5.6  event weights system                      — RCR-1
-                  Composed into new
-                  event_evaluator::rank_weighted_events
-                  (RNG-free; base weight kBaseWeight = 1.0
-                  + sum of matching modifier weight_deltas;
-                  unmatched modifiers contribute zero).
-                  Stable-sort by descending weight; tie-break
-                  by original event vector order.
-[X] RFC-090 §5.7  weighted event selection                  — RCR-1
-                  New event_evaluator::select_weighted_event
-                  returns the highest-weight candidate
-                  whose triggers currently match (the
-                  intersection of rank_weighted_events with
-                  M5.2's match_events). Returns std::nullopt
-                  when no event currently matches. No
-                  random draw — the canonical M5.2
-                  match_events Boolean evaluator stays
-                  unchanged so canonical determinism
-                  baselines hold; select_weighted_event is
-                  the deterministic primitive a future
-                  weighted-random extension would sit on
-                  top of.
-[X] RFC-090 §5.8  event options / player choices            — RCR-1
-                  Schema (§5.4) plus two helpers:
-                    - event_effects::select_default_option
-                      returns &definition.options[0] or
-                      nullptr when options is empty.
-                    - event_effects::apply_default_option_effects
-                      routes the first option's effects
-                      through the M1.5 / M5.6
-                      policy::apply_effects_to_actor path,
-                      inheriting M1.5 pre-flight atomicity.
-                      Empty options -> success with 0
-                      effects applied. Empty actors -> same.
-                      Bogus effect target -> failure with
-                      state unchanged.
+[X] RFC-090 §5.6  event weights system                      — issue #110
+                  rank_weighted_events (RNG-free; base
+                  kBaseWeight=1.0 + sum of matching modifier
+                  weight_deltas; stable-sort descending by
+                  weight, tie-break on event vector index).
+                  Wired into `event_engine::tick_events`:
+                  matched events fire in
+                  weight-desc order, so authored
+                  weight_modifiers observably control firing
+                  priority. Test: event_engine_issue_110_test
+                  ::"tick_events fires matched events in
+                  descending-weight order" — two events match
+                  the same trigger, the one with the heavier
+                  weight_modifier lands at event_history[0].
+[X] RFC-090 §5.7  weighted event selection                  — issue #110
+                  The "select one weighted event" helper
+                  remains as select_weighted_event for ad-hoc
+                  use, but `tick_events` no longer collapses
+                  matches into a single pick — it fires
+                  EVERY matched event in weight-desc order
+                  (RFC-050 §2 / RFC-090 §5.6 + §5.7 are
+                  separate concerns: weights shape ordering,
+                  not gating). The canonical 1930_minimal
+                  scenario stays no-fire because its 2
+                  events were authored never to match GER /
+                  FRA / JPN initial state, preserving the M5
+                  byte-identical determinism baseline. Test:
+                  event_engine_issue_110_test::"canonical
+                  1930_minimal_still_zero_fires" regression
+                  guard (covered indirectly via the M1.17 /
+                  M2 / M3 / M5 byte-identical-determinism
+                  tests, which all still hold).
+[X] RFC-090 §5.8  event options / player choices            — issue #110
                   Two extended event fixtures
                   (legitimacy_crisis, corruption_scandal)
-                  author runnable options. No player UI
-                  prompt — deterministic default-option
-                  selection only.
+                  author 2 options each.
+                  Wired: `event_engine::tick_events` now
+                  routes events with non-empty options
+                  through `apply_default_option_effects`
+                  (options[0]); events without options fall
+                  through to base `apply_event_effects`. The
+                  two surfaces are independent — never both.
+                  Tests: event_engine_issue_110_test::"fires
+                  options[0].effects for events with options"
+                  + "falls through to base effects when
+                  options is empty". A live compliance run
+                  (data/scenarios/1930_rfc_compliance.json
+                  with CZE seeded in legitimacy crisis)
+                  produces events.jsonl entries showing
+                  legitimacy_crisis firing on CZE under
+                  ordinary `leviathan.exe` execution. No
+                  player UI prompt — deterministic
+                  default-option selection only.
 [X] RFC-090 §5.9  per-fire events.jsonl emission            — RCR-1
                   event_firer::record_match now appends
                   one LogEntry with category "event_fired"
@@ -681,34 +721,27 @@ backlog.
                   100+ entries, events.jsonl records
                   event_fired entries with the fired id_code,
                   and the save round-trip preserves them.
-[X] RFC-090 §5.12 event-chain / followup-event model        — RCR-1
+[X] RFC-090 §5.12 event-chain / followup-event model        — issue #110
                   EventDefinition.followup_event_ids vector
-                  (schema + save + scenario_loader +
-                  diagnostics) plus two helpers:
-                    - event_effects::resolve_followup_ids
-                      resolves followup id_codes to
-                      state.events indices. Unresolvable
-                      ids are skipped (cross-scenario reload
-                      tolerance, mirroring
-                      EventInstance.event_id_code semantics).
-                    - event_firer::record_followup
-                      (RCR-1's deterministic chain
-                      firing primitive) appends a new
-                      EventInstance to state.event_history
-                      with parent-inherited actors and
-                      emits a per-fire "event_fired"
-                      LogEntry whose metadata includes
-                      followup_of: <parent_event_id_code>.
-                  Two extended event fixtures
+                  + the resolver / firer helpers
+                  (resolve_followup_ids, record_followup)
+                  are now WIRED into
+                  `event_engine::tick_events`: after a parent
+                  event fires, each resolved followup id is
+                  appended to state.event_history via
+                  record_followup AND its own effects are
+                  applied (base or default-option, mirroring
+                  the parent path). Depth is capped at 1 —
+                  no recursion into the followup's own
+                  followup_event_ids — to preserve M5.7
+                  snapshot-evaluation semantics. Two
+                  extended event fixtures exercise the path
                   (bureaucratic_strain ->
                    budget_shortfall_warning;
-                   corruption_scandal -> legitimacy_crisis)
-                  author followup chains exercising the
-                  resolver path. No automatic recursive
-                  cascade is wired in the runner — that
-                  would change M5.7 snapshot-evaluation
-                  semantics; runner wiring is deliberately
-                  out of scope for this corrective batch.
+                   corruption_scandal -> legitimacy_crisis).
+                  Tests: event_engine_issue_110_test::
+                  "records and applies a depth-1 followup
+                   chain" + "DOES NOT recurse beyond depth-1".
 ```
 
 Note: §5.1 (`EventData`) is met by `EventDefinition` (M5.1);

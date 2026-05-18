@@ -47,29 +47,36 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
-// M5.8 adds a fourth (and currently final) global step AFTER M3.4:
+// Issue #110 lays out the two final global steps AFTER M3.4:
 //
-//   7.  event_engine::tick_events (state)
+//   7.  ai_policy::apply_selected_policies (state)
+//   8.  event_engine::tick_events            (state)
 //
-// `tick_events` is the M5.7 composition that evaluates all
-// `state.events` against the post-M3.4 state snapshot, fires
-// every matching event (appends to `state.event_history`), and
-// applies each fired event's effects via the M5.6 / M1.5
-// shared apply path. Runs LAST so it sees the freshest values
-// every other monthly system just produced — events about "low
-// stability" or "high radicalism" check the values as they
-// stand at month-end, not the pre-month-tick snapshot.
+// Step 7 picks one policy per non-player country via the
+// deterministic scorer (`ai_policy::select_policies`) and applies
+// it through the M1.5 `apply_policy_effects` path. Each successful
+// apply appends one ActivePolicy entry to
+// `country.active_policies` (the M1.15 active-policy contract).
+// The scorer reads RFC-090 §3.5 / §3.6 / §3.7 / §3.8 inputs:
+// CountryState fields (stability / legitimacy / corruption /
+// budget_balance / threat_perception / military_strength),
+// `state.relationships` for inbound threat + military-strength
+// disparity, `state.interest_groups` for IG-radicalism /
+// loyalty pressure, plus PolicyData category + effects shape.
 //
-// `tick_events` is documented as snapshot-evaluation: the
-// evaluator runs once at the top of the call and subsequent
-// apply passes that mutate state do NOT re-trigger evaluation
-// in the same month. Cascade events (event B that becomes true
-// only because event A's apply dropped a value) wait for the
-// next monthly tick. `tick_events` does NOT append to
-// `state.logs` / `state.applied_commands` / `events.jsonl` /
-// any country's `active_policies`; it mutates only
-// `state.event_history` and any country fields that the
-// applied effects target.
+// Step 8 (`tick_events`) evaluates all `state.events` against the
+// post-step-7 snapshot, fires every matching event in
+// descending `rank_weighted_events` weight order (stable
+// tie-break on event vector index), and routes each fire
+// through option-default (`apply_default_option_effects`) or
+// base (`apply_event_effects`) — never both. Followups
+// (`followup_event_ids`) execute depth-1: each resolved
+// followup id is recorded via `record_followup` and its own
+// effects applied; the followup's own `followup_event_ids` is
+// NOT recursed. `record_match` and `record_followup` append
+// one `LogEntry{category="event_fired", source="event_firer"}`
+// to `state.logs` per fire — that's what surfaces in
+// `events.jsonl`.
 //
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
@@ -79,10 +86,7 @@
 // reversed order would produce a different result, so a future
 // refactor cannot silently flip the order.
 //
-// M1.9 deliberately does NOT do:
-//   * Policy enactment / duration tracking / active-policy container.
-//     A policy fires explicitly via `policy::apply_policy_effects`
-//     from outside the pipeline; M1.9 has no opinion on when.
+// `tick_all_countries` deliberately does NOT do:
 //   * Runner / TimeSystem auto-invocation. The caller decides when a
 //     month boundary occurred.
 //   * Logging, RNG use, date mutation, save-schema change. Tests
