@@ -812,6 +812,32 @@ std::string serialize(const core::GameState& state) {
     }
     root["events"] = std::move(events_arr);
 
+    // M5.4: event_history array carries fired-event records
+    // (EventInstance). M5.4 ships the data layer only — no system
+    // creates these records yet (no auto-fire, no effects
+    // application). Hand-built entries round-trip through this
+    // path for future-firer forward-compat. Per-actor fields are
+    // strings (kind / id_code / country_id_code) plus a transient
+    // index hint; see entities.hpp for the EventInstance contract.
+    json event_history_arr = json::array();
+    for (const auto& inst : state.event_history) {
+        json entry = json::object();
+        entry["event_id_code"] = inst.event_id_code;
+        entry["fired_on"]      = inst.fired_on.to_string();
+        json actors_arr = json::array();
+        for (const auto& a : inst.actors) {
+            json aj = json::object();
+            aj["kind"]            = a.kind;
+            aj["id_code"]         = a.id_code;
+            aj["country_id_code"] = a.country_id_code;
+            aj["index"]           = a.index;
+            actors_arr.push_back(std::move(aj));
+        }
+        entry["actors"] = std::move(actors_arr);
+        event_history_arr.push_back(std::move(entry));
+    }
+    root["event_history"] = std::move(event_history_arr);
+
     json logs = json::array();
     for (const auto& e : state.logs) {
         logs.push_back(log_entry_to_json(e));
@@ -1552,6 +1578,129 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         ev.triggers    = std::move(triggers);
         ev.effects     = std::move(effects);
         state.events.push_back(std::move(ev));
+    }
+
+    // M5.4: event_history array. Required at the save layer (empty
+    // array allowed) so a malformed v14 save (missing the key
+    // outright) fails loudly rather than silently dropping any
+    // hand-authored M5.4 history fixtures or future M5.x firer
+    // output. Each entry: { event_id_code, fired_on, actors[] }.
+    // Actor kind allowlist {"country", "interest_group"}; id_code
+    // and country_id_code required non-empty; index required
+    // non-negative integer. M5.4 does NOT cross-check that
+    // event_id_code resolves to an entry in state.events — that
+    // would prevent the legitimate "load this save into a
+    // different scenario manifest" case.
+    static const std::vector<std::string> kEventHistoryActorKindsSave = {
+        "country", "interest_group",
+    };
+    auto is_actor_kind_allowed = [](const std::string& v) {
+        for (const auto& s : kEventHistoryActorKindsSave) {
+            if (s == v) { return true; }
+        }
+        return false;
+    };
+    if (!root.contains("event_history")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'event_history'"));
+    }
+    const auto& eh_arr = root.at("event_history");
+    if (!eh_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'event_history' has wrong type (expected JSON array)"));
+    }
+    state.event_history.reserve(eh_arr.size());
+    for (std::size_t i = 0; i < eh_arr.size(); ++i) {
+        const std::string eh_ctx =
+            std::string(source_label) + ": event_history[" +
+            std::to_string(i) + "]";
+        const auto& entry = eh_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                eh_ctx + ": expected JSON object");
+        }
+
+        auto event_id_code_r = require_string(entry, "event_id_code", eh_ctx);
+        if (!event_id_code_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(event_id_code_r.error()));
+        }
+        if (event_id_code_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                eh_ctx + ": 'event_id_code' must be non-empty");
+        }
+
+        auto fired_on_r = require_date(entry, "fired_on", eh_ctx);
+        if (!fired_on_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(fired_on_r.error()));
+        }
+
+        if (!entry.contains("actors") || !entry.at("actors").is_array()) {
+            return core::Result<core::GameState>::failure(
+                eh_ctx + ": 'actors' missing or not an array");
+        }
+        const auto& actors_arr = entry.at("actors");
+        std::vector<core::EventInstanceActor> actors;
+        actors.reserve(actors_arr.size());
+        for (std::size_t ai = 0; ai < actors_arr.size(); ++ai) {
+            const std::string actx =
+                eh_ctx + ": actors[" + std::to_string(ai) + "]";
+            const auto& a = actors_arr[ai];
+            if (!a.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    actx + ": expected JSON object");
+            }
+            auto kind_r = require_string(a, "kind", actx);
+            if (!kind_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(kind_r.error()));
+            }
+            if (!is_actor_kind_allowed(kind_r.value())) {
+                return core::Result<core::GameState>::failure(
+                    actx + ": 'kind' '" + kind_r.value() +
+                    "' is not in the M5.4 allowlist"
+                    " (country, interest_group)");
+            }
+            auto id_code_r2 = require_string(a, "id_code", actx);
+            if (!id_code_r2) {
+                return core::Result<core::GameState>::failure(
+                    std::move(id_code_r2.error()));
+            }
+            if (id_code_r2.value().empty()) {
+                return core::Result<core::GameState>::failure(
+                    actx + ": 'id_code' must be non-empty");
+            }
+            auto country_id_code_r =
+                require_string(a, "country_id_code", actx);
+            if (!country_id_code_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(country_id_code_r.error()));
+            }
+            if (country_id_code_r.value().empty()) {
+                return core::Result<core::GameState>::failure(
+                    actx + ": 'country_id_code' must be non-empty");
+            }
+            auto index_r = require_u64(a, "index", actx);
+            if (!index_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(index_r.error()));
+            }
+            core::EventInstanceActor av;
+            av.kind            = std::move(kind_r).value();
+            av.id_code         = std::move(id_code_r2).value();
+            av.country_id_code = std::move(country_id_code_r).value();
+            av.index           = static_cast<std::size_t>(index_r.value());
+            actors.push_back(std::move(av));
+        }
+
+        core::EventInstance inst;
+        inst.event_id_code = std::move(event_id_code_r).value();
+        inst.fired_on      = fired_on_r.value();
+        inst.actors        = std::move(actors);
+        state.event_history.push_back(std::move(inst));
     }
 
     return core::Result<core::GameState>::success(std::move(state));

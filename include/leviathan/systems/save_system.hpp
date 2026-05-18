@@ -146,7 +146,32 @@ namespace leviathan::systems::save_system {
 //                block as optional in raw scenario JSON; M5.1
 //                does not yet evaluate triggers / fire events /
 //                apply effects / emit any new artefact.
-inline constexpr std::uint32_t kSaveFormatVersion   = 13;
+//   v14 (M5.4) - new root-level `event_history` array carrying
+//                fired-event records (`EventInstance`). A v13
+//                save had no concept of fired events (M5.1/M5.2/
+//                M5.3 were all schema + evaluator with zero
+//                firing); silently defaulting to "no history" on
+//                reload would drop any hand-authored M5.4 fixture
+//                or future M5.x firer output. We bump strictly.
+//                At the save-file level the `event_history`
+//                array is REQUIRED (empty array allowed); every
+//                entry is validated: non-empty `event_id_code`,
+//                valid `fired_on` date string (YYYY-MM-DD shape +
+//                `is_valid()`), `actors` array (may be empty)
+//                with every actor entry carrying a kind from the
+//                allowlist {"country", "interest_group"},
+//                non-empty `id_code`, non-empty
+//                `country_id_code`, and a non-negative `index`.
+//                M5.4 does NOT cross-check that the referenced
+//                event still exists in `state.events` — that
+//                would prevent the legitimate "load a save into
+//                a different scenario manifest" case. M5.4 ships
+//                the data layer + save round-trip ONLY: no
+//                system creates EventInstance records yet (no
+//                auto-fire, no effects application, no runner
+//                or monthly integration, no events.jsonl change,
+//                no new artefact — still 10).
+inline constexpr std::uint32_t kSaveFormatVersion   = 14;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

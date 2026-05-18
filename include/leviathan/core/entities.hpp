@@ -251,9 +251,13 @@ struct PolicyData {
 // `op` is a comparison operator from the allowlist {lt, lte, gt,
 // gte}. `value` must be finite.
 //
-// M5.1 stores triggers as data only; no trigger evaluator exists
-// yet. Multiple triggers on the same definition mean AND in the
-// future evaluator; M5.1 only validates / stores them.
+// M5.1 introduced the trigger schema (data only). M5.2 added
+// the trigger evaluator with AND semantics across a definition's
+// triggers. M5.3 enriched matches with actor binding (which
+// country / interest group satisfied each trigger). M5.4 added
+// the event_history data layer for fired-event records. Auto-fire
+// / effects application / runner integration / events.jsonl
+// integration are still deferred to a future M5.x.
 struct EventTrigger {
     std::string target;
     std::string op;
@@ -276,6 +280,61 @@ struct EventDefinition {
     std::string               description;
     std::vector<EventTrigger> triggers;   // non-empty at load
     std::vector<PolicyEffect> effects;    // may be empty (warning-only)
+};
+
+// M5.4: one fired event's recorded actor (the country or interest
+// group that satisfied a trigger). Mirrors the runtime
+// `event_evaluator::TriggerActor` shape but stores stable strings
+// only — no `CountryId` numeric handle — so the save layer can
+// round-trip without depending on session-local index values.
+//
+// `kind` is a closed enum-as-string: `"country"` or
+// `"interest_group"`. The save layer enforces the allowlist.
+//
+// `id_code` is the entity's stable identifier (country id_code for
+// `kind="country"`; IG id_code for `kind="interest_group"`).
+//
+// `country_id_code` is always the *owning* country: for
+// `kind="country"` it equals `id_code`; for `kind="interest_group"`
+// it is the IG's owning country (so a future "apply this IG-trigger's
+// effect to the IG's owning country" path doesn't need a lookup).
+//
+// `index` is the position in the appropriate live state vector at
+// the time the event fired. It is a transient runtime hint, not a
+// stable identifier — `id_code` is authoritative.
+struct EventInstanceActor {
+    std::string kind;             // "country" | "interest_group"
+    std::string id_code;
+    std::string country_id_code;  // owning country id_code (self for kind=country)
+    std::size_t index = 0;        // pos in state.countries / state.interest_groups
+};
+
+// M5.4: one fired event record stored in `GameState::event_history`.
+//
+// M5.4 ships the DATA layer only — no system creates these records
+// yet (no auto-fire, no effects application). Hand-built records
+// round-trip through the save layer for forward-compat with future
+// M5.x sub-milestones that introduce the firer.
+//
+// `event_id_code` references an `EventDefinition::id_code`. The
+// save layer does not cross-check that the referenced event still
+// exists in `state.events` — replaying a save with a different
+// scenario manifest could legitimately leave history entries that
+// no longer have a matching definition.
+//
+// `fired_on` is the calendar date the event fired (mirrors the M2.4
+// `AppliedPlayerCommand::applied_on` shape).
+//
+// `actors` mirrors the M5.3 `EventMatch::triggers` actor binding,
+// one entry per `EventDefinition::triggers` entry that was
+// satisfied at fire time, in definition order. Empty vector is
+// allowed at the data layer (vacuously-true / no-trigger defs)
+// but the M5.1 loader rejects empty triggers, so this case is
+// unreachable through canonical events.
+struct EventInstance {
+    std::string                     event_id_code;
+    GameDate                        fired_on;
+    std::vector<EventInstanceActor> actors;
 };
 
 // Coarse-grained category for an interest group / political actor

@@ -816,8 +816,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v12 - M4.1 fleshed out root-level provinces.
-    CHECK(save.find("\"save_version\": 13") != std::string::npos);
+    // Save schema is now v14 - M5.4 added root-level event_history.
+    CHECK(save.find("\"save_version\": 14") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1060,7 +1060,7 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v13 (M5.1 bumped from v12 for event definitions)") {
+TEST_CASE("run: save schema is now v14 (M5.4 bumped from v13 for event_history)") {
     TempDir td("leviathan_runner_m31_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -1070,7 +1070,7 @@ TEST_CASE("run: save schema is now v13 (M5.1 bumped from v12 for event definitio
     const std::string save = read_file(td.path / "save.json");
     // Pin the current version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 13") != std::string::npos);
+    CHECK(save.find("\"save_version\": 14") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------
@@ -3340,9 +3340,11 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
     CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
     CHECK_FALSE(fs::exists(td.path / "event_log.csv"));
 
-    // save.json carries the v13 schema bump + 2 canonical events.
+    // save.json carries the current v14 schema, the 2 canonical
+    // event definitions, and an empty event_history in M5.4 (no
+    // auto-fire).
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 13") != std::string::npos);
+    CHECK(save.find("\"save_version\": 14") != std::string::npos);
     CHECK(save.find("\"id_code\": \"low_stability_unrest\"")
           != std::string::npos);
     CHECK(save.find("\"id_code\": \"radical_interest_group_warning\"")
@@ -3386,6 +3388,44 @@ TEST_CASE("run: canonical scenario at M5.1 — countries / interest_groups are N
     // (If M5.1 incorrectly fired the unrest event during load,
     // it would have dropped to 0.53.)
     CHECK(save.find("\"stability\": 0.55") != std::string::npos);
+}
+
+// =====================================================================
+// M5.4 - canonical scenario regression: save carries empty
+// event_history (no auto-fire); event_history is the new save-format
+// v14 root-level key.
+// =====================================================================
+TEST_CASE("run: canonical scenario at M5.4 - save.json carries empty event_history (no auto-fire)") {
+    TempDir td("leviathan_runner_m54_no_auto_fire");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string save = read_file(td.path / "save.json");
+
+    // v14 schema bump landed at M5.4.
+    CHECK(save.find("\"save_version\": 14") != std::string::npos);
+
+    // event_history is the new M5.4 root-level key. M5.4 ships
+    // the data layer only — no system creates EventInstance
+    // records yet — so canonical runs at M5.4 still emit
+    // `"event_history": []`. The day the M5.x firer lands,
+    // THIS test should be the one that breaks first.
+    CHECK(save.find("\"event_history\": []") != std::string::npos);
+
+    // Sanity: M5.4 also doesn't introduce any new artefact and
+    // doesn't touch events.jsonl semantics. M5.1's no-pre-fire
+    // contract for events.jsonl still holds.
+    const std::string events_jsonl = read_file(td.path / "events.jsonl");
+    CHECK(events_jsonl.find("low_stability_unrest")
+          == std::string::npos);
+    CHECK(events_jsonl.find("radical_interest_group_warning")
+          == std::string::npos);
+    CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
+    CHECK_FALSE(fs::exists(td.path / "event_history.json"));
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

@@ -898,6 +898,94 @@ TEST_CASE("compare_states: M5.1 events triggers.size mismatch reported (skips pe
 }
 
 // ---------------------------------------------------------------------
+// M5.4 - EventInstance / event_history compare_states walk
+// ---------------------------------------------------------------------
+
+namespace {
+
+leviathan::core::EventInstance m54_history_entry(
+        const std::string& event_id_code,
+        const leviathan::core::GameDate& fired_on,
+        const std::string& actor_kind = "country",
+        const std::string& actor_id_code = "GER",
+        const std::string& actor_country_id_code = "GER",
+        std::size_t actor_index = 0) {
+    leviathan::core::EventInstance inst;
+    inst.event_id_code = event_id_code;
+    inst.fired_on      = fired_on;
+    leviathan::core::EventInstanceActor a;
+    a.kind            = actor_kind;
+    a.id_code         = actor_id_code;
+    a.country_id_code = actor_country_id_code;
+    a.index           = actor_index;
+    inst.actors.push_back(a);
+    return inst;
+}
+
+}  // namespace
+
+TEST_CASE("compare_states: M5.4 identical event_history produces no mismatch") {
+    GameState a;
+    GameState b;
+    a.event_history.push_back(m54_history_entry(
+        "low_stab", leviathan::core::GameDate(1930, 3, 15)));
+    b.event_history.push_back(m54_history_entry(
+        "low_stab", leviathan::core::GameDate(1930, 3, 15)));
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: M5.4 event_history size mismatch reported (skips per-entry walk)") {
+    GameState a;
+    GameState b;
+    a.event_history.push_back(m54_history_entry(
+        "x", leviathan::core::GameDate(1930, 1, 1)));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "event_history.size()");
+}
+
+TEST_CASE("compare_states: M5.4 event_history per-field differences reported") {
+    GameState a;
+    GameState b;
+    a.event_history.push_back(m54_history_entry(
+        "low_stab", leviathan::core::GameDate(1930, 3, 15),
+        "country", "GER", "GER", 0));
+    b.event_history.push_back(m54_history_entry(
+        "high_stab", leviathan::core::GameDate(1930, 4, 1),
+        "interest_group", "fra_workers", "FRA", 2));
+    const auto m = dg::compare_states(a, b);
+    // Expect: event_id_code, fired_on, actors[0].kind, .id_code,
+    // .country_id_code, .index — 6 entries in that order.
+    REQUIRE(m.size() == 6u);
+    CHECK(m[0].field_path == "event_history[0].event_id_code");
+    CHECK(m[1].field_path == "event_history[0].fired_on");
+    CHECK(m[2].field_path == "event_history[0].actors[0].kind");
+    CHECK(m[3].field_path == "event_history[0].actors[0].id_code");
+    CHECK(m[4].field_path == "event_history[0].actors[0].country_id_code");
+    CHECK(m[5].field_path == "event_history[0].actors[0].index");
+}
+
+TEST_CASE("compare_states: M5.4 event_history actors.size mismatch reported (skips per-actor walk)") {
+    GameState a;
+    GameState b;
+    a.event_history.push_back(m54_history_entry(
+        "x", leviathan::core::GameDate(1930, 1, 1)));
+    auto entry_b = m54_history_entry(
+        "x", leviathan::core::GameDate(1930, 1, 1));
+    leviathan::core::EventInstanceActor a2;
+    a2.kind            = "interest_group";
+    a2.id_code         = "ger_bureau";
+    a2.country_id_code = "GER";
+    a2.index           = 1;
+    entry_b.actors.push_back(a2);
+    b.event_history.push_back(std::move(entry_b));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "event_history[0].actors.size()");
+}
+
+// ---------------------------------------------------------------------
 // M3.5 - per-interest-group snapshot + CSV + csv_escape
 // ---------------------------------------------------------------------
 
