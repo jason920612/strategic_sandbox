@@ -1653,3 +1653,133 @@ TEST_CASE("render_map_html: M4.17 propagates role + aria-label through the inlin
     CHECK(html.find("role=\"button\"")                   != std::string::npos);
     CHECK(html.find("aria-label=\"Berlin, Germany\"")    != std::string::npos);
 }
+
+// =====================================================================
+// M4.19 — hover affordance skeleton
+// =====================================================================
+// M4.19 adds two new :hover CSS rules in the M4.6 <style>
+// block:
+//   svg circle:hover { stroke: #666666; stroke-width: 2; }
+//   svg text:hover   { text-decoration: underline; }
+// Pure CSS — no JS hover handler, no mouseover / mouseout
+// listener, no tooltip, no SVG <title> child element.
+// The rules sit BEFORE .selected and :focus-visible in
+// CSS source order, so those (equal specificity) win on
+// the same element when both apply: hover never collides
+// with selection or focus state.
+
+TEST_CASE("render_map_html: M4.19 <style> block carries the two hover rules") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("svg circle:hover { stroke: #666666; stroke-width: 2; }")
+          != std::string::npos);
+    CHECK(html.find("svg text:hover { text-decoration: underline; }")
+          != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.19 hover colour distinct from M4.12 .selected and M4.16 :focus-visible") {
+    // Three states must stay visually separable so a user
+    // can tell hover (grey) from selected (black) from
+    // focused (blue).
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // Hover: grey, 2px.
+    CHECK(html.find("svg circle:hover { stroke: #666666; stroke-width: 2; }")
+          != std::string::npos);
+    // Selected: black, 3px.
+    CHECK(html.find("svg circle.selected { stroke: #000000; stroke-width: 3; }")
+          != std::string::npos);
+    // Focus-visible: blue, 4px.
+    CHECK(html.find("stroke: #1976d2; stroke-width: 4;")
+          != std::string::npos);
+    // All three literals are distinct (sanity).
+    CHECK(std::string("#666666") != std::string("#000000"));
+    CHECK(std::string("#666666") != std::string("#1976d2"));
+}
+
+TEST_CASE("render_map_html: M4.19 :hover rules appear BEFORE .selected and :focus-visible in CSS source order") {
+    // CSS specificity is equal for `circle:hover` /
+    // `circle.selected` / `circle:focus-visible` (one
+    // pseudo-class or class each). Last-rule-wins, so the
+    // M4.19 :hover must come first if .selected and
+    // :focus-visible are supposed to override it on the
+    // same element. Pin the source ordering.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    const auto hover_at    = html.find("svg circle:hover {");
+    const auto selected_at = html.find("svg circle.selected {");
+    const auto focus_at    = html.find("svg circle:focus-visible");
+    REQUIRE(hover_at    != std::string::npos);
+    REQUIRE(selected_at != std::string::npos);
+    REQUIRE(focus_at    != std::string::npos);
+    CHECK(hover_at < selected_at);
+    CHECK(hover_at < focus_at);
+}
+
+TEST_CASE("render_map_html: M4.19 hover is pure CSS — no JS hover handler, no SVG <title> tooltip child") {
+    // Pin the explicit non-goals of this skeleton:
+    //   - no addEventListener("mouseover" / "mouseout") in
+    //     the inline script
+    //   - no element.onmouseover / .onmouseout assignment
+    //   - no SVG <title> child element on the markers (the
+    //     SVG-native tooltip mechanism — would compete with
+    //     the M4.17 aria-label as the accessible name).
+    // The HTML <head> <title>Leviathan Map</title> is the
+    // page title and is required by the M4.5 contract;
+    // M4.19 must not regress that, and must not add any
+    // additional <title> tag inside <body>.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+
+    // No JS hover listener of any flavour.
+    CHECK(html.find("\"mouseover\"")  == std::string::npos);
+    CHECK(html.find("\"mouseout\"")   == std::string::npos);
+    CHECK(html.find("\"mouseenter\"") == std::string::npos);
+    CHECK(html.find("\"mouseleave\"") == std::string::npos);
+    CHECK(html.find(".onmouseover")   == std::string::npos);
+    CHECK(html.find(".onmouseout")    == std::string::npos);
+
+    // The HTML <head> <title> is preserved (M4.5 contract)
+    // and is the ONLY <title> tag in the document — no SVG
+    // <title> child anywhere.
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = html.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(html.find("<title>Leviathan Map</title>") != std::string::npos);
+    CHECK(count_occurrences("<title>")  == 1u);
+    CHECK(count_occurrences("</title>") == 1u);
+
+    // <body>...</body> carries NO <title> tag — that would
+    // be a child of an SVG element (the only legal location
+    // for <title> outside <head>), and is the M4.19 "no SVG
+    // tooltip" non-goal we explicitly enforce.
+    const auto body_open  = html.find("<body>");
+    const auto body_close = html.find("</body>");
+    REQUIRE(body_open  != std::string::npos);
+    REQUIRE(body_close != std::string::npos);
+    const std::string body =
+        html.substr(body_open, body_close - body_open);
+    CHECK(body.find("<title>")  == std::string::npos);
+    CHECK(body.find("</title>") == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.19 :hover rules") {
+    // CSS lives in the HTML wrapper only — standalone SVG
+    // path carries no hover styling.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find(":hover")            == std::string::npos);
+    CHECK(svg_text.find("text-decoration")   == std::string::npos);
+    CHECK(svg_text.find("#666666")           == std::string::npos);
+}
