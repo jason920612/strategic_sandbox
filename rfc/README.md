@@ -217,7 +217,45 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.22
+- **M4（已關閉，RFC-090 §M4 SVG map + UI）** — **M4.23
+  （M4 exit / close-out）** 是 docs-only 的 M4 出口 PR，
+  形式對應 M1.17 / M2.22 / M3.9。發布
+  `docs/milestone-4-result.md`（M4 exit report，七個
+  section：M4.1–M4.23 ledger / final dataflow /
+  10-artefact contract / save-format v12 floor /
+  architectural invariants 每個未來 milestone 都必須保留
+  / deferred items 分 Category A、B、C / 中性 next-
+  milestone candidates）。把 `docs/milestone-4-
+  checkpoint.md` 註記為 historical（檔頭加 note 指向
+  exit report 為新的 authoritative record，本體保留供
+  archaeology）。把三份 README（root + docs/ + rfc/）翻
+  到「M4 closed」。**沒有 code / formula / fixture /
+  test 變動**（892 doctest cases / 61742 assertions 與
+  M4.22 相同；`provinces.svg` 與 `map.html` bytes 與
+  M4.22 完全相同）。2026-05-17 force-reset 的教訓（見
+  `milestone-3-result.md` §7）是「不要在 milestone 真正
+  退出之前寫 exit report」的記錄理由 ── 之前在 M3.7+
+  曾經 drift 成 premature close-out + invented M4.X
+  numbers + 9th artefact 而被 force-reset；恢復用的
+  pattern 是「每個 milestone 都有一個 dedicated 最終
+  close-out PR，只做這件事」。M1.17 / M2.22 / M3.9 都
+  follow 這個 pattern；M4.23 對 M4 follow 同樣的 pattern。
+  **M4 closes here.** **沒有「M5 in progress」字樣** 出現
+  在這個 PR；M5 會在 reviewer 給綠燈時，由 M5 自己的
+  第一個 sub-milestone PR 開始；M4.23 對「下一個
+  milestone 是哪一個」不做任何宣告。
+  **M4.23 不做** 新 system / 新 formula / 新 artefact
+  （仍 10）/ save schema bump（仍 v12）/ 新 state field
+  / 新 fixture / 新 test（close-out PR 是 docs-only ──
+  M4.22 已經加了 integration test G 作為「M4 viewer
+  contract complete」的 consolidated pin）/ 新
+  `InterestGroupKind` / `PlayerCommandKind` / renderer
+  行為變更 / rename 任何 data-* attribute / 動
+  `provinces.svg` 或 `map.html` bytes / runner CLI
+  flag / atomic `end_tick` write / 「M5 in progress」
+  字樣 / 對下一個 milestone 是哪一個的任何主張。
+  **M4 closes here.**
+- **M4（進行中歷史，現已關閉）** — **M4.22
   （close-out readiness checkpoint）** 對應 M3.7 在 M3
   反應 loop 的角色：docs + 1 個 integration test，
   **零 renderer 行為變更**。M4.21 之後 M4 viewer stack

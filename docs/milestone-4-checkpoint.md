@@ -1,6 +1,21 @@
 # Milestone 4 Checkpoint
 
-Status: in progress
+> **Historical checkpoint.** M4 closed at **M4.23**. The
+> canonical M4 record is now
+> [`milestone-4-result.md`](milestone-4-result.md) — read
+> that for the authoritative M4 dataflow / artefact
+> contract / invariants / deferred items / next-milestone
+> candidates. This checkpoint file is kept verbatim for
+> archaeology: it records the in-progress M4 snapshot as
+> it stood at each pre-close refresh (M4.9 origin →
+> M4.14 → M4.18 → M4.22). Future readers wanting "what
+> does the M4 contract look like right now?" should read
+> `milestone-4-result.md`, not this file. Future readers
+> wanting "how did the contract evolve sub-milestone by
+> sub-milestone?" can read the per-PR design notes
+> `docs/m4-NN-*.md` alongside this snapshot.
+
+Status: **historical (M4 closed at M4.23)**
 
 Refreshed at **M4.18** (companion notes for
 `feature/rfc090-m4-18-accessibility-checkpoint-refresh`),
@@ -10,7 +25,9 @@ hover-status text bar surface, **inline-refreshed at
 M4.21** for the responsive viewport surface,
 **refreshed-as-close-out-readiness at M4.22**
 (zero new renderer behaviour; consolidated integration
-test + close-out readiness assessment). Originally written at M4.9 (M4.2–M4.8 SVG / HTML
+test + close-out readiness assessment). **Frozen at M4.23**
+when `milestone-4-result.md` took over as the
+authoritative record. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
 DOM contract); refreshed at M4.14 to cover M4.10–M4.13
 (first JavaScript, decoupled labels, transient
 `.selected`, fifth `data-owner-name`); refreshed at M4.18
