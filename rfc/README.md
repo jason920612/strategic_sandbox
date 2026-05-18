@@ -217,7 +217,49 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.9
+- **M5（已關閉，RFC-090 §M5 event engine）** — **M5.10
+  （M5 exit / close-out）** 是 docs-only 的 M5 出口
+  PR，形式對應 M1.17 / M2.22 / M3.9 / M4.23。發布
+  `docs/milestone-5-result.md`（M5 exit report，7 個
+  section：M5.1–M5.10 ledger / final M5 dataflow / 10-
+  artefact contract（M5 加 0 個）/ save-format v14 floor
+  （M5 內兩次 bump：M5.1 v12→v13 給 `events`，M5.4
+  v13→v14 給 `event_history`）/ architectural
+  invariants 分 9 個小節（schema / evaluator / firer /
+  effects-applicator / composition / monthly-wiring /
+  canonical-non-fire / no-new-artefact / RNG-free）/
+  deferred items 分 Category A 推遲到未來里程碑、
+  Category B post-M5 polish、Category C
+  not-needed-for-close / 中性 next-milestone
+  candidates）。把 `docs/milestone-5-checkpoint.md`
+  註記為 historical（檔頭加 note 指向 exit report 為
+  新的 authoritative record，M5.9-era 本體保留供
+  archaeology）。把三份 README（root + docs/ + rfc/）
+  翻到「M5 closed」。**沒有 code / formula / fixture
+  / test 變動**（1039 doctest case / 62364 assertion
+  與 M5.9 相同；10 個 artefact 與 M5.9 byte-identical）。
+  PR #98 reviewer 的建議推動了 close-out 的時點：
+  *「直接 close M5，不要在 M5 繼續加 events.jsonl /
+  cooldown / CLI，避免把事件系統 scope 拉大」* ──
+  乾淨地 close 現在，把 events.jsonl / CLI / cooldown
+  / selection-policy variant / balance pass /
+  chained events / 更廣 trigger op 都留給未來 milestone
+  決定。**M5 closes here.** **沒有「M6 in progress」
+  字樣** 出現在這個 PR；下一個 milestone 由 reviewer
+  決定方向時、由它自己的第一個 sub-milestone PR 開始；
+  M5.10 對「下一個 milestone 是哪一個」不做任何宣告
+  （per 2026-05-17 force-reset 教訓 ── 不在 close-out
+  PR 裡 pre-open 下一個 milestone）。M5.10 不做新
+  system / formula / artefact（仍 10）/ save schema
+  bump（仍 v14）/ 新 state field / 新
+  `PlayerCommandKind` / 新 fixture / 新 test / 任何
+  event-module / policy_system / monthly_pipeline /
+  save_system / scenario_loader / runner 程式變動 /
+  events.jsonl 語意變動 / UI surface / balance pass /
+  對 M1/M2/M3/M4 system 外部行為的變動 / 對 M1.17 /
+  M2 / M3 / M4 byte-identical determinism baseline
+  的變動。**M5 closes here.**
+- **M5（進行中歷史，現已關閉）** — **M5.9
   （event observability checkpoint）** 是 M5 的
   第九個 sub-milestone，shape 與 M3.7 / M4.9 / M4.14
   / M4.18 / M4.22 一致：**docs + integration tests，

@@ -6,107 +6,79 @@
 
 ## Status
 
-- Phase: **Milestone 5 — Event engine (IN PROGRESS,
-  RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.9). M5 has shipped nine
-  sub-milestones — eight built the pipeline (seven
-  decoupled bricks + one monthly wiring), and the
-  ninth (**M5.9**, this sub-milestone) is the **M5
-  observability checkpoint** that captures the
-  M5.1–M5.8 contract end-to-end via a new
-  `docs/milestone-5-checkpoint.md` snapshot + a new
-  `tests/integration/m5_event_pipeline_test.cpp`
-  integration test file. **M5.9 ships zero new
-  gameplay** — no system, formula, artefact, save
-  bump, RunnerOptions field, CLI flag, canonical
-  fixture, or behaviour change. **M5.1** opened M5
-  with the
-  `EventDefinition` schema foundation (typed
-  `{ id_code, name, description, triggers, effects }` +
-  `EventTrigger { target, op, value }`; save v12 → v13;
-  scenario manifest gains optional `events[]`;
-  `diagnostics::compare_states` walks `state.events`;
-  canonical fixture wired into both 1930 manifests).
-  **M5.2** added the **trigger evaluator skeleton** — a
-  small read-only API (`event_evaluator::trigger_matches`
-  / `evaluate` / `match_events`) that reads `state.events`
-  and reports which event definitions' triggers all match
-  the current state. AND across `def.triggers`,
-  ANY-entity-satisfies for country.* / interest_group.*
-  targets, supports the M5.1 op allowlist
-  (`lt` / `lte` / `gt` / `gte`). **M5.3** extended the
-  evaluator return shape with **actor binding** —
-  `EventMatch` (replacing the old `TriggerMatch`) now
-  carries a `triggers` vector of
-  `TriggerEvaluation { trigger_index, actor }` recording
-  the first satisfying country / interest group per
-  trigger; new `trigger_actor` / `evaluate_match` free
-  functions return `std::optional<TriggerActor>` /
-  `std::optional<EventMatch>` for the enrichment path.
-  **M5.4** added the **EventInstance / event_history data
-  skeleton** — typed `core::EventInstance { event_id_code,
-  fired_on, actors[] }` + `core::EventInstanceActor {
-  kind, id_code, country_id_code, index }`; new
-  `GameState::event_history` append-only vector; save
-  format bumped v13 → v14 with event_history required at
-  the save layer; `diagnostics::compare_states` walks
-  `event_history`. **M5.5** added the **event firer
-  skeleton** — a new `leviathan::systems::event_firer`
-  module with `record_match(state, EventMatch, fired_on)`
-  + `record_matches(state, vector<EventMatch>, fired_on)`
-  → `FireOutcome { recorded }` that converts the M5.3
-  `EventMatch` (with per-trigger actor binding) into an
-  M5.4 `EventInstance` and appends it to
-  `state.event_history`. **M5.6** added the **event
-  effects applicator skeleton** — a new
-  `leviathan::systems::event_effects` module with
-  `apply_event_effects(state, instance, definition)` that
-  applies the matching `EventDefinition`'s effects to the
-  first actor's country in `instance.actors`, using the
-  shared M1.5 / M5.6-extracted
-  `policy::apply_effects_to_actor` helper. **M5.7**
-  adds the **event runner integration skeleton** — a
-  new `leviathan::systems::event_engine` module with a
-  single `tick_events(state) → Result<TickOutcome>`
-  free function that composes the M5.2 evaluator, M5.5
-  firer, and M5.6 effects applicator into one
-  "evaluate → record → apply" round, using
-  `state.current_date` as `fired_on`. The composition
-  is a **standalone helper** — M5.7 deliberately does
-  NOT auto-wire it into the runner or
-  `monthly_pipeline::tick_all_countries`. That wiring
-  belongs to a future M5.x sub-milestone (it would
-  rebake M1.17's 365-day byte-identical determinism
-  baselines, which is its own surface change). **Still
-  no events.jsonl change, no log entry on tick (no
-  `state.logs` append), no `state.applied_commands`
-  append, no `country.active_policies` append from the
-  event path, no auto-fire cadence, no new artefact
-  (still 10), no save bump (still v14), no new
-  `PlayerCommandKind`, no cooldown / historical-once
-  gating, no selection-policy variants.** Canonical
-  scenarios still emit `"event_history": []` because
-  the runner / monthly pipeline don't invoke
-  `tick_events` yet. See
-  `docs/m5-1-event-definition-schema-foundation.md`,
-  `docs/m5-2-trigger-evaluator-skeleton.md`,
-  `docs/m5-3-event-match-actor-binding-skeleton.md`,
-  `docs/m5-4-event-instance-history-data-skeleton.md`,
-  `docs/m5-5-event-firer-skeleton.md`,
-  `docs/m5-6-event-effects-applicator-skeleton.md`,
-  `docs/m5-7-event-runner-integration-skeleton.md`,
-  `docs/m5-8-monthly-event-tick-wiring.md`, and
-  `docs/m5-9-event-observability-checkpoint.md` for
-  the M5 per-sub-milestone design notes;
-  `docs/milestone-5-checkpoint.md` for the M5 status
-  snapshot (mirrors `docs/milestone-3-checkpoint.md`
-  and `docs/milestone-4-checkpoint.md`); and
+- Phase: **Milestone 5 — Event engine (CLOSED,
+  RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 / M5 all
+  closed. M5 delivered in 10 sub-milestones
+  (M5.1–M5.10) a complete event-engine inner loop +
+  monthly-tick wiring + cross-leg integration tests:
+  schema (M5.1) → evaluator (M5.2) → actor binding
+  (M5.3) → history data layer (M5.4) → firer (M5.5)
+  → effects applicator (M5.6) → composition helper
+  (M5.7) → monthly wiring as step 7 (M5.8) →
+  observability checkpoint (M5.9) → exit (M5.10).
+  Asymmetric design: pure-read evaluator + total-firer
+  + atomic applicator + snapshot-eval composition +
+  step-7 wiring after every per-country + state-wide
+  monthly step finished writing. Reuse-via-extract
+  refactor: `policy::apply_effects_to_actor` extracted
+  from `policy::apply_policy_effects` so events
+  inherit M1.5's target/op grammar + pre-flight
+  atomicity without inheriting M1.15's `ActivePolicy`
+  lifecycle. **Zero artefact added** (still 10) —
+  events live in `state.event_history` only, save
+  v13→v14 (M5.4) round-trips them; no `events.jsonl`
+  semantic change, no new CLI flag, no new
+  `PlayerCommandKind`. **Canonical 1930 events
+  deliberately tuned to NOT fire** on the canonical
+  scenario (GER stability 0.55+ vs `< 0.30`; canonical
+  IG radicalism 0.10 vs `> 0.75`), so M5 added **zero
+  behavioural drift** to existing M1–M4 outputs —
+  M1.17 / M2 / M3 / M4 byte-identical determinism
+  baselines all still pass. See
+  `docs/milestone-5-result.md` for the **M5 exit
+  report** (full ledger, dataflow, contract,
+  invariants, deferred items, neutral next-milestone
+  candidates),
   `docs/milestone-4-result.md` /
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
-  `docs/milestone-1-result.md` for the M0–M4 exit
-  reports.
-- Latest shipped sub-milestone: **M5.9 — event
+  `docs/milestone-1-result.md` for prior exit reports,
+  and `docs/milestone-5-checkpoint.md` (now annotated
+  as historical) for the in-progress M5.9 snapshot
+  that preceded the close-out.
+- Latest shipped sub-milestone: **M5.10 — M5 exit /
+  close-out.** Docs-only PR mirroring M1.17 / M2.22 /
+  M3.9 / M4.23 in shape. Publishes
+  `docs/milestone-5-result.md` (the M5 exit report —
+  7 sections: M5.1–M5.10 ledger, final M5 dataflow,
+  final 10-artefact contract (M5 added zero),
+  save-format v14 floor, architectural invariants
+  every future milestone must preserve (organised
+  into 5.1 schema, 5.2 evaluator, 5.3 firer, 5.4
+  effects, 5.5 composition, 5.6 monthly wiring, 5.7
+  canonical-non-fire, 5.8 no-new-artefact, 5.9
+  RNG-free), deferred items categorised A / B / C,
+  neutral next-milestone candidates). Annotates
+  `docs/milestone-5-checkpoint.md` as historical with
+  a top-of-file pointer to the exit report. Flips
+  this README + `docs/README.md` + `rfc/README.md`
+  to "M5 closed". **No code, no formula, no fixture,
+  no test change** (1039 doctest cases / 62364
+  assertions identical with M5.9; all 10 artefacts
+  byte-identical with M5.9). The PR #98 reviewer's
+  recommendation drove the timing: *"直接 close M5，
+  不要在 M5 繼續加 events.jsonl / cooldown / CLI，
+  避免把事件系統 scope 拉大"* — close cleanly now,
+  leave events.jsonl / CLI / cooldown / selection-
+  policy variants / balance pass / chained events /
+  broader trigger ops as future-milestone candidates.
+  **M5 closes here.** **No "M6 in progress" wording**
+  — the next milestone starts in its own deliberate
+  first sub-milestone PR when the reviewer decides;
+  M5.10 makes no claim about which milestone is next
+  (per the 2026-05-17 force-reset lesson about not
+  pre-opening the next milestone in a close-out PR).
+- Previously shipped: **M5.9 — event
   observability checkpoint.** Ninth M5 PR. Docs +
   integration tests; **zero new gameplay**. Mirrors
   M3.7 / M4.9 / M4.14 / M4.18 / M4.22 in shape: a
