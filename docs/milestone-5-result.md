@@ -1,6 +1,21 @@
 # Milestone 5 Result
 
-**Status: closed.**
+**Status: closed (as an implementation milestone).**
+
+> **Governance note.** This document is the implementation
+> close-out for the shipped M5 event-engine skeleton
+> milestone. It is not a claim that the original RFC-090 §M5
+> *event-content / `EventOption` / followup-chain* acceptance
+> scope is fully complete. Original RFC-090 §M5 lists weights
+> + `EventOption` + event options / choices + 10 event
+> templates + a 10-year event stress test + event-chain
+> followups; the closed M5 ships an event-engine *skeleton*
+> with 2 canonical events deliberately tuned not to fire on
+> the canonical scenario, no weighted selection, no event
+> options, no followup chains, and no per-fire `events.jsonl`
+> emission. Deferred original RFC-090 §M5 items are tracked
+> in [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md)
+> §6.2. Companion to issue #105.
 
 M5 set out to give Project Leviathan its first event-engine
 surface: a typed `EventDefinition` schema with trigger / effect
