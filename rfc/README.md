@@ -217,7 +217,75 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.1
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.2
+  （trigger evaluator skeleton）** 是 M5 的第二個
+  sub-milestone。新增 `leviathan::systems::event_evaluator`
+  module（header `include/leviathan/systems/event_evaluator.hpp`
+  + impl `src/leviathan/systems/event_evaluator.cpp`）。
+  Public API：`struct TriggerMatch { std::size_t
+  event_index; std::string event_id_code; }`、
+  `bool trigger_matches(state, EventTrigger)`、
+  `bool evaluate(state, EventDefinition)`、
+  `std::vector<TriggerMatch> match_events(state)`。
+  **三個 function 全部 pure read** ── 不改 GameState、
+  不寫 log、不 fire event、不動 time / RNG。
+  **語意**：per-op numeric compare（M5.1 op
+  allowlist `lt`/`lte`/`gt`/`gte`）；per-target
+  dispatch（M5.1 target allowlist：`country.stability`
+  / `country.legitimacy` /
+  `country.government_authority.bureaucratic_compliance`
+  路由到 `state.countries`；`interest_group.radicalism`
+  / `interest_group.loyalty` 路由到
+  `state.interest_groups`）；**ANY-entity-satisfies
+  aggregation**（country 範圍 trigger 只要有任一
+  country 滿足就 match；entity list 空 → false，
+  existential quantifier over empty）；**AND across
+  `def.triggers`**（每條 trigger 都要 match；空
+  triggers vector 是 vacuously true ── M5.1 loader
+  本來就 reject 空 triggers，這個語意只為手寫 def 與
+  defensive reader 釘住）。Unknown target / op、
+  非有限 trigger value、非有限 state value 一律
+  evaluate 成 **false**（defensive ── M5.1 loader
+  是 gate，evaluator 不重複 allowlist 訊息）。
+  `match_events` 依 `state.events` vector 順序走，
+  回傳 canonical 順序。**28 個新 doctest case
+  （949 total，61924 assertions；per
+  `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）涵蓋：每個 target
+  的每個 op / per-target dispatch / ANY-entity edge
+  cases（含空 entity list = false）/ cross-scope
+  AND / 空 triggers vacuous truth / unknown
+  target / unknown op / 非有限值處理 / canonical-
+  event-shape vs canonical-state-shape regression
+  （在 evaluator 層級釘住 M5.1 fixture「不 fire」
+  屬性）/ no-mutate regression（countries / IG /
+  events / logs / applied_commands）/
+  evaluator-is-trigger-only（effects vector 內容
+  不被 consult；`match_events` 不會 append 到
+  `state.logs` / `state.applied_commands`）。新
+  `docs/m5-2-trigger-evaluator-skeleton.md` design
+  note。**沒有 event firing / log entry on match /
+  `events.jsonl` 變動 / history append / effects
+  application / per-actor selection（trigger 來自
+  哪個 country / IG 不記錄 ── 等 effects-application
+  那 sub-milestone 才加）/ runner 或 monthly
+  整合 / auto-evaluation cadence / save format bump
+  （仍 v13）/ 新 artefact（仍 10）/ 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / 新 state field / 更廣
+  trigger op（`eq` / `ne` / `between` / `in`）/
+  更廣 trigger target / trigger logical operator
+  （`all_of` / `any_of` / `not` /
+  `for_country:GER` per-trigger）/ event author
+  tooling / UI surface（events 仍不在 `map.html`
+  / `provinces.svg` / 任何 CSV）/ balance pass /
+  對 M5.1 schema 的變動 / 對 M1/M2/M3/M4 system
+  的變動 / 對 `scenario_loader` / `save_system` /
+  `diagnostics` 的變動（它們仍 own `state.events`；
+  M5.2 只 read 它）/ `docs/milestone-5-checkpoint.md`
+  （仍 deferred ── 在 M5.2 開 checkpoint 仍是
+  premature framing）**。M5 remains in progress。
+- **M5（歷史進行中）** — **M5.1
   （EventDefinition trigger/effect schema foundation）**
   是 M5 的第一個 sub-milestone。把 M0 的
   `EventDefinition { EventId id; std::string name; }` stub
