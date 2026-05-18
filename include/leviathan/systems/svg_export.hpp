@@ -4,43 +4,63 @@
 // M4.2 (M4.x history) shipped the first renderer that turns
 // `state.provinces` into a visible deterministic SVG artefact.
 // M4.3 layered a deterministic per-owner colour onto the
-// existing circles using a fixed 10-entry palette indexed by
-// `owner.value() % kOwnerPaletteSize`. M4.4 added a `<text>`
-// label per node immediately after the matching `<circle>`.
-// M4.5 added a minimal HTML5 wrapper around the same SVG body
-// so `provinces.svg` is also reachable as `map.html` for
-// browser-friendly viewing. M4.6 added the smallest possible
-// `<style>` block to the M4.5 wrapper (three selectors).
-// M4.7 added a static `<ul class="legend">` after the inline
-// SVG (three more CSS selectors for layout). M4.8 (this
-// revision) widens the identity surface inside the SVG body:
-// every `<circle>` and every `<text>` now carries the same
-// four read-only `data-*` attributes (`data-id`,
-// `data-owner`, `data-owner-code`, `data-name`) so a future
-// clickable UI / DOM script can address either element
-// uniformly without DOM-walking sibling nodes. This is the
-// first M4.x sub-milestone since M4.4 that intentionally
-// changes the bytes of `provinces.svg` — the change is purely
-// additive (new attributes on existing elements; no rendered
-// pixels move), so downstream consumers (SVG-to-PNG
-// pipelines, vector tools) see no visual difference. Future
-// M4 sub-milestones (clickable UI, hover state,
-// neighbour-adjacency lines, terrain, etc.) will extend the
-// renderer further.
+// existing circles using a fixed 10-entry palette. M4.4 added
+// a `<text>` label per node immediately after the matching
+// `<circle>`. M4.5 added a minimal HTML5 wrapper around the
+// same SVG body so `provinces.svg` is also reachable as
+// `map.html` for browser-friendly viewing. M4.6 added the
+// smallest possible `<style>` block (three selectors). M4.7
+// added a static `<ul class="legend">` after the inline SVG
+// (three more CSS selectors). M4.8 widened the identity
+// surface (the four `data-*` attributes on both `<circle>`
+// and `<text>`). M4.9 was a checkpoint (zero behaviour
+// change; three new integration tests + status snapshot).
+// M4.10 (this revision) is the **first M4.x to add JavaScript
+// to map.html**: a single stateless inline `<script>` at end
+// of body wires a click handler that copies the four data-*
+// values off the clicked `<circle>` / `<text>` into a
+// read-only `<div id="details">` panel sitting between the
+// SVG and the legend. The script uses `addEventListener` +
+// `createElement` + `textContent` — never `innerHTML`,
+// `eval`, `document.write`, `fetch`, `XMLHttpRequest`, or
+// `localStorage` — so attribute values cannot inject markup
+// and the viewer remains read-only. `provinces.svg` stays
+// fully inert (no `<script>`, no `<style>`, no
+// `font-family`). Future M4 sub-milestones (hover state,
+// tooltips, selection persistence, neighbour-adjacency
+// lines, terrain, etc.) will extend the renderer further.
 //
-// What M4.8 deliberately does NOT do:
+// What M4.10 deliberately does NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
-//   * No state mutation from the viewer (`map.html` is a
-//     read-only render of `state.provinces` + `state.countries`).
+//   * No state mutation from the viewer. `map.html` is a
+//     READ-ONLY render of `state.provinces` +
+//     `state.countries`. The M4.10 click handler reads
+//     attributes off the clicked element and writes them
+//     into the DOM via `textContent`; it never mutates the
+//     underlying `GameState`, never calls `fetch` /
+//     `XMLHttpRequest` / `localStorage` / `sessionStorage`
+//     / `history.pushState` / `window.location`.
 //   * No CSS animations / transitions / media queries /
-//     `@import` / `@font-face` — the M4.7 stylesheet is
-//     plain layout only.
-//   * No JavaScript / `<script>` (M4.5 constraint preserved).
+//     `@import` / `@font-face` — the stylesheet is plain
+//     layout only.
+//   * **JavaScript boundary is asymmetric since M4.10.**
+//     `provinces.svg` stays fully script-free.
+//     `map.html` carries EXACTLY ONE inline `<script>`
+//     block — the M4.10 click handler. The script is
+//     inline only (no `src=`, no `type=`), uses
+//     `addEventListener` + `createElement` + `textContent`
+//     (no `innerHTML` / `outerHTML` / `document.write` /
+//     `eval` / `Function`), and scopes its selector to
+//     `svg circle[data-id], svg text[data-id]` so the
+//     legend's data-id-less swatch <circle> elements stay
+//     non-clickable.
 //   * No `<link>` to an external stylesheet (M4.5 constraint
 //     preserved; the `<style>` block is inline only).
-//   * No inline event attributes (`onclick` / `onmouseover` /
-//     `onload` / ...) — M4.5 constraint preserved.
+//   * No inline event attributes (`onclick=` / `onmouseover=`
+//     / `onload=` / ...) — M4.5 constraint preserved. The
+//     M4.10 handler uses `addEventListener`, not inline
+//     attribute syntax.
 //   * No inline `style="..."` attributes on individual
 //     elements — the `<style>` block is the single CSS
 //     surface (M4.6 constraint preserved).
@@ -106,11 +126,13 @@
 //         save / scenario layers reject invalid owners at
 //         load time). All four data-* values are
 //         XML-attribute-escaped (M4.2 helper).
-//   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend):
+//   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend;
+//     M4.10 adds clickable details panel + click handler):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
 //         `<head>` (`<meta charset="UTF-8">` + `<title>` +
 //         `<style>` block).
-//       - The `<style>` block carries six rules:
+//       - The `<style>` block carries the M4.6 / M4.7 rules
+//         plus four M4.10 rules:
 //         `body { margin: 0; padding: 20px;
 //                 background-color: #f0f0f0; }`           (M4.6)
 //         `svg  { display: block; margin: 0 auto;
@@ -125,12 +147,28 @@
 //         `.legend .swatch { width: 16px; height: 16px;
 //                            margin-right: 8px;
 //                            flex-shrink: 0; }`           (M4.7)
-//       - `<body>` contains:
+//         `.details { margin: 20px auto; max-width: 1000px;
+//                     font-family: sans-serif; }`         (M4.10)
+//         `.details dl { margin: 0; }`                    (M4.10)
+//         `.details dt { font-weight: bold; }`            (M4.10)
+//         `.details dd { margin: 0 0 8px 0; }`            (M4.10)
+//         `.details-empty { color: #666; font-style: italic; }`
+//                                                         (M4.10)
+//         `svg circle[data-id], svg text[data-id]
+//            { cursor: pointer; }`                        (M4.10)
+//       - `<body>` contains, in order:
 //           1. The **exact same** `<svg>...</svg>` body as
 //              `provinces.svg`, but WITHOUT the XML prolog
 //              (which is invalid inside HTML).
-//           2. (M4.7) A `<ul class="legend">` immediately
-//              after the inline SVG. One `<li
+//           2. (M4.10) A `<div id="details" class="details">`
+//              placeholder, initially containing a single
+//              `<p class="details-empty">` instructing the
+//              viewer to click a province. The M4.10 click
+//              handler replaces the div's contents with a
+//              `<dl>` listing the clicked element's `data-id`
+//              / `data-owner` / `data-owner-code` / `data-name`
+//              via `createElement` + `textContent` (XSS-safe).
+//           3. (M4.7) A `<ul class="legend">`. One `<li
 //              data-owner="N">` per entry in
 //              `state.countries`, in vector order. Each
 //              `<li>` carries a tiny 16x16 inline SVG
@@ -142,7 +180,23 @@
 //              text `"<id_code> &mdash; <name>"` (both
 //              XML-text-escaped). Empty `state.countries`
 //              produces an empty `<ul>` (always-present
-//              file contract preserved).
+//              file contract preserved). The legend
+//              swatch `<circle>` elements carry NO
+//              `data-id` and therefore stay non-clickable
+//              under the M4.10 selector.
+//           4. (M4.10) A single inline `<script>` IIFE at
+//              the very end of `<body>`. The script attaches
+//              one `click` listener per
+//              `svg circle[data-id], svg text[data-id]`
+//              element. It uses `getAttribute` + `createElement`
+//              + `textContent` only — no `innerHTML` /
+//              `outerHTML` / `document.write` / `eval` /
+//              `Function`, no `fetch` / `XMLHttpRequest`, no
+//              `localStorage` / `sessionStorage`, no
+//              `history.pushState`, no `window.location`
+//              navigation. The script never mutates the
+//              underlying `GameState`; it only repaints the
+//              `<div id="details">` placeholder.
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human

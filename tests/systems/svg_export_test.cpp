@@ -437,20 +437,23 @@ TEST_CASE("render_map_html: inlines the same <svg> body as render_provinces") {
     CHECK(html.find(svg_body) != std::string::npos);
 }
 
-TEST_CASE("render_map_html: no <script>, <link>, or inline event attributes") {
-    // M4.5 shipped a wrapper with no CSS or JS at all. M4.6
-    // adds a single `<style>` block (separately tested below)
-    // but every other M4.5 "no" still holds: no JavaScript /
-    // no external stylesheet link / no inline event handlers.
+TEST_CASE("render_map_html: no <link>, no inline event attributes, no per-element style") {
+    // M4.5 shipped the wrapper with no CSS or JS at all. M4.6
+    // added a single `<style>` block (separately tested
+    // below). M4.10 added a single inline `<script>` block
+    // (separately tested in the M4.10 section). Every other
+    // M4.5 "no" still holds: no external stylesheet link, no
+    // inline event handlers, no per-element inline style.
     GameState state;
     state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
     const std::string html = svg::render_map_html(state);
-    CHECK(html.find("<script") == std::string::npos);
     CHECK(html.find("<link")   == std::string::npos);
     // Common inline event attributes — none should ever appear.
-    CHECK(html.find("onclick")     == std::string::npos);
-    CHECK(html.find("onmouseover") == std::string::npos);
-    CHECK(html.find("onload")      == std::string::npos);
+    // The M4.10 click handler uses addEventListener, not
+    // onclick="..." inline attributes.
+    CHECK(html.find("onclick=")     == std::string::npos);
+    CHECK(html.find("onmouseover=") == std::string::npos);
+    CHECK(html.find("onload=")      == std::string::npos);
     // No per-element inline style attributes either — the M4.6
     // `<style>` block is the single CSS surface.
     CHECK(html.find(" style=\"") == std::string::npos);
@@ -809,4 +812,125 @@ TEST_CASE("render_provinces: data-owner-code matches state.countries[owner].id_c
     // Country `name` should NOT appear inside data-owner-code.
     CHECK(svg_text.find("data-owner-code=\"Alpha Land\"") ==
           std::string::npos);
+}
+
+// ---------------------------------------------------------------------
+// M4.10 - clickable UI skeleton (first JS in map.html)
+// ---------------------------------------------------------------------
+
+TEST_CASE("render_map_html: emits <div id=\"details\"> placeholder between SVG and legend") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    const auto svg_close = html.find("</svg>");
+    const auto details_at = html.find("<div id=\"details\"");
+    const auto ul_open    = html.find("<ul class=\"legend\">");
+    REQUIRE(svg_close != std::string::npos);
+    REQUIRE(details_at != std::string::npos);
+    REQUIRE(ul_open    != std::string::npos);
+    // Order: SVG → details panel → legend.
+    CHECK(svg_close < details_at);
+    CHECK(details_at < ul_open);
+    // Empty-state placeholder text.
+    CHECK(html.find("Click a province to see its details.")
+          != std::string::npos);
+    CHECK(html.find("class=\"details-empty\"")
+          != std::string::npos);
+}
+
+TEST_CASE("render_map_html: emits exactly one inline <script> at end of body") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // Count <script> openings.
+    auto count = [&](const std::string& needle) {
+        std::size_t c = 0;
+        std::size_t pos = 0;
+        while ((pos = html.find(needle, pos)) != std::string::npos) {
+            ++c;
+            pos += needle.size();
+        }
+        return c;
+    };
+    CHECK(count("<script")  == 1u);
+    CHECK(count("</script") == 1u);
+
+    // Script must be inline (no src=, no type=) — keeps the
+    // file self-contained, no CORS pitfalls.
+    CHECK(html.find("<script src=")  == std::string::npos);
+    CHECK(html.find("<script type=") == std::string::npos);
+
+    // Script sits at end of body (after the legend's </ul>).
+    const auto ul_close = html.rfind("</ul>");
+    const auto script_at = html.find("<script");
+    REQUIRE(ul_close  != std::string::npos);
+    REQUIRE(script_at != std::string::npos);
+    CHECK(ul_close < script_at);
+}
+
+TEST_CASE("render_map_html: click handler uses XSS-safe DOM API (no innerHTML / no eval / no document.write)") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The M4.10 handler uses textContent + createElement —
+    // strings read from attributes can never be re-interpreted
+    // as markup. None of the standard XSS escape hatches
+    // should appear.
+    CHECK(html.find("innerHTML")     == std::string::npos);
+    CHECK(html.find("outerHTML")     == std::string::npos);
+    CHECK(html.find("document.write") == std::string::npos);
+    CHECK(html.find("eval(")         == std::string::npos);
+    CHECK(html.find("Function(")     == std::string::npos);
+    // The safe API surface IS present.
+    CHECK(html.find("textContent")   != std::string::npos);
+    CHECK(html.find("createElement") != std::string::npos);
+    CHECK(html.find("addEventListener") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: click handler does NOT mutate state or call out (no fetch / no XHR / no storage)") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // Read-only viewer scope — the handler must not touch
+    // any persistence / network API.
+    CHECK(html.find("fetch(")                  == std::string::npos);
+    CHECK(html.find("XMLHttpRequest")          == std::string::npos);
+    CHECK(html.find("localStorage")            == std::string::npos);
+    CHECK(html.find("sessionStorage")          == std::string::npos);
+    CHECK(html.find("history.pushState")       == std::string::npos);
+    CHECK(html.find("window.location")         == std::string::npos);
+    CHECK(html.find("navigator.")              == std::string::npos);
+}
+
+TEST_CASE("render_map_html: click handler scopes to data-id-bearing circles / texts (legend swatches excluded)") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The handler queries `svg circle[data-id], svg text[data-id]`
+    // so the legend's swatch <circle> elements (which lack
+    // data-id) cannot fire the click handler. Pin the exact
+    // selector string.
+    CHECK(html.find("svg circle[data-id], svg text[data-id]")
+          != std::string::npos);
+}
+
+TEST_CASE("render_map_html: <style> block carries the M4.10 details + cursor rules") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find(".details {")           != std::string::npos);
+    CHECK(html.find(".details dl {")        != std::string::npos);
+    CHECK(html.find(".details dt {")        != std::string::npos);
+    CHECK(html.find(".details dd {")        != std::string::npos);
+    CHECK(html.find(".details-empty {")     != std::string::npos);
+    CHECK(html.find("svg circle[data-id], svg text[data-id] { cursor: pointer; }")
+          != std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.10 script or details panel") {
+    // Standalone SVG path stays inert: no <script>, no
+    // <div id="details">, no .details CSS.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("<script")              == std::string::npos);
+    CHECK(svg_text.find("</script")             == std::string::npos);
+    CHECK(svg_text.find("<div id=\"details\"")  == std::string::npos);
+    CHECK(svg_text.find(".details")             == std::string::npos);
+    CHECK(svg_text.find("addEventListener")     == std::string::npos);
 }

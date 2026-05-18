@@ -32,14 +32,17 @@
 //      per canonical country, with each country's `id_code`
 //      appearing inside its `<li>` body.
 //
-//   C. No-interactivity invariant.
-//      Both `provinces.svg` and `map.html` are inert
-//      documents — no `<script>`, no `<link>`, no inline
-//      event attributes, no inline `style="..."` per
-//      element. This is what makes M4.x usable today (the
-//      file opens in a browser without any runtime) AND
-//      what a future M4.x clickable-UI sub-milestone has
-//      to consciously break.
+//   C. No-stray-interactivity invariant (asymmetric since
+//      M4.10). `provinces.svg` stays fully inert (no
+//      `<script>`, no `<style>`, no `font-family`).
+//      `map.html` carries EXACTLY ONE inline `<script>`
+//      block — the M4.10 click handler — and it must be
+//      inline (no `src=`, no `type=`). Both artefacts
+//      still have NO `<link>`, NO inline event attributes
+//      (`onclick=` / etc.), and NO per-element
+//      `style="..."`. A future M4.x sub-milestone that
+//      adds a second script, an external src, or any other
+//      interactivity surface trips this gate.
 //
 // Unit-level pinning of each contract clause is already in
 // `tests/systems/svg_export_test.cpp` and the M4.x sections
@@ -214,10 +217,13 @@ TEST_CASE("M4 DOM contract: map.html legend has one <li data-owner=N> per canoni
 }
 
 // =====================================================================
-// C. No-interactivity invariant
+// C. No-stray-interactivity invariant
+//    (asymmetric since M4.10: map.html now carries one inline
+//    <script> for the click-handler; provinces.svg stays
+//    fully inert.)
 // =====================================================================
-TEST_CASE("M4 DOM contract: both artefacts are inert (no <script>, no <link>, no inline event attrs, no per-element inline style)") {
-    TempDir td("leviathan_m4_dom_no_interactivity");
+TEST_CASE("M4 DOM contract: provinces.svg stays fully inert; map.html carries only the M4.10 click-handler script") {
+    TempDir td("leviathan_m4_dom_interactivity_boundary");
     rn::RunnerOptions opts;
     opts.config_path   = kCanonicalConfig;
     opts.days          = 1;
@@ -228,34 +234,59 @@ TEST_CASE("M4 DOM contract: both artefacts are inert (no <script>, no <link>, no
     const std::string svg  = read_file(td.path / "provinces.svg");
     const std::string html = read_file(td.path / "map.html");
 
-    auto check_body = [&](const std::string& body,
-                          const std::string& body_label) {
+    // Common invariants (still hold for BOTH artefacts).
+    auto check_no_link_no_inline_event_no_style = [&](
+            const std::string& body, const std::string& body_label) {
         INFO("artefact = " << body_label);
-        // No JavaScript.
-        CHECK(body.find("<script")  == std::string::npos);
-        CHECK(body.find("</script") == std::string::npos);
         // No external resource links.
         CHECK(body.find("<link")    == std::string::npos);
-        // No inline event attributes (the common ones; a future
-        // clickable UI sub-milestone must consciously add one).
-        CHECK(body.find("onclick")     == std::string::npos);
-        CHECK(body.find("onmouseover") == std::string::npos);
-        CHECK(body.find("onload")      == std::string::npos);
-        CHECK(body.find("onmousedown") == std::string::npos);
-        CHECK(body.find("onkeydown")   == std::string::npos);
+        // No inline event attributes (the common ones). M4.10's
+        // click handler uses addEventListener, not onclick="..."
+        // inline attributes.
+        CHECK(body.find("onclick=")     == std::string::npos);
+        CHECK(body.find("onmouseover=") == std::string::npos);
+        CHECK(body.find("onload=")      == std::string::npos);
+        CHECK(body.find("onmousedown=") == std::string::npos);
+        CHECK(body.find("onkeydown=")   == std::string::npos);
         // No per-element inline `style="..."`. The M4.6 +
         // M4.7 CSS lives entirely in the <style> block;
         // individual <circle> / <text> / <li> / swatch SVG
         // elements never carry a style attribute.
         CHECK(body.find(" style=\"") == std::string::npos);
     };
-    check_body(svg,  "provinces.svg");
-    check_body(html, "map.html");
+    check_no_link_no_inline_event_no_style(svg,  "provinces.svg");
+    check_no_link_no_inline_event_no_style(html, "map.html");
 
-    // provinces.svg additionally has NO <style> block (CSS
-    // is HTML-wrapper-only).
-    CHECK(svg.find("<style")    == std::string::npos);
+    // provinces.svg-specific invariants:
+    //   * NO <script> at all (interactivity is HTML-wrapper-only).
+    //   * NO <style> at all (CSS is HTML-wrapper-only).
+    //   * NO font-family (typography deferred).
+    CHECK(svg.find("<script")    == std::string::npos);
+    CHECK(svg.find("</script")   == std::string::npos);
+    CHECK(svg.find("<style")     == std::string::npos);
     CHECK(svg.find("font-family") == std::string::npos);
+
+    // map.html-specific invariant (M4.10):
+    //   * EXACTLY ONE <script> ... </script> pair (the
+    //     click handler IIFE). Future M4.x sub-milestones
+    //     that grow the handler must keep it a single
+    //     inline block — no <script src="...">, no <script
+    //     type="module">, no second <script>.
+    auto count_occurrences = [&](const std::string& body,
+                                 const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = body.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences(html, "<script")  == 1u);
+    CHECK(count_occurrences(html, "</script") == 1u);
+    // The single script is INLINE (no `src=` attribute).
+    CHECK(html.find("<script src=") == std::string::npos);
+    CHECK(html.find("<script type=") == std::string::npos);
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR

@@ -217,8 +217,63 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.9（HTML
-  DOM contract checkpoint）** 對應 M3.7 在 M3 反應 loop
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.10
+  （HTML clickable UI skeleton）** 是 `map.html` 第一段
+  JavaScript。在 `<body>` 結尾放唯一一個 inline `<script>`
+  IIFE，對每個 `svg circle[data-id], svg text[data-id]`
+  元素掛一個 `click` listener；listener 透過
+  `getAttribute` 讀出 M4.8 的四個 `data-*` 屬性，並用
+  `createElement` + `textContent` 把它們渲染成 `<dl>`，
+  注入到一個新增的 `<div id="details">` placeholder 裡
+  （這個 placeholder 位於 inline SVG 與 M4.7 legend 之間，
+  初始內容是一個 `<p class="details-empty">Click a
+  province to see its details.</p>`）。第一次點擊會覆蓋
+  placeholder，之後每次點擊都會覆蓋前一個 `<dl>`。Handler
+  本身 **無狀態 + XSS-safe**：完全沒有 `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function`，也
+  完全沒有 `fetch` / `XMLHttpRequest` / `localStorage` /
+  `sessionStorage` / `history.pushState` /
+  `window.location` / `navigator`。selector 故意排除 M4.7
+  legend swatch `<circle>` 元素（它們沒帶 `data-id`），
+  legend 維持不可點。新增四條 CSS rule（`.details` +
+  dl/dt/dd + `.details-empty` + `svg circle[data-id], svg
+  text[data-id] { cursor: pointer; }`）寫進 M4.6 的
+  `<style>` block，**不在任何元素上加 inline
+  `style="..."`** ── M4.6 single-CSS-surface 契約照舊。
+  JavaScript 邊界自 M4.10 起變 **不對稱**：
+  `provinces.svg` 仍然完全沒有 script、完全 inert；
+  `map.html` 只能有 EXACTLY ONE inline script（沒 `src=`、
+  沒 `type=`）。M4.9 integration test C 拆成不對稱的
+  per-artefact 斷言來保護這條新 invariant；M4.5/M4.6
+  「no `<script>`」單元測試重新校準。**M4 仍在 in
+  progress** ── 沒有寫 `docs/milestone-4-result.md`，
+  M4.10 只是再多一個 skeleton sub-milestone，不是 exit。
+  `provinces.svg` bytes 與 M4.8 完全相同；`map.html`
+  bytes 有變（新 CSS + placeholder + script）。
+  **Artefact 數量不變（仍 10）；save 格式不變（仍 v12）**；
+  M1.17 / M2.22 / M3.7 byte-identical determinism contract
+  仍 by construction 通過。8 個新 doctest cases（7
+  svg_export + 1 runner；共 839）。**M4 in progress.**
+  **M4.10 不做** state mutation / commands / AI / 點擊
+  emit 任何 event / selection persistence / 多選 /
+  右鍵 / hover / tooltip / keyboard navigation / focus
+  ring / `aria-*` polish / 任何 animation / save schema
+  bump / 新 state field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / 第二個
+  `<script>` / `<script src=>` / `<script type=>` /
+  `<link>` / 外部 CSS / font / `<iframe>` / `<img>` /
+  `fetch` / `XMLHttpRequest` / `localStorage` /
+  `sessionStorage` / `history.pushState` /
+  `window.location` / `navigator` / `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function` /
+  inline event attribute / per-element inline
+  `style="..."` / `<meta name="viewport">` / CSS
+  animation / transition / media query / `@import` /
+  `@font-face` / 鄰接 edge / terrain / overlay /
+  runner CLI flag / 動 `provinces.svg` bytes / M4
+  close-out / `docs/milestone-4-result.md` / 「M4
+  closed」字樣。
+  **M4.9（HTML DOM contract checkpoint）** 對應 M3.7 在 M3 反應 loop
   的角色：**零新行為**，只新增三個 integration tests
   （`tests/integration/m4_dom_contract_test.cpp`）和一份
   單頁 snapshot（`docs/milestone-4-checkpoint.md`），正式

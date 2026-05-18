@@ -225,17 +225,24 @@ std::string render_map_html(const core::GameState& state) {
     // Minimal HTML5 wrapper around the inline SVG body. M4.5
     // shipped the wrapper with NO CSS / NO JS / NO <style> /
     // NO <script> / NO <link> / NO inline event attributes.
-    // M4.6 added the smallest possible `<style>` block — three
-    // selectors that centre the SVG, give it a card-like
-    // border on a neutral page background, and pick a
-    // sans-serif font for the labels. M4.7 (this revision)
-    // adds a static `<ul class="legend">` after the inline
-    // SVG so a viewer can decode which palette colour belongs
-    // to which country, plus three more CSS rules to lay the
-    // legend out. All other M4.5 / M4.6 nots still hold: no
-    // <script>, no <link>, no JavaScript, no inline event
-    // attributes, no inline style="..." per element, no
-    // <meta name="viewport">. Full ruleset documented in
+    // M4.6 added the smallest possible `<style>` block (3
+    // rules). M4.7 added a static `<ul class="legend">`
+    // after the inline SVG (3 more CSS rules). M4.8 widened
+    // the SVG identity surface (data-* on both <circle> and
+    // <text>). M4.9 was a checkpoint (zero behaviour change).
+    // M4.10 (this revision) is the **first M4.x to add
+    // JavaScript** to map.html: a single stateless inline
+    // `<script>` at end of body wires a click handler that
+    // copies the four data-* values of the clicked
+    // <circle> / <text> into a read-only "details" panel
+    // sitting between the SVG and the legend. provinces.svg
+    // stays JS-free / script-free. Map writes are still
+    // forbidden — the handler is read-only: it reads
+    // attributes and writes them into the DOM via
+    // textContent (never innerHTML / never eval). The M4.5
+    // "no <link>", "no inline event attributes", "no
+    // per-element style=" rules still hold for both
+    // artefacts. Full ruleset documented in
     // `svg_export.hpp` and pinned by
     // tests/systems/svg_export_test.cpp.
     std::ostringstream out;
@@ -258,10 +265,35 @@ std::string render_map_html(const core::GameState& state) {
            " margin: 4px 0; }\n";
     out << "  .legend .swatch { width: 16px; height: 16px;"
            " margin-right: 8px; flex-shrink: 0; }\n";
+    // M4.10 details panel layout. Sits between SVG and
+    // legend; same max-width as both so the column feels
+    // aligned. Cursor: pointer on the data-id-bearing
+    // <circle> / <text> tells the user the markers are
+    // clickable (no :hover state, no animations).
+    out << "  .details { max-width: 1000px;"
+           " margin: 20px auto; padding: 12px;"
+           " background-color: #ffffff;"
+           " border: 1px solid #888;"
+           " font-family: sans-serif; }\n";
+    out << "  .details dl { margin: 0; }\n";
+    out << "  .details dt { font-weight: bold;"
+           " margin-top: 4px; }\n";
+    out << "  .details dd { margin: 0 0 4px 16px; }\n";
+    out << "  .details-empty { margin: 0; color: #666; }\n";
+    out << "  svg circle[data-id], svg text[data-id]"
+           " { cursor: pointer; }\n";
     out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";
     out << render_svg_root(state);
+
+    // M4.10 details panel placeholder. Empty initial state
+    // tells the user the panel exists and what to do.
+    out << "<div id=\"details\" class=\"details\">\n";
+    out << "  <p class=\"details-empty\">"
+           "Click a province to see its details."
+           "</p>\n";
+    out << "</div>\n";
 
     // M4.7 legend. One <li> per country, in vector order.
     // Each <li> carries a tiny 16x16 inline SVG swatch
@@ -286,6 +318,47 @@ std::string render_map_html(const core::GameState& state) {
             << "</li>\n";
     }
     out << "</ul>\n";
+
+    // M4.10 click-handler script. Inline IIFE; runs after
+    // the DOM is fully parsed (the script sits at end of
+    // body). Reads four data-* attributes off the clicked
+    // <circle> / <text> via getAttribute, writes them into
+    // the details panel via document.createElement +
+    // textContent so an attribute value containing literal
+    // HTML cannot inject markup. The selector specifically
+    // requires `[data-id]` so the legend's swatch <circle>
+    // elements (which lack data-id) stay non-clickable.
+    out << "<script>\n";
+    out << "(function() {\n";
+    out << "  var details = document.getElementById(\"details\");\n";
+    out << "  if (!details) { return; }\n";
+    out << "  var keys = [\"data-id\", \"data-owner\","
+           " \"data-owner-code\", \"data-name\"];\n";
+    out << "  function showDetails(el) {\n";
+    out << "    while (details.firstChild) {\n";
+    out << "      details.removeChild(details.firstChild);\n";
+    out << "    }\n";
+    out << "    var dl = document.createElement(\"dl\");\n";
+    out << "    for (var i = 0; i < keys.length; i++) {\n";
+    out << "      var k = keys[i];\n";
+    out << "      var dt = document.createElement(\"dt\");\n";
+    out << "      dt.textContent = k;\n";
+    out << "      var dd = document.createElement(\"dd\");\n";
+    out << "      dd.textContent = el.getAttribute(k) || \"\";\n";
+    out << "      dl.appendChild(dt);\n";
+    out << "      dl.appendChild(dd);\n";
+    out << "    }\n";
+    out << "    details.appendChild(dl);\n";
+    out << "  }\n";
+    out << "  var nodes = document.querySelectorAll(\n";
+    out << "    \"svg circle[data-id], svg text[data-id]\");\n";
+    out << "  for (var j = 0; j < nodes.length; j++) {\n";
+    out << "    var el = nodes[j];\n";
+    out << "    el.addEventListener(\"click\","
+           " (function(e) { return function() { showDetails(e); }; })(el));\n";
+    out << "  }\n";
+    out << "})();\n";
+    out << "</script>\n";
 
     out << "</body>\n";
     out << "</html>\n";
