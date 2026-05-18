@@ -8,10 +8,19 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.8). M5 has shipped eight surfaces
-  so far — the previous seven were decoupled bricks;
-  **M5.8 is the wiring that ties them into the canonical
-  monthly tick.** **M5.1** opened M5 with the
+  in progress (at M5.9). M5 has shipped nine
+  sub-milestones — eight built the pipeline (seven
+  decoupled bricks + one monthly wiring), and the
+  ninth (**M5.9**, this sub-milestone) is the **M5
+  observability checkpoint** that captures the
+  M5.1–M5.8 contract end-to-end via a new
+  `docs/milestone-5-checkpoint.md` snapshot + a new
+  `tests/integration/m5_event_pipeline_test.cpp`
+  integration test file. **M5.9 ships zero new
+  gameplay** — no system, formula, artefact, save
+  bump, RunnerOptions field, CLI flag, canonical
+  fixture, or behaviour change. **M5.1** opened M5
+  with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
   `EventTrigger { target, op, value }`; save v12 → v13;
@@ -86,19 +95,90 @@
   `docs/m5-5-event-firer-skeleton.md`,
   `docs/m5-6-event-effects-applicator-skeleton.md`,
   `docs/m5-7-event-runner-integration-skeleton.md`,
-  and `docs/m5-8-monthly-event-tick-wiring.md` for the
-  M5 design notes, and `docs/milestone-4-result.md` /
+  `docs/m5-8-monthly-event-tick-wiring.md`, and
+  `docs/m5-9-event-observability-checkpoint.md` for
+  the M5 per-sub-milestone design notes;
+  `docs/milestone-5-checkpoint.md` for the M5 status
+  snapshot (mirrors `docs/milestone-3-checkpoint.md`
+  and `docs/milestone-4-checkpoint.md`); and
+  `docs/milestone-4-result.md` /
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
-  reports. (`docs/milestone-5-checkpoint.md` is still
-  deliberately deferred — M5.8 wired the composition
-  but canonical events deliberately don't fire on the
-  canonical scenario, so the wiring isn't yet
-  load-bearing for canonical content; the checkpoint
-  reads better alongside a balance-or-events.jsonl PR
-  that makes the wiring matter.)
-- Latest shipped sub-milestone: **M5.8 — monthly event
+  reports.
+- Latest shipped sub-milestone: **M5.9 — event
+  observability checkpoint.** Ninth M5 PR. Docs +
+  integration tests; **zero new gameplay**. Mirrors
+  M3.7 / M4.9 / M4.14 / M4.18 / M4.22 in shape: a
+  checkpoint sub-milestone that captures the milestone
+  contract end-to-end so the next reviewer (or the
+  next AI assistant resuming M5) has one canonical
+  reading source for "what does the event engine look
+  like right now?" instead of piecing together nine
+  per-sub-milestone notes. **New
+  `docs/milestone-5-checkpoint.md`** (single-page M5
+  status snapshot with 10 sections: M5.1–M5.8 ledger;
+  full dataflow including monthly step 7 wiring;
+  schema frozen at M5.4; allowlists frozen at M5.1 +
+  M5.4; 10-artefact set unchanged; ~25 invariants
+  spanning save schema / no-events.jsonl-change /
+  no-applied_commands-pollution / no-active_policies-
+  pollution / monthly-step-7 ordering / determinism /
+  canonical-non-fire; deferred items (events.jsonl
+  emission, CLI flag, gating, selection-policy variants,
+  chained events, broader ops, balance pass, etc.);
+  "what does NOT change in a checkpoint refresh" hard
+  rules; close-out readiness assessment with Category
+  A / B / C breakdown + verdict ("M5 is structurally
+  complete; reviewer's next call is close-out vs one
+  polish PR vs move to M6 — M5.9 does NOT pick"); and
+  notes for the next reviewer on what a future M5.x
+  PR should refresh + the close-out shape when it
+  comes). **New `docs/m5-9-event-observability-
+  checkpoint.md`** (per-PR design note explaining the
+  why-now-not-earlier + what's-in-the-checkpoint-doc
+  + what's-in-the-integration-test + why-no-existing-
+  tests-change). **New
+  `tests/integration/m5_event_pipeline_test.cpp`** with
+  5 doctest cases that exercise the FULL pipeline
+  through the runner (each leg's unit tests already pin
+  the local behaviour; this file pins the cross-leg
+  seam): (A) canonical 1930 scenario at M5.9 still
+  produces `event_history: []` + save_version 14 + 10
+  artefacts + no canonical event id_code in
+  events.jsonl + no new event-related artefact on disk;
+  (B) hand-built state whose event fires on first month
+  → event_history populated + effect applied
+  (legitimacy 0.50→0.45) + save round-trip preserves
+  both; (C) firing run still produces the same 10-file
+  artefact set, no events.jsonl pollution, no
+  applied_commands / active_policies pollution from
+  the event path; (D) firing run is deterministic
+  (same hand-built state + same options → byte-
+  identical 10 artefacts WITH events firing); (E)
+  failure path through the runner — bad event effect
+  target → monthly tick failure → M2.9 pre-end_tick
+  contract (no output artefacts written). **5 new
+  doctest cases (1039 total, 62364 assertions;
+  verified via direct `leviathan_tests.exe` run** per
+  the `feedback_ctest_masks_doctest` rule). **Zero
+  existing tests change** — no code touched beyond
+  `tests/CMakeLists.txt` (registers the new
+  integration test). All 1034 M5.8-era tests pass
+  byte-identically. **No new system / formula /
+  artefact (still 10) / save format bump (still v14)
+  / new state field / new RunnerOptions field / CLI
+  flag / new `PlayerCommandKind` / canonical fixture
+  change / scenario_loader change / event_evaluator
+  / event_firer / event_effects / event_engine /
+  policy_system / monthly_pipeline / save_system code
+  change / events.jsonl semantic change / UI surface
+  / balance pass / M1/M2/M3/M4 systems' external
+  behaviour change / M1.17 / M2 / M3 / M4
+  byte-identical determinism baseline change / M5
+  close-out (no `docs/milestone-5-result.md`, no
+  "M5 closed" wording).** M5 remains in progress.
+- Previously shipped: **M5.8 — monthly event
   tick wiring.** Eighth M5 PR. Wires the M5.7
   `event_engine::tick_events(state)` composition helper
   into the M1.9 monthly pipeline as **step 7**, the
