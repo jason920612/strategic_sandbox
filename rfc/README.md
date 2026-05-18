@@ -217,7 +217,81 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.6
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.7
+  （event runner integration skeleton）** 是 M5 的
+  第七個 sub-milestone。把
+  `match_events → record_matches → apply_event_effects`
+  組成一個 single free function ── 把 M5 內迴圈合成一輪
+  可用的 evaluate → record → apply tick，差實際的 runner
+  / monthly-pipeline wiring 而已。新增
+  `leviathan::systems::event_engine` module
+  （header `include/leviathan/systems/event_engine.hpp`
+  + impl `src/leviathan/systems/event_engine.cpp`）。
+  Public API：`struct TickOutcome { int events_matched;
+  int events_recorded; int events_applied; int
+  total_effects_applied; }`、
+  `core::Result<TickOutcome> tick_events(core::GameState&
+  state)`。**單輪語意**：(1)
+  `matches = match_events(state)`（read-only snapshot
+  evaluation）；(2) 依 canonical 順序對每個 match 呼叫
+  `record_match(state, m, state.current_date)` append
+  EventInstance 到 `event_history`，然後
+  `apply_event_effects(state, instance, def)` 透過
+  M5.6 / M1.5 shared helper 套到由
+  `instance.actors.front().country_id_code` 解出的
+  country 上。**`fired_on` 是 `state.current_date`** ──
+  這個 convention 在 engine 層導入；M5.5 firer 仍然
+  date-neutral。**Snapshot evaluation**：evaluator 在
+  round 開頭跑 **一次**；後續 apply 改變 state 也不會
+  在同一 round 重評（用 cascade 不二次觸發的 test
+  釘住）。**不 dedup**：連叫兩次就 fire 兩次（cooldown
+  / historical-once 是 caller policy）。**失敗模式**：
+  `apply_event_effects` 在 match index `i` 失敗時，
+  `tick_events` 回 `Result::failure`，部分 state 釘住
+  ── matches `[0..i]` 已寫進 `event_history`，但只
+  `[0..i-1]` 的效果有套用（M5.6 atomicity）。
+  **Standalone-helper 設計決定**：M5.7 **不**把
+  `tick_events` auto-wire 進 monthly pipeline 或
+  runner。一旦在 `tick_all_countries` 裡跑，所有
+  canonical-run determinism baseline（M1.17 365-day
+  soak、M2/M3/M4 byte-identical save / events.jsonl /
+  CSV pin）都會漂掉、需要重烤 ── 那是另一個專屬 PR
+  的工作。M5.7 ship composition brick + tests +
+  doc；**零個既有 test 變動**。**13 個新 doctest case
+  （1029 total，62274 assertions；per
+  `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：空 state / 空
+  state.events / no-match 都以零 count 成功；單一
+  match 同時 record + apply；fired_on =
+  state.current_date；兩個 match 按 vector 順序；
+  idempotency（叫兩次 fire 兩次）；snapshot
+  evaluation pin（cascade 在同一 round 不二次觸發）；
+  失敗 path 部分 state；save v14 round-trip；
+  active_policies / state.logs / state.applied_commands
+  都不動；空 state.events 前後 state byte-identical
+  （字面 serialize(s) == serialize(s) pin）。新
+  `docs/m5-7-event-runner-integration-skeleton.md`
+  design note。**沒有 auto-wire 進 runner / monthly
+  pipeline / events.jsonl 變動 / log entry on tick
+  （不 append state.logs）/ state.applied_commands
+  append / 從 event 路徑 append country.active_policies
+  / auto-fire cadence / 新 artefact（仍 10）/ save
+  format bump（仍 v14）/ 新 `RunnerOptions` field /
+  CLI flag / 新 `PlayerCommandKind` / 新 state field
+  / dedup / cooldown / historical-once gating /
+  selection-policy 變體（M5.6 first-actor-wins 仍然）
+  / chained events / choices / RNG outcomes / 更廣
+  trigger op / target / actor kind / balance pass /
+  UI surface / 對 event_evaluator / event_firer /
+  event_effects / policy_system module API 的變動 /
+  對 scenario_loader / canonical fixtures 的變動 /
+  對 M1/M2/M3/M4 system 外部行為的變動 / 對 M1.17
+  / M2 / M3 / M4 byte-identical determinism baseline
+  的變動（沒 auto-wiring = 沒 determinism drift）/
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  與 M5.8 wiring PR 一起寫比較有意義）**。M5
+  remains in progress。
+- **M5（歷史進行中）** — **M5.6
   （event effects applicator skeleton）** 是 M5 的
   第六個 sub-milestone。把 M5 pipeline 的內迴圈封口：
   新增 `EventInstance + EventDefinition → state mutation`

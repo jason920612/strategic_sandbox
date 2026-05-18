@@ -39,6 +39,7 @@ add_executable(leviathan_tests
     systems/diagnostics_test.cpp
     systems/economy_system_test.cpp
     systems/event_effects_test.cpp
+    systems/event_engine_test.cpp
     systems/event_evaluator_test.cpp
     systems/event_firer_test.cpp
     systems/faction_system_test.cpp

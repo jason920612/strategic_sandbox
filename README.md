@@ -8,7 +8,7 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.6). M5 has shipped six decoupled
+  in progress (at M5.7). M5 has shipped seven decoupled
   surfaces so far: **M5.1** opened M5 with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
@@ -46,45 +46,137 @@
   → `FireOutcome { recorded }` that converts the M5.3
   `EventMatch` (with per-trigger actor binding) into an
   M5.4 `EventInstance` and appends it to
-  `state.event_history`. **M5.6** adds the **event
+  `state.event_history`. **M5.6** added the **event
   effects applicator skeleton** — a new
   `leviathan::systems::event_effects` module with
   `apply_event_effects(state, instance, definition)` that
   applies the matching `EventDefinition`'s effects to the
   first actor's country in `instance.actors`, using the
   shared M1.5 / M5.6-extracted
-  `policy::apply_effects_to_actor` helper (so events
-  inherit the M1.5 target/op grammar and pre-flight
-  atomicity without dragging in the M1.15
-  `active_policies` bookkeeping that's policy-specific).
-  **Still no runner / monthly integration, no
-  `events.jsonl` change, no log entry on apply (no
+  `policy::apply_effects_to_actor` helper. **M5.7**
+  adds the **event runner integration skeleton** — a
+  new `leviathan::systems::event_engine` module with a
+  single `tick_events(state) → Result<TickOutcome>`
+  free function that composes the M5.2 evaluator, M5.5
+  firer, and M5.6 effects applicator into one
+  "evaluate → record → apply" round, using
+  `state.current_date` as `fired_on`. The composition
+  is a **standalone helper** — M5.7 deliberately does
+  NOT auto-wire it into the runner or
+  `monthly_pipeline::tick_all_countries`. That wiring
+  belongs to a future M5.x sub-milestone (it would
+  rebake M1.17's 365-day byte-identical determinism
+  baselines, which is its own surface change). **Still
+  no events.jsonl change, no log entry on tick (no
   `state.logs` append), no `state.applied_commands`
-  append, no `state.event_history` mutation, no
-  `country.active_policies` append from the event path,
-  no new artefact (still 10), no save bump (still v14),
-  no new `PlayerCommandKind`** — M5.6 ships the
-  effects-applicator brick stand-alone; canonical
-  scenarios still emit `"event_history": []` because no
-  system invokes the M5.5 firer + M5.6 applicator
-  composition yet. See
+  append, no `country.active_policies` append from the
+  event path, no auto-fire cadence, no new artefact
+  (still 10), no save bump (still v14), no new
+  `PlayerCommandKind`, no cooldown / historical-once
+  gating, no selection-policy variants.** Canonical
+  scenarios still emit `"event_history": []` because
+  the runner / monthly pipeline don't invoke
+  `tick_events` yet. See
   `docs/m5-1-event-definition-schema-foundation.md`,
   `docs/m5-2-trigger-evaluator-skeleton.md`,
   `docs/m5-3-event-match-actor-binding-skeleton.md`,
   `docs/m5-4-event-instance-history-data-skeleton.md`,
-  `docs/m5-5-event-firer-skeleton.md`, and
-  `docs/m5-6-event-effects-applicator-skeleton.md` for
-  the M5 design notes, and `docs/milestone-4-result.md`
-  / `docs/milestone-3-result.md` /
+  `docs/m5-5-event-firer-skeleton.md`,
+  `docs/m5-6-event-effects-applicator-skeleton.md`,
+  and `docs/m5-7-event-runner-integration-skeleton.md`
+  for the M5 design notes, and
+  `docs/milestone-4-result.md` /
+  `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
   reports. (`docs/milestone-5-checkpoint.md` is still
   deliberately deferred — every M5 sub-milestone so far
   has been a single decoupled surface, so the checkpoint
-  reads better alongside the runner-integration PR where
-  the composition becomes load-bearing for canonical
-  runs.)
-- Latest shipped sub-milestone: **M5.6 — event
+  reads better alongside the M5.8 wiring PR where the
+  composition becomes load-bearing for canonical runs.)
+- Latest shipped sub-milestone: **M5.7 — event runner
+  integration skeleton.** Seventh M5 PR. Adds the
+  `match_events → record_matches → apply_event_effects`
+  composition brick as a single free function. New
+  `leviathan::systems::event_engine` module
+  (`include/leviathan/systems/event_engine.hpp` +
+  `src/leviathan/systems/event_engine.cpp`). Public
+  API: `struct TickOutcome { int events_matched, int
+  events_recorded, int events_applied, int
+  total_effects_applied; }`, `core::Result<TickOutcome>
+  tick_events(core::GameState& state)`. **Per-round
+  semantics**: (1) `matches = match_events(state)`
+  (read-only snapshot evaluation); (2) for each match
+  in canonical order, `record_match(state, m,
+  state.current_date)` appends an EventInstance to
+  `event_history`, then
+  `apply_event_effects(state, instance, def)` mutates
+  the country resolved from `instance.actors.front().country_id_code`
+  via the M5.6 / M1.5 shared helper. **`fired_on` is
+  `state.current_date`** — the engine layer introduces
+  that convention; M5.5 firer itself remains date-
+  neutral. **Snapshot evaluation**: the evaluator runs
+  ONCE at the top of the round; subsequent apply passes
+  that mutate state do NOT re-trigger evaluation in the
+  same round (pinned by a test where an event drops a
+  value past another event's threshold but the second
+  event does NOT fire in the same tick). **No dedup**:
+  two consecutive `tick_events` calls on the same state
+  fire the same events twice (cooldown / historical-
+  once is caller policy for a future M5.x).
+  **Failure mode**: if `apply_event_effects` fails on
+  match index `i`, `tick_events` returns
+  `Result::failure` (`"tick_events: " + inner_error`)
+  with partial state pinned — matches `[0..i]` recorded
+  in `event_history` but only `[0..i-1]` had effects
+  applied (M5.6 atomicity). **Standalone-helper design
+  choice**: M5.7 does NOT auto-wire `tick_events` into
+  the monthly pipeline or runner. The instant it ran
+  inside `tick_all_countries`, every canonical-run
+  determinism baseline (M1.17 365-day soak, M2/M3/M4
+  byte-identical save / events.jsonl / CSV pins) would
+  drift and need rebaking — that's a dedicated future
+  PR's job. Result: M5.7 adds new module + new tests +
+  new doc, and **zero existing tests change**. **13
+  new doctest cases (1029 total, 62274 assertions;
+  verified via direct `leviathan_tests.exe` run** per
+  the `feedback_ctest_masks_doctest` rule): empty
+  state / empty `state.events` / no-match all succeed
+  with zero counts; one matching event records +
+  applies; `fired_on` = `state.current_date` for every
+  recorded instance; two matches in vector order;
+  idempotency (two calls fire twice); snapshot
+  evaluation pin (cascade events don't fire in the same
+  tick); failure path with partial state; save v14
+  round-trip after tick; no `active_policies` /
+  `state.logs` / `state.applied_commands` mutation;
+  empty `state.events` keeps state byte-identical
+  before and after (literal `serialize(s) ==
+  serialize(s)` pin). New
+  `docs/m5-7-event-runner-integration-skeleton.md`
+  design note. **No auto-wire into runner / monthly
+  pipeline, no events.jsonl change, no log entry on
+  tick (no state.logs append), no state.applied_commands
+  append, no country.active_policies append from the
+  event path, no auto-fire cadence, no new artefact
+  (still 10), no save format bump (still v14), no new
+  `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no new state field, no dedup /
+  cooldown / historical-once gating, no selection-
+  policy variants (M5.6 first-actor-wins stays), no
+  chained events / choices / RNG outcomes, no broader
+  trigger ops / targets / actor kinds, no balance pass,
+  no event author tooling, no UI surface, no changes
+  to event_evaluator / event_firer / event_effects /
+  policy_system module APIs, no changes to
+  scenario_loader / canonical fixtures, no changes to
+  M1/M2/M3/M4 systems' external behaviour, no changes
+  to M1.17 / M2 / M3 / M4 byte-identical determinism
+  baselines (no auto-wiring = no determinism drift),
+  no `docs/milestone-5-checkpoint.md` (still deferred —
+  reads better alongside the M5.8 wiring PR).** M5
+  remains in progress.
+- Previously shipped: **M5.6 — event
   effects applicator skeleton.** Sixth M5 PR. Closes the
   inner loop of the M5 pipeline by adding the
   `EventInstance + EventDefinition → state mutation` brick
