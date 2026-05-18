@@ -42,28 +42,38 @@
 //   * Every loaded faction's `country_id_code` must match a loaded
 //     country's `id_code`; FactionState::country is set to the
 //     numeric CountryId of that match.
-//   * Every loader-populated root container on GameState must be
-//     empty on entry to load_into_state. Issue #110 §4 widened the
-//     preflight from {countries, factions, policies} to the full
-//     7-container set:
+//   * load_into_state requires a "scenario-load-clean" GameState
+//     on entry — every container whose load needs a clean slate
+//     must be empty. Issue #110 §4 widened the preflight from 3
+//     to 7 scenario-loaded containers; issue #112 §7 extends it to
+//     9 containers by adding two runtime-carryover containers that
+//     would contaminate a fresh scenario load:
 //
-//       state.countries
-//       state.provinces
-//       state.factions
-//       state.policies
-//       state.events
-//       state.interest_groups
-//       state.relationships
+//       Scenario-loaded (7):
+//         state.countries
+//         state.provinces
+//         state.factions
+//         state.policies
+//         state.events
+//         state.interest_groups
+//         state.relationships
 //
-//     If ANY of these is non-empty, load_into_state returns
+//       Runtime carryover (2):
+//         state.pending_player_events  (could reference an
+//             event_history entry from a previous scenario)
+//         state.event_history          (would mix two scenarios'
+//             fire audit trails into one save)
+//
+//     If ANY of these 9 is non-empty, load_into_state returns
 //     Result::failure with a message that names every non-empty
 //     container. The loader does NOT append; callers that want
 //     incremental loading must build their own pipeline.
 //
-//     The remaining root containers — state.logs,
-//     state.applied_commands, state.event_history — are runtime
-//     accumulations (M0.6 / M2.4 / M5.4) and are NOT in the
-//     empty-state contract; the loader does not populate them.
+//     `state.logs` and `state.applied_commands` are intentionally
+//     NOT in the contract — they are runtime audit trails whose
+//     carryover across scenario loads is legitimate (a runner
+//     script may log something before / between load_into_state
+//     calls). The loader does not populate them either.
 //
 // What this loader does NOT do:
 //   * Schedule policies over time. Entries in `starting_policies`
@@ -201,6 +211,7 @@ struct ManifestEvent {
     std::string                      description;
     std::string                      visible_report;   // M6.2
     std::string                      true_cause;       // M6.1
+    std::string                      category;         // issue #112 — required non-empty
     std::vector<core::EventTrigger>  triggers;
     std::vector<core::PolicyEffect>  effects;
     // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12): optional event-extension
@@ -210,6 +221,11 @@ struct ManifestEvent {
     std::vector<core::WeightModifier> weight_modifiers;
     std::vector<core::EventOption>    options;
     std::vector<std::string>          followup_event_ids;
+    // Issue #112: required iff options non-empty. Default
+    // (OptionOnly) is meaningful only when options is empty —
+    // the loader rejects mismatches.
+    core::EventOptionEffectMode       option_effect_mode =
+        core::EventOptionEffectMode::OptionOnly;
 };
 
 // Parsed manifest. Paths are stored verbatim from JSON; resolving

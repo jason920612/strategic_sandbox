@@ -179,6 +179,24 @@ evaluate_match(const core::GameState&       state,
 // it.
 std::vector<EventMatch> match_events(const core::GameState& state);
 
+// Issue #112: per-country scoped match. Returns at most one
+// EventMatch per event in state.events; each match guarantees ALL
+// triggers bound INSIDE the named country:
+//   - `country.*` triggers must hold for state.countries[country_id]
+//     specifically (no leakage to other countries).
+//   - `interest_group.*` triggers must hold for some IG whose
+//     owning `country == country_id` (no leakage from IGs in
+//     other countries).
+//   - Mixed-trigger events require both sides to bind within
+//     this country.
+// The same event template may match independently for multiple
+// countries — one country's match does NOT consume or suppress
+// another's. Used by `event_engine::tick_events` to drive the
+// per-country, per-category weighted draw.
+std::vector<EventMatch>
+match_events_for_country(const core::GameState& state,
+                         core::CountryId        country_id);
+
 // RCR-1: RFC-090 §5.3 / §5.6 / §5.7 — deterministic weighted
 // ranker. For each event in `state.events`, compute a numeric
 // `weight` as `kBaseWeight + sum(modifier.weight_delta)` over

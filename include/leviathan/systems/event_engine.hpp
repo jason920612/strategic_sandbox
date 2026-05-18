@@ -1,85 +1,170 @@
-// EventEngine — one-tick composition that wires every M5.x
-// helper (evaluator + weight ranker + firer + effects applicator
-// + option-default + followup resolver + followup firer) into a
-// single `tick_events(state)` call.
+// Issue #112: per-country / per-category weighted-random event
+// draw + recursive conditional followup chain + author-controlled
+// base/option effect mode.
 //
-// Issue #110 (RFC strict compliance) replaced the prior "M5.7
-// composition brick" semantics — which only iterated matches and
-// applied base effects — with the wired behaviour RFC-090 §5.6 /
-// §5.7 / §5.8 / §5.12 describe:
+// New semantics for `event_engine::tick_events(state)`:
 //
-//   1. matches  = event_evaluator::match_events(state)
-//        - vector<EventMatch>, M5.3 actor binding
+//   for each country in state.countries (vector order):
+//     matches = match_events_for_country(state, country.id)
+//     if matches empty: continue            // no rng consumption
+//     bucket matches by EventDefinition.category
+//       (first-matched-event vector-order; NOT lexicographic; NOT
+//        unordered_map iteration)
+//     for each bucket (in first-matched-event vector-order):
+//       candidates = filter bucket to weight > 0
+//       if empty: continue
+//       weights = [weight(c) for c in candidates]
+//       choice = random::weighted_choice(state.rng, weights, tag)
+//       fire selected event:
+//         - record parent EventInstance + LogEntry
+//         - if player country AND options non-empty:
+//             append PendingPlayerEvent, apply NO effects,
+//             SKIP followup recursion (resumes on
+//             PlayerCommandKind::ChooseEventOption command)
+//         - else if options non-empty:
+//             headless AI chooser picks the best-scored option;
+//             apply_option_effects_with_mode per
+//             definition.option_effect_mode
+//         - else:
+//             apply_event_effects (base path)
+//         - then recurse depth-1+ conditional followup chain (A3)
 //
-//   2. ranked   = event_evaluator::rank_weighted_events(state)
-//        - vector<WeightedEventCandidate>, sorted DESC by weight,
-//          stable tie-break on event vector index
+// Conditional followup recursion (post-parent-apply, depth-N
+// single-path):
 //
-//   3. For each candidate in `ranked` that is ALSO in `matches`
-//      (intersection by event_index), in weight-desc order:
-//      a. event_firer::record_match(state, match, current_date)
-//      b. if definition.options non-empty:
-//            event_effects::apply_default_option_effects(...)
-//         else:
-//            event_effects::apply_event_effects(...)
-//         (the two surfaces are independent — never both)
-//      c. for each id in event_effects::resolve_followup_ids(...):
-//            event_firer::record_followup(state, parent_instance,
-//                                          followup_definition,
-//                                          current_date)
-//            apply followup base / default-option effects
-//            (DEPTH-1: no recursion into followup's own
-//             followup_event_ids; cap preserves M5.7 snapshot
-//             semantics)
+//   visited = { parent.event_id_code }
+//   depth   = 0
+//   current = parent_node
+//   while depth < kMaxFollowupDepth:
+//     fids = resolve_followup_ids(state, current.definition)
+//     pool = []
+//     for fidx in fids:
+//       fdef = state.events[fidx]
+//       if fdef.id_code in visited: continue         // cycle guard
+//       if !evaluate(state, fdef): continue          // F1+G1
+//       w = weight_for_event(state, fidx)
+//       if w > 0: pool.append((fidx, fdef, w))
+//     if pool empty: break
+//     chosen = random::weighted_choice(state.rng, weights, tag)
+//     record_followup(state, current.instance, fchosen, current_date)
+//       // immediate-predecessor: `followup_of` metadata points
+//       // to current.event_id_code, NOT to the original root
+//     apply_event_effects OR apply_option_effects_with_mode based
+//       on fchosen.options + option_effect_mode (followups follow
+//       the same author-controlled mode as parents)
+//     visited.add(fchosen.id_code)
+//     current = (fidx, child_instance, fchosen.id_code)
+//     depth += 1
 //
-// fired_on = state.current_date for every recorded instance —
-// parent or followup — in this tick.
+// Both guards run simultaneously:
+//   - visited-set guard (event_id_code-keyed) — stops A→B→A and
+//     any revisit. Faithful cycle detection because the loader
+//     rejects duplicate id_codes.
+//   - depth guard (kMaxFollowupDepth = 5) — independent stop for
+//     long non-cyclic chains.
 //
-// Failure semantics: any per-event apply failure (parent or
-// followup) returns Result::failure. State at that point has the
-// parent + all prior-iteration events recorded in event_history
-// and their effects applied; the failing event is recorded but
-// effects-failed. The caller decides whether to roll forward.
+// state.rng consumption (one draw per event_engine::tick_events
+// internal call):
+//   - no matched events for a country → no draw, no RNG advance.
+//   - one selectable candidate in a (country, category) bucket →
+//     ONE draw (random::weighted_choice always consumes one draw,
+//     even for singleton pools; per random_service.hpp:64-66).
+//   - N selectable candidates → ONE draw per (country, category)
+//     bucket fire + ONE draw per followup chain step.
 //
-// What `tick_events` does NOT do:
-//   - recurse into followup-of-followup chains (depth-1 only)
-//   - consume state.rng (still RNG-free; weighted draw stays
-//     deterministic via the weight-desc + stable-index rule)
-//   - emit new artefacts beyond what record_match /
-//     record_followup already write to state.event_history +
-//     state.logs (one `event_fired` LogEntry per fired instance)
+// Canonical 1930_minimal preserves zero-fire under this semantics
+// (its 2 events deliberately never match canonical authored state)
+// — so M1.17 / M2 / M3 / M4 / M5 byte-identical determinism
+// baselines stay green. Compliance 1930_rfc_compliance scenario
+// fires events and consumes RNG; its baselines move (called out
+// in the PR description).
 
 #ifndef LEVIATHAN_SYSTEMS_EVENT_ENGINE_HPP
 #define LEVIATHAN_SYSTEMS_EVENT_ENGINE_HPP
 
+#include <cstddef>
+#include <string>
+
+#include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::event_engine {
 
+// Max followup chain depth before recursion stops independent of
+// the visited-set cycle guard. Exported so tests can drive a
+// MAX_DEPTH-length chain and assert termination.
+inline constexpr std::size_t kMaxFollowupDepth = 5;
+
 // One tick_events call's summary. Counts include only events
-// that finished successfully — on a mid-round failure, the
-// counts reflect the (matched, recorded, applied) progress at
-// the time of failure.
+// that finished successfully; mid-tick apply failure short-
+// circuits the call and these reflect partial progress.
 struct TickOutcome {
-    int events_matched          = 0;  // == match_events(state).size()
-    int events_recorded         = 0;  // appended to state.event_history (parents only)
-    int events_applied          = 0;  // parent effects-applicator succeeded
-    int total_effects_applied   = 0;  // sum of per-parent effects_applied
-    int events_with_options     = 0;  // parents whose options vector was non-empty
-    int events_with_followups   = 0;  // parents with at least one resolved followup
-    int followups_recorded      = 0;  // depth-1 followups recorded in event_history
-    int total_followup_effects_applied = 0;  // sum of per-followup effects_applied
+    int countries_processed              = 0;
+    int countries_with_matches           = 0;
+    int categories_processed             = 0;
+    // Total trigger-matched events found across all (country,
+    // category) buckets BEFORE the weighted draw filters down to
+    // one per bucket. Provided so tests can verify "this state
+    // produces N matches" independent of how the draw decided.
+    int events_matched                   = 0;
+    int events_drawn                     = 0;
+    int events_recorded                  = 0;
+    int events_applied                   = 0;
+    int events_pending_player_choice     = 0;
+    int total_effects_applied            = 0;
+    int events_with_options              = 0;
+    int events_with_followups            = 0;
+    int followups_recorded               = 0;
+    int total_followup_effects_applied   = 0;
 };
 
-// One round of event-engine processing on `state`. See header
-// doc for the per-match semantics, weight-ordered firing, option-
-// default-vs-base dispatch, depth-1 followup chain, and failure
-// mode.
+// One round of event-engine processing on `state`. Drives per-
+// country / per-category weighted draw + conditional followup
+// recursion + author-controlled option mode + player-choice
+// deferral per the header doc above.
 //
-// fired_on = state.current_date for every recorded instance
-// (parent + followups) in this round.
+// fired_on = state.current_date for every recorded instance.
+//
+// On a per-event-apply failure the call returns Result::failure
+// after appending the failed event's parent EventInstance + its
+// `event_fired` LogEntry; the caller decides whether to roll
+// forward. Subsequent draws / followups for the failing event
+// are skipped.
 core::Result<TickOutcome> tick_events(core::GameState& state);
+
+// Issue #112: Public followup recursion entry-point used by both
+// `tick_events` (when a non-deferred parent fires) and
+// `commands::dispatch_one` (after a player resolves a pending
+// option choice with `ChooseEventOption`).
+//
+// Parameters:
+//   * parent_instance_index — index into `state.event_history` for
+//     the just-fired parent EventInstance. Its `event_id_code` and
+//     the corresponding `state.events[parent_definition_index]`
+//     entry seed the chain.
+//   * parent_definition_index — index into `state.events` for the
+//     definition whose `followup_event_ids` will be resolved.
+//   * country_for_option — country to score followup options
+//     against (mirrors the parent's actor country).
+//   * tag_prefix — `random::weighted_choice` tag prefix (so player-
+//     command-driven recursion gets a distinguishable RNG-tag
+//     namespace from the engine-driven one).
+//
+// Returns a partial TickOutcome containing only the followups_*
+// counters. State is updated in place; on per-followup-effect
+// failure the chain stops and returns Result::failure.
+struct FollowupOutcome {
+    int followups_recorded             = 0;
+    int total_followup_effects_applied = 0;
+};
+
+core::Result<FollowupOutcome>
+recurse_followups_from_event(core::GameState&             state,
+                             std::size_t                  parent_instance_index,
+                             std::size_t                  parent_definition_index,
+                             const core::CountryState&    country_for_option,
+                             const std::string&           tag_prefix);
 
 }  // namespace leviathan::systems::event_engine
 

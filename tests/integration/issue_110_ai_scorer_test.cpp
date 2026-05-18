@@ -136,7 +136,7 @@ TEST_CASE("Issue #110: low-stability country picks a stabilising policy") {
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // expand_welfare boosts country.stability; with stability=0.1 the
     // (1 - stability) = 0.9 desire term wins over the tax / budget /
     // military alternatives that score near zero under these inputs.
@@ -154,7 +154,7 @@ TEST_CASE("Issue #110: budget-crisis country picks a revenue policy") {
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // raise_taxes scores 0.05 × (1.0 - 0.5×0.1) = 0.0475;
     // expand_welfare scores 0.04 × 0.5 + (-0.07) × 1.0 = -0.05;
     // increase_military_budget = 0.0 (no threat); fiscal_consolidation
@@ -193,7 +193,7 @@ TEST_CASE("Issue #110: high-incoming-threat country picks a military policy"
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     CHECK(r.value()[0].country == CountryId{0});  // POL only
     // increase_military_budget effect on country.military_power scores
     // 0.03 × (effective_threat 0.9 + 0.5×military_gap_norm 0.0) = 0.027.
@@ -208,9 +208,10 @@ TEST_CASE("Issue #110: military_strength disparity also drives military pick"
     // Internal pressures intentionally MID-HIGH so the disparity is
     // the dominant pressure axis: stability + legitimacy high enough
     // that the stabilising-policy desire term sits below the
-    // military-gap desire term.
-    target.stability         = 0.80;
-    target.legitimacy        = 0.80;
+    // military-gap desire term, but not SO high that the country
+    // dips below the issue #112 pressure threshold (0.80).
+    target.stability         = 0.75;
+    target.legitimacy        = 0.75;
     target.gdp               = 1000.0;
     target.budget_balance    = 0.0;
     target.legal_tax_burden  = 0.20;
@@ -235,7 +236,7 @@ TEST_CASE("Issue #110: military_strength disparity also drives military pick"
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // military_gap = 90 - 10 = 80, gap_norm = 0.8 → desire = 0.5 × 0.8 = 0.4.
     // increase_military_budget score 0.03 × 0.4 = 0.012, dominating
     // the near-zero alternatives.
@@ -273,7 +274,7 @@ TEST_CASE("Issue #110: high-radicalism interest groups sway AI toward welfare") 
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // expand_welfare (welfare category) gets +0.7 × 0.9 = +0.63 from the
     // IG-radicalism pressure term — overwhelming the otherwise-modest
     // stability term and any near-zero alternatives.
@@ -300,7 +301,7 @@ TEST_CASE("Issue #110: no-stacking skips already-active policy and picks next-be
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // raise_taxes is stacked → excluded. fiscal_consolidation is the
     // remaining revenue-improving policy: 0.03 × (1 - fiscal_capacity 0)
     // + 0.02 × 1.0 = 0.05 under budget crisis. It must NOT be raise_taxes.
@@ -334,7 +335,7 @@ TEST_CASE("Issue #110: expired policy is re-eligible for selection") {
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 1u);
+    REQUIRE(r.value().size() >= 1u);
     // raise_taxes is expired → eligible again, and best for a deficit
     // country with low tax burden.
     CHECK(r.value()[0].policy_id_code == "raise_taxes");

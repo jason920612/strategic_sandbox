@@ -165,27 +165,23 @@ TEST_CASE("M1 end-to-end: scenario load -> day-0 enactment -> 365-day tick -> sa
     //   increase_military_budget on GER (duration_days = 30)
     // in that order, on day 0 (1930-01-01).
     //
-    // Issue #110 strict RFC compliance: the monthly pipeline invokes
+    // Issue #112 strict RFC compliance: the monthly pipeline invokes
     // `ai_policy::apply_selected_policies` every month boundary. Over
-    // a 365-day run starting 1930-01-01, 12 month boundaries are
-    // crossed (Feb-1, Mar-1, ..., Dec-1 1930, Jan-1 1931). The AI
-    // selection rule is the deterministic scorer (RFC-090 §3.5):
-    // each country picks its highest-scoring policy based on its
-    // current pressures (stability / legitimacy / budget / threat /
-    // IG-radicalism / military-strength gap). Selections vary across
-    // countries and across months as pressures shift.
-    //
-    // Expected active_policies counts on reload:
-    //   GER: 2 day-0 entries (raise_taxes, increase_military_budget)
-    //        + 12 AI-apply entries (one per month boundary)
-    //        = 14
-    //   FRA: 0 day-0 + 12 AI-apply = 12
-    //   JPN: 0 day-0 + 12 AI-apply = 12
-    //
-    // Day-0 entries appear FIRST in the vector (M1.13 day-0 enactment
-    // happens during begin_tick, before any month_changed boundary).
+    // a 365-day run, 12 month boundaries are crossed. The AI
+    // selection rule has TWO new gates (RFC-090 §3.5 + RFC-040 §4):
+    //   1. PRESSURE gate: only countries whose `compute_total_pressure`
+    //      exceeds `kPressureThreshold` (0.80) emit selections that
+    //      month.
+    //   2. CAPACITY bound: countries above the gate emit 1/2/3 picks
+    //      per month based on administrative_efficiency / bureaucratic_
+    //      compliance / budget headroom.
+    // So a country's `active_policies` count is no longer a fixed
+    // function of how many monthly ticks ran — it depends on how
+    // many of those ticks the country's pressure cleared the gate
+    // AND on its capacity each time. Day-0 starting_policies are
+    // unchanged.
     const auto& ger = reloaded.countries[0];
-    REQUIRE(ger.active_policies.size() == 14u);
+    REQUIRE(ger.active_policies.size() >= 2u);
     CHECK(ger.active_policies[0].policy_id_code == "raise_taxes");
     CHECK(ger.active_policies[0].expires_on     == GameDate(1930, 3, 2));
     CHECK(ger.active_policies[1].policy_id_code == "increase_military_budget");
@@ -197,26 +193,15 @@ TEST_CASE("M1 end-to-end: scenario load -> day-0 enactment -> 365-day tick -> sa
         valid_ids.insert(p.id_code);
     }
 
-    // Per-country invariant checks for the 12 monthly AI-applied
-    // entries. We do NOT pin specific id_codes — the scorer's
-    // selection is deterministic but author-tunable; pinning would
-    // re-introduce the lockstep coupling issue #110 §2 rejected.
-    // Instead we assert RFC-shaped properties:
+    // Per-country invariant checks for the monthly AI-applied
+    // entries:
     //   (a) the id_code is a real policy from state.policies
     //       (no garbage / null / unknown ids)
     //   (b) each entry's expires_on is set (non-default GameDate)
-    //   (c) the no-stacking rule holds: when the AI applies a new
-    //       monthly policy, that policy's id_code is NOT identical
-    //       to one already-active+unexpired on the same country
-    //       at the firing moment.
-    //   (d) at least two distinct policy id_codes appear across
-    //       FRA's 12 monthly picks — proves the scorer responds
-    //       to changing pressures, not a single dominant axis.
     auto monthly_entries_pass_invariants = [&](const CountryState& c,
-                                               std::size_t          start,
-                                               std::size_t          end) {
+                                               std::size_t          start) {
         std::set<std::string> distinct_ids;
-        for (std::size_t i = start; i < end; ++i) {
+        for (std::size_t i = start; i < c.active_policies.size(); ++i) {
             const auto& ap = c.active_policies[i];
             CHECK(valid_ids.count(ap.policy_id_code) == 1u);
             CHECK(ap.expires_on != GameDate{});
@@ -225,20 +210,9 @@ TEST_CASE("M1 end-to-end: scenario load -> day-0 enactment -> 365-day tick -> sa
         return distinct_ids;
     };
 
-    // GER: monthly entries are positions [2, 14).
-    (void)monthly_entries_pass_invariants(ger, 2u, 14u);
-
-    // FRA: 12 monthly entries; scorer should produce variation.
-    const auto& fra = reloaded.countries[1];
-    REQUIRE(fra.active_policies.size() == 12u);
-    const auto fra_distinct =
-        monthly_entries_pass_invariants(fra, 0u, 12u);
-    CHECK(fra_distinct.size() >= 2u);
-
-    // JPN: 12 monthly entries.
-    const auto& jpn = reloaded.countries[2];
-    REQUIRE(jpn.active_policies.size() == 12u);
-    (void)monthly_entries_pass_invariants(jpn, 0u, 12u);
+    (void)monthly_entries_pass_invariants(ger, 2u);
+    (void)monthly_entries_pass_invariants(reloaded.countries[1], 0u);
+    (void)monthly_entries_pass_invariants(reloaded.countries[2], 0u);
 
     // ---- Step 4: M1.12 coupling produced a non-zero growth signal --------
     // After 12 economy ticks the GDP and last_gdp_growth_rate must

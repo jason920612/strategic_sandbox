@@ -83,9 +83,21 @@ struct GameState {
     // author entries via the optional `relationships` block
     // (vector of `{from, to, relationship, threat}`). Save
     // format v17 makes the block required at the save layer.
-    // No system drives these values yet — RCR-1 ships the data
-    // layer + round-trip only.
+    // Issue #112 wires the AI scorer to READ these values so
+    // they finally feed simulation behaviour. The diplomacy-AI
+    // *driver* of these values stays M8 / RFC-040 scope.
     std::vector<CountryRelation> relationships;
+
+    // Issue #112: pending player-country event option choices.
+    // Populated by `event_engine::tick_events` when a player-country
+    // event with `options` non-empty fires. Effects are NOT applied
+    // for these events until the player issues a
+    // `PlayerCommandKind::ChooseEventOption` command. Save v18
+    // persists this vector; scenario_loader rejects a pre-populated
+    // entry on entry (9-container preflight). Order is the natural
+    // append-order from tick_events; the command handler resolves
+    // by `event_history_index` so order is informational only.
+    std::vector<PendingPlayerEvent> pending_player_events;
 };
 
 // Builds a fresh GameState from `config`:

@@ -283,6 +283,17 @@ parse_event_file(std::string_view json_text,
                 std::move(r.error()));
         }
 
+        // Issue #112: category is required non-empty. The event
+        // engine groups matched events by category and draws one
+        // per (country, category) bucket per tick — so an absent /
+        // empty category would silently drop the event from
+        // every draw.
+        if (auto r = need_string_nonempty("category",
+                                          ev.category); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+
         // triggers: required, non-empty array.
         if (!e.contains("triggers") || !e.at("triggers").is_array()) {
             return core::Result<std::vector<ManifestEvent>>::failure(
@@ -530,6 +541,50 @@ parse_event_file(std::string_view json_text,
                     opt.effects.push_back(std::move(eff));
                 }
                 ev.options.push_back(std::move(opt));
+            }
+        }
+
+        // Issue #112: option_effect_mode required iff options
+        // non-empty. JSON keys: "option_only" | "base_then_option"
+        // | "option_then_base". Reject absent-with-options or
+        // present-without-options to avoid silent semantics.
+        const bool has_mode_key = e.contains("option_effect_mode");
+        const bool has_options  = !ev.options.empty();
+        if (has_options && !has_mode_key) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".option_effect_mode required when "
+                        "options is non-empty"));
+        }
+        if (!has_options && has_mode_key) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".option_effect_mode must be absent "
+                        "when options is empty"));
+        }
+        if (has_options) {
+            if (!e.at("option_effect_mode").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".option_effect_mode must be a string"));
+            }
+            const std::string mode_str =
+                e.at("option_effect_mode").get<std::string>();
+            if (mode_str == "option_only") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::OptionOnly;
+            } else if (mode_str == "base_then_option") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::BaseThenOption;
+            } else if (mode_str == "option_then_base") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::OptionThenBase;
+            } else {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".option_effect_mode '" + mode_str +
+                            "' must be one of option_only / "
+                            "base_then_option / option_then_base"));
             }
         }
 
@@ -902,12 +957,27 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     namespace dl = leviathan::systems::data_loader;
 
     // ---- 0. Reject pre-populated state -----------------------------
-    // Issue #110 §4: every loader-populated root container on
-    // GameState must be empty on entry, not just the first three.
-    // The 7 loader-populated containers are: countries, provinces,
-    // factions, policies, events, interest_groups, relationships.
-    // The remaining root containers (logs, applied_commands,
-    // event_history) are runtime accumulations and NOT in scope.
+    // Issue #112 §7: "scenario-load-clean GameState" — every container
+    // whose load_into_state needs a clean slate must be empty on
+    // entry. The contract covers both scenario-loaded containers
+    // (7 of these) and runtime-carryover containers that would
+    // contaminate a fresh scenario load (2 of these):
+    //
+    //   Scenario-loaded:
+    //     countries / provinces / factions / policies / events /
+    //     interest_groups / relationships
+    //
+    //   Runtime-carryover (rejected so a fresh load doesn't inherit
+    //   stale audit history from a previous scenario):
+    //     pending_player_events  — could reference an event_history
+    //         entry from a different scenario
+    //     event_history          — would mix two scenarios' fire
+    //         audit trails into one save
+    //
+    // `state.logs` and `state.applied_commands` are intentionally
+    // NOT checked: they're runtime audit trails whose carryover
+    // across scenario loads is legitimate (a runner script may want
+    // to log something before / between load_into_state calls).
     {
         std::string non_empty;
         auto note = [&](const char* name, bool flag) {
@@ -916,18 +986,20 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                 non_empty += name;
             }
         };
-        note("countries",       !state.countries.empty());
-        note("provinces",       !state.provinces.empty());
-        note("factions",        !state.factions.empty());
-        note("policies",        !state.policies.empty());
-        note("events",          !state.events.empty());
-        note("interest_groups", !state.interest_groups.empty());
-        note("relationships",   !state.relationships.empty());
+        note("countries",            !state.countries.empty());
+        note("provinces",            !state.provinces.empty());
+        note("factions",             !state.factions.empty());
+        note("policies",             !state.policies.empty());
+        note("events",               !state.events.empty());
+        note("interest_groups",      !state.interest_groups.empty());
+        note("relationships",        !state.relationships.empty());
+        note("pending_player_events", !state.pending_player_events.empty());
+        note("event_history",        !state.event_history.empty());
         if (!non_empty.empty()) {
             return core::Result<ScenarioLoadOutcome>::failure(
                 manifest_path.string() +
-                ": load_into_state requires an empty GameState"
-                " (non-empty containers: " + non_empty + ")");
+                ": load_into_state requires a scenario-load-clean"
+                " GameState (non-empty containers: " + non_empty + ")");
         }
     }
 
@@ -1221,12 +1293,14 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                 ev.description        = entry.description;
                 ev.visible_report     = entry.visible_report;   // M6.2
                 ev.true_cause         = entry.true_cause;
+                ev.category           = entry.category;         // issue #112
                 ev.triggers           = entry.triggers;
                 ev.effects            = entry.effects;
                 // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12):
                 ev.weight_modifiers   = entry.weight_modifiers;
                 ev.options            = entry.options;
                 ev.followup_event_ids = entry.followup_event_ids;
+                ev.option_effect_mode = entry.option_effect_mode; // issue #112
                 event_index.emplace(ev.id_code, state.events.size());
                 state.events.push_back(std::move(ev));
             }

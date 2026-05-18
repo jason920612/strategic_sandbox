@@ -536,6 +536,12 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
                          ea.command.budget_category, eb.command.budget_category);
             check_double(out, prefix + ".command.budget_delta",
                          ea.command.budget_delta, eb.command.budget_delta, tol);
+            // Issue #112: ChooseEventOption payload.
+            check_int(out, prefix + ".command.event_history_index",
+                      static_cast<long long>(ea.command.event_history_index),
+                      static_cast<long long>(eb.command.event_history_index));
+            check_string(out, prefix + ".command.option_id_code",
+                         ea.command.option_id_code, eb.command.option_id_code);
         }
     }
 
@@ -612,6 +618,27 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
                          ea.visible_report, eb.visible_report);   // M6.2
             check_string(out, prefix + ".true_cause",
                          ea.true_cause, eb.true_cause);   // M6.1
+            check_string(out, prefix + ".category",
+                         ea.category, eb.category);   // issue #112
+
+            // Issue #112: option_effect_mode only meaningful when
+            // options non-empty. Compare via canonical string mapping.
+            if (!ea.options.empty() || !eb.options.empty()) {
+                auto mode_str = [](core::EventOptionEffectMode m) {
+                    switch (m) {
+                        case core::EventOptionEffectMode::OptionOnly:
+                            return "option_only";
+                        case core::EventOptionEffectMode::BaseThenOption:
+                            return "base_then_option";
+                        case core::EventOptionEffectMode::OptionThenBase:
+                            return "option_then_base";
+                    }
+                    return "?";
+                };
+                check_string(out, prefix + ".option_effect_mode",
+                             mode_str(ea.option_effect_mode),
+                             mode_str(eb.option_effect_mode));
+            }
 
             if (ea.triggers.size() != eb.triggers.size()) {
                 push_mismatch(out, prefix + ".triggers.size()",
@@ -752,6 +779,28 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
                          ra.relationship, rb.relationship, tol);
             check_double(out, prefix + ".threat",
                          ra.threat, rb.threat, tol);
+        }
+    }
+
+    // ---- pending_player_events (issue #112) ------------------------
+    if (a.pending_player_events.size() != b.pending_player_events.size()) {
+        push_mismatch(out, "pending_player_events.size()",
+                      std::to_string(a.pending_player_events.size()) +
+                      " != " +
+                      std::to_string(b.pending_player_events.size()));
+    } else {
+        for (std::size_t i = 0; i < a.pending_player_events.size(); ++i) {
+            const auto& pa = a.pending_player_events[i];
+            const auto& pb = b.pending_player_events[i];
+            const std::string prefix =
+                "pending_player_events[" + std::to_string(i) + "]";
+            check_int(out, prefix + ".event_history_index",
+                      static_cast<long long>(pa.event_history_index),
+                      static_cast<long long>(pb.event_history_index));
+            check_string(out, prefix + ".event_id_code",
+                         pa.event_id_code, pb.event_id_code);
+            check_string(out, prefix + ".country_id_code",
+                         pa.country_id_code, pb.country_id_code);
         }
     }
 

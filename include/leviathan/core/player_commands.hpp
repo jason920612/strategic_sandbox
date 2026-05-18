@@ -13,6 +13,7 @@
 #ifndef LEVIATHAN_CORE_PLAYER_COMMANDS_HPP
 #define LEVIATHAN_CORE_PLAYER_COMMANDS_HPP
 
+#include <cstddef>
 #include <string>
 
 #include "leviathan/core/game_date.hpp"
@@ -36,6 +37,18 @@ enum class PlayerCommandKind {
     // time). The resulting value is clamped to [0, 1] post-add,
     // matching M1.5's clamp policy for ratio fields.
     AdjustBudget,
+
+    // Issue #112: resolve a pending player-country event option.
+    // Payload uses `event_history_index` + `option_id_code`. When
+    // tick_events selects an event with options for the player's
+    // country, it appends a `PendingPlayerEvent` and applies NO
+    // effects. The player then issues `ChooseEventOption` to
+    // pick one option; the command handler validates the pending
+    // entry exists, applies effects per the event's
+    // `option_effect_mode`, removes the pending entry, and
+    // triggers conditional followup recursion from the chosen
+    // event.
+    ChooseEventOption,
 };
 
 struct PlayerCommand {
@@ -48,6 +61,13 @@ struct PlayerCommand {
     // AdjustBudget payload (M2.5). Unused for EnactPolicy.
     std::string budget_category;
     double      budget_delta = 0.0;
+
+    // ChooseEventOption payload (issue #112). Identifies a
+    // pending player-country event by its position in
+    // `state.event_history` and the chosen option's id_code.
+    // Unused for EnactPolicy / AdjustBudget.
+    std::size_t event_history_index = 0;
+    std::string option_id_code;
 };
 
 // One entry of the player command log (M2.4).

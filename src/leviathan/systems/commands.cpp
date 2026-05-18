@@ -8,6 +8,9 @@
 #include <utility>
 
 #include "leviathan/core/entities.hpp"
+#include "leviathan/systems/event_effects.hpp"
+#include "leviathan/systems/event_engine.hpp"
+#include "leviathan/systems/event_evaluator.hpp"
 #include "leviathan/systems/order_execution.hpp"
 #include "leviathan/systems/policy_system.hpp"
 
@@ -160,6 +163,124 @@ core::Result<DispatchOutcome> dispatch_one(core::GameState& state,
             out.applied = true;
             return core::Result<DispatchOutcome>::success(std::move(out));
         }
+        case core::PlayerCommandKind::ChooseEventOption: {
+            // Issue #112: resolve a deferred player-country event option.
+            // Locate the pending entry by event_history_index. Reject
+            // with structured error string when not found, when the
+            // pending entry is not the player's country, or when
+            // option_id_code doesn't match any of the definition's
+            // options. On success: apply effects per the event's
+            // option_effect_mode, remove the pending entry, then trigger
+            // conditional followup recursion starting from the chosen
+            // parent event.
+            const std::size_t hist_idx = cmd.event_history_index;
+
+            // Locate the pending entry. Iterate by hand because order
+            // matters for the "first match wins" semantics if two
+            // player events were somehow pending for the same history
+            // index (loader-prevented but defensive).
+            auto pending_it = state.pending_player_events.begin();
+            for (; pending_it != state.pending_player_events.end();
+                 ++pending_it) {
+                if (pending_it->event_history_index == hist_idx) {
+                    break;
+                }
+            }
+            if (pending_it == state.pending_player_events.end()) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: no pending entry "
+                    "for event_history_index=" +
+                    std::to_string(hist_idx));
+            }
+
+            // Validate player country still matches.
+            if (!state.player_country.valid() ||
+                static_cast<std::size_t>(state.player_country.value())
+                    >= state.countries.size()) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: state.player_country "
+                    "is invalid");
+            }
+            const auto& player_country =
+                state.countries[static_cast<std::size_t>(
+                    state.player_country.value())];
+            if (pending_it->country_id_code != player_country.id_code) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: pending entry's "
+                    "country '" + pending_it->country_id_code +
+                    "' does not match current player_country '" +
+                    player_country.id_code + "'");
+            }
+
+            // Locate the event definition by id_code.
+            std::size_t def_idx = state.events.size();
+            for (std::size_t i = 0; i < state.events.size(); ++i) {
+                if (state.events[i].id_code == pending_it->event_id_code) {
+                    def_idx = i;
+                    break;
+                }
+            }
+            if (def_idx >= state.events.size()) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: pending event '" +
+                    pending_it->event_id_code +
+                    "' no longer present in state.events");
+            }
+            const auto& def = state.events[def_idx];
+
+            // Locate the option by id_code.
+            const core::EventOption* chosen_opt = nullptr;
+            for (const auto& opt : def.options) {
+                if (opt.id_code == cmd.option_id_code) {
+                    chosen_opt = &opt;
+                    break;
+                }
+            }
+            if (chosen_opt == nullptr) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: option '" +
+                    cmd.option_id_code + "' is not one of event '" +
+                    def.id_code + "' options");
+            }
+
+            // Apply effects per the author-controlled mode.
+            const auto& parent_instance =
+                state.event_history[hist_idx];
+            auto apply_r = event_effects::apply_option_effects_with_mode(
+                state, parent_instance, def, *chosen_opt,
+                def.option_effect_mode);
+            if (!apply_r) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption: " +
+                    std::move(apply_r.error()));
+            }
+
+            // Remove the pending entry BEFORE followup recursion so
+            // any cycle that re-fires this event id sees a clean
+            // pending vector.
+            state.pending_player_events.erase(pending_it);
+
+            // Conditional followup recursion (depth-N, cycle-guarded).
+            // Re-fetch country since apply may have shifted state.
+            const auto& refreshed_country =
+                state.countries[static_cast<std::size_t>(
+                    state.player_country.value())];
+            const std::string tag =
+                "commands.ChooseEventOption." + def.id_code;
+            auto follow_r =
+                event_engine::recurse_followups_from_event(
+                    state, hist_idx, def_idx,
+                    refreshed_country, tag);
+            if (!follow_r) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": ChooseEventOption '" + def.id_code +
+                    "' followup: " + std::move(follow_r.error()));
+            }
+
+            DispatchOutcome out;
+            out.applied = true;
+            return core::Result<DispatchOutcome>::success(std::move(out));
+        }
     }
     // Unreachable — every `PlayerCommandKind` variant returns above.
     return core::Result<DispatchOutcome>::failure(
@@ -178,6 +299,15 @@ std::string format_rejection_message(const std::string& ctx,
            << "' rejected by order_execution gate"
            << " (bureaucratic_compliance=" << rj.compliance
            << " < threshold=" << rj.threshold << ")";
+    } else if (rj.kind == core::PlayerCommandKind::ChooseEventOption) {
+        // ChooseEventOption is NOT order-execution-gated (player
+        // choices on offered options don't go through the
+        // compliance gate; rejections come from
+        // pending-entry / option-id-code validation in
+        // dispatch_one, which returns Result::failure directly
+        // and never lands here).
+        os << ctx << ": ChooseEventOption "
+           << "rejected by order_execution gate (unexpected)";
     } else {
         os << ctx << ": AdjustBudget category '" << rj.budget_category
            << "' rejected by order_execution gate"

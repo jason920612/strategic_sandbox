@@ -115,6 +115,13 @@ struct ApplyOutcome {
     std::size_t considered      = 0;  // non-player countries scanned
     std::size_t applied         = 0;  // successful apply calls
     std::size_t skipped         = 0;  // no eligible candidate (all stacked)
+    // Issue #112: countries whose `compute_total_pressure` was
+    // below `kPressureThreshold` and therefore emitted 0
+    // selections. These countries ARE counted in `considered`
+    // but NOT in `skipped` (skipped means "tried, all
+    // candidates stacked"). Sum:
+    //   considered = applied_count_per_country + skipped + pressure_below_threshold_skipped
+    std::size_t pressure_below_threshold_skipped = 0;
     std::vector<core::CountryId> failed_countries;  // apply returned failure
 };
 

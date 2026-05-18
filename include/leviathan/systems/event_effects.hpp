@@ -159,6 +159,49 @@ core::Result<ApplyOutcome> apply_default_option_effects(
     const core::EventInstance&   instance,
     const core::EventDefinition& definition);
 
+// Issue #112: state-based deterministic option chooser. Scores each
+// `definition.options` entry using
+//   sum over option.effects e: e.value * effect_desire::for_country(country, e.target, state)
+// and returns a pointer to the highest-scored option. Ties resolve
+// to the lower vector index. Returns nullptr when options is empty.
+//
+// Used by `event_engine::tick_events` for non-player-country events
+// (and for non-player-country followups with options). Player
+// countries route through the `ChooseEventOption` command surface
+// instead — see PendingPlayerEvent + commands.cpp.
+//
+// Pure read; never mutates state or definition.
+const core::EventOption*
+select_best_option_for_country(const core::GameState&       state,
+                               const core::CountryState&    country,
+                               const core::EventDefinition& definition);
+
+// Issue #112: apply the chosen option's effects (and optionally
+// definition.effects) according to the author-controlled
+// `EventOptionEffectMode`.
+//
+//   OptionOnly      — only option.effects apply
+//   BaseThenOption  — definition.effects first, then option.effects
+//   OptionThenBase  — option.effects first, then definition.effects
+//
+// Same actor-resolution semantics as `apply_event_effects`: the
+// first actor's `country_id_code` is resolved to a CountryId; that
+// country receives all effects.
+//
+// Returns failure if actor resolution fails OR if any effect
+// rejects at the M1.5 pre-flight. On failure the M1.5 pre-flight
+// atomicity per the call leaves that pass's state untouched, but
+// in BaseThenOption / OptionThenBase a successful first pass is
+// NOT rolled back — callers must treat partial mid-mode failure
+// as a soft state.
+core::Result<ApplyOutcome>
+apply_option_effects_with_mode(
+    core::GameState&             state,
+    const core::EventInstance&   instance,
+    const core::EventDefinition& definition,
+    const core::EventOption&     option,
+    core::EventOptionEffectMode  mode);
+
 // RCR-1: RFC-090 §5.12 — followup-event-id resolver. Given a
 // definition's `followup_event_ids` vector, returns the matching
 // `state.events` indices for every id_code that resolves

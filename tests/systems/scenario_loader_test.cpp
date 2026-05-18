@@ -311,7 +311,7 @@ TEST_CASE("load_into_state: pre-populated state is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
     CHECK(r.error().find("countries") != std::string::npos);
 }
 
@@ -347,7 +347,7 @@ TEST_CASE("Issue #110: pre-populated state.provinces is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
     CHECK(r.error().find("provinces") != std::string::npos);
 }
 
@@ -365,7 +365,7 @@ TEST_CASE("Issue #110: pre-populated state.events is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
     CHECK(r.error().find("events") != std::string::npos);
 }
 
@@ -381,7 +381,7 @@ TEST_CASE("Issue #110: pre-populated state.interest_groups is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
     CHECK(r.error().find("interest_groups") != std::string::npos);
 }
 
@@ -399,7 +399,7 @@ TEST_CASE("Issue #110: pre-populated state.relationships is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
     CHECK(r.error().find("relationships") != std::string::npos);
 }
 
@@ -434,7 +434,7 @@ TEST_CASE("Issue #110: calling load_into_state twice on the same state fails "
     // including the one (countries) populated by the first call.
     const auto r2 = sl::load_into_state(state, manifest_path);
     REQUIRE(r2.failed());
-    CHECK(r2.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r2.error().find("requires a scenario-load-clean GameState") != std::string::npos);
 }
 
 TEST_CASE("load_into_state: missing manifest file is reported with path") {
@@ -1125,6 +1125,7 @@ std::string canonical_two_event_file() {
       "description": "Low stability creates unrest pressure.",
       "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
       "true_cause": "The country's actual stability has fallen below the unrest threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         { "target": "country.stability", "op": "lt", "value": 0.30 }
       ],
@@ -1138,6 +1139,7 @@ std::string canonical_two_event_file() {
       "description": "A highly radical interest group signals political risk.",
       "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
       "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         { "target": "interest_group.radicalism", "op": "gt", "value": 0.75 }
       ],
@@ -1281,7 +1283,7 @@ TEST_CASE("M5.1 load_into_state: empty 'triggers' rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [],
             "effects": [] }
         ]
@@ -1303,7 +1305,7 @@ TEST_CASE("M5.1 load_into_state: trigger target not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.gdp", "op": "lt", "value": 100.0 }
             ],
@@ -1327,7 +1329,7 @@ TEST_CASE("M5.1 load_into_state: trigger op not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "eq", "value": 0.5 }
             ],
@@ -1351,7 +1353,7 @@ TEST_CASE("M5.1 load_into_state: trigger value wrong-type rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt",
                 "value": "not a number" }
@@ -1376,7 +1378,7 @@ TEST_CASE("M5.1 load_into_state: effect missing 'op' rejected (matches policy-ef
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1402,7 +1404,7 @@ TEST_CASE("M5.1 load_into_state: empty 'effects' is allowed (warning-only events
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "warning.json", R"({
         "events": [
-          { "id": "warn", "name": "Warning Event", "description": "", "visible_report": "warn report", "true_cause": "warn cause",
+          { "id": "warn", "name": "Warning Event", "description": "", "visible_report": "warn report", "true_cause": "warn cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.20 }
             ],
@@ -1427,7 +1429,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "one.json", R"({
         "events": [
-          { "id": "shared", "name": "First", "description": "", "visible_report": "shared report 1", "true_cause": "shared 1",
+          { "id": "shared", "name": "First", "description": "", "visible_report": "shared report 1", "true_cause": "shared 1", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1436,7 +1438,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     })");
     write_file(td.path / "data" / "events" / "two.json", R"({
         "events": [
-          { "id": "shared", "name": "Second", "description": "", "visible_report": "shared report 2", "true_cause": "shared 2",
+          { "id": "shared", "name": "Second", "description": "", "visible_report": "shared report 2", "true_cause": "shared 2", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "gt", "value": 0.8 }
             ],

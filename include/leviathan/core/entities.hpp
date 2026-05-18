@@ -316,6 +316,33 @@ struct EventOption {
     std::vector<PolicyEffect> effects;
 };
 
+// Issue #112: how an event's base effects compose with its chosen
+// option's effects when `options` is non-empty. Author-controlled per
+// definition; required at load when options is non-empty; rejected at
+// load when options is empty.
+//
+//   OptionOnly      — only the chosen option's effects apply
+//                     (`definition.effects` ignored). The pre-#112
+//                     behaviour for option-bearing events.
+//   BaseThenOption  — `definition.effects` applied first, then the
+//                     chosen option's `effects`.
+//   OptionThenBase  — the chosen option's `effects` first, then
+//                     `definition.effects`.
+//
+// Save v18 string encoding:
+//   "option_only" | "base_then_option" | "option_then_base"
+//
+// In-memory default (OptionOnly) is only meaningful for definitions
+// that have no options at all — the loader / save layer ensures the
+// field is ALWAYS present in JSON when options is non-empty and
+// ALWAYS absent when options is empty, so the default is never
+// silently load-bearing for option-bearing events.
+enum class EventOptionEffectMode {
+    OptionOnly,
+    BaseThenOption,
+    OptionThenBase,
+};
+
 // One event definition loaded from a scenario fixture and stored
 // in `GameState::events`. M5.1 shipped the schema (loader + save
 // round-trip); M5.2-M5.8 added evaluator + firer + effects
@@ -348,6 +375,11 @@ struct EventDefinition {
     std::string               description;
     std::string               visible_report;   // M6.2 (RFC-090 §6.2) — non-empty at load
     std::string               true_cause;   // M6.1 (RFC-090 §6.1) — non-empty at load
+    // Issue #112: category gates per-category event selection in
+    // `event_engine::tick_events`. Required non-empty at load.
+    // One category per definition; the per-country event tick groups
+    // matched events by category and draws one event per category.
+    std::string               category;
     std::vector<EventTrigger> triggers;   // non-empty at load
     std::vector<PolicyEffect> effects;    // may be empty (warning-only)
 
@@ -356,6 +388,12 @@ struct EventDefinition {
     std::vector<EventOption>    options;             // may be empty
     std::vector<std::string>    followup_event_ids;  // may be empty;
                                                      // entries are non-empty strings
+
+    // Issue #112: base / option effect composition mode. Required
+    // when `options` is non-empty; rejected at load when present
+    // with empty `options`. Default value is meaningful only for
+    // empty-options events, where it is never read.
+    EventOptionEffectMode option_effect_mode = EventOptionEffectMode::OptionOnly;
 };
 
 // M5.4: one fired event's recorded actor (the country or interest
@@ -500,6 +538,33 @@ struct CountryRelation {
     CountryId to;
     double    relationship = 0.0;  // [-1, 1]
     double    threat       = 0.0;  // [0, 1]
+};
+
+// Issue #112: pending player-country event choice. When the event
+// engine selects an event with non-empty `options` for the player's
+// country, the event is RECORDED in `state.event_history` (so the
+// audit trail shows it was offered) but NO effects are applied and
+// no followups are processed until the player issues a
+// `PlayerCommandKind::ChooseEventOption` command resolving the
+// choice. `state.pending_player_events` holds one entry per
+// outstanding choice. The save layer (v18) persists this vector so
+// in-progress choices survive save/load. The scenario loader
+// rejects a pre-populated `pending_player_events` on entry (9-
+// container preflight) so a fresh scenario load never inherits a
+// stale choice.
+//
+// Fields:
+//   * `event_history_index` — index into `state.event_history` for
+//     the parent EventInstance whose options are pending.
+//   * `event_id_code` — cached for fast lookup / command validation.
+//   * `country_id_code` — the player country at fire time. The
+//     command handler validates it equals `state.player_country`'s
+//     id_code so a player-country switch mid-game rejects the
+//     stale pending entry rather than silently applying it.
+struct PendingPlayerEvent {
+    std::size_t event_history_index = 0;
+    std::string event_id_code;
+    std::string country_id_code;
 };
 
 }  // namespace leviathan::core

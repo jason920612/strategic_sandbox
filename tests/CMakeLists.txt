@@ -68,7 +68,7 @@ add_executable(leviathan_tests
     integration/m5_event_pipeline_test.cpp
     integration/rcr_1_rfc_compliance_test.cpp
     integration/issue_110_ai_scorer_test.cpp
-    systems/event_engine_issue_110_test.cpp
+    systems/event_engine_issue_112_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE

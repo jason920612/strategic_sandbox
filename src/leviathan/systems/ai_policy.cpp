@@ -6,101 +6,26 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_set>
 
+#include "leviathan/systems/effect_desire.hpp"
 #include "leviathan/systems/policy_system.hpp"
 
 namespace leviathan::systems::ai_policy {
 namespace {
 
-// "Desire to move target up" for a country at the given effect target.
-// Positive = country benefits when the value rises; negative = country
-// benefits when the value falls; 0 = neutral.
-//
-// Reads CountryState fields (RFC-090 §3.5/§3.8) plus
-// GameState::relationships (RFC-090 §3.6/§3.7) for the military-power
-// term — the load-bearing place where relationships and military_strength
-// feed AI behaviour rather than sitting as inert data.
-double target_desire(const core::CountryState& c,
-                     const std::string&        target,
-                     const core::GameState&    state) {
-    if (target == "country.stability")  { return 1.0 - c.stability;  }
-    if (target == "country.legitimacy") { return 1.0 - c.legitimacy; }
-    if (target == "country.administrative_efficiency") {
-        return 1.0 - c.administrative_efficiency;
-    }
-    if (target == "country.fiscal_capacity") {
-        return 1.0 - c.fiscal_capacity;
-    }
-    if (target == "country.central_control") {
-        // Moderate desire: countries want central_control in a healthy
-        // mid-range, not maximised. Saturates at zero once already
-        // above 0.6 so high-control authoritarian states don't
-        // over-centralise.
-        return std::max(0.0, 0.6 - c.central_control);
-    }
-    if (target == "country.corruption") {
-        // Bad-axis: country wants this DOWN. Negative desire means a
-        // negative-value effect on corruption (i.e. cutting it)
-        // scores positively.
-        return -c.corruption;
-    }
-    if (target == "country.budget_balance") {
-        // Normalise against a GDP-tied scale so the term doesn't
-        // dominate, then clamp to [0, 1] so a severe deficit doesn't
-        // blow up the score relative to other in-range pressures.
-        const double scale = std::max(std::abs(c.gdp) * 0.01, 1.0);
-        const double raw   = -c.budget_balance / scale;
-        return std::min(1.0, std::max(0.0, raw));
-    }
-    if (target == "country.legal_tax_burden") {
-        // Mixed knob: deficits create desire to raise; an already-
-        // high tax burden creates desire to lower. Budget pressure
-        // clamped to [0, 1] for the same reason as country.budget_balance.
-        const double scale = std::max(std::abs(c.gdp) * 0.01, 1.0);
-        const double raw_budget = -c.budget_balance / scale;
-        const double budget_pressure =
-            std::min(1.0, std::max(0.0, raw_budget));
-        return budget_pressure - c.legal_tax_burden * 0.5;
-    }
-    if (target == "country.military_power") {
-        // Effective threat = max(threat_perception, max incoming
-        // relationship threat). This is where the scorer reads
-        // GameState::relationships (RFC-090 §3.6 / §3.7) — the
-        // RFC-required wiring that issue #110 §1 demanded.
-        double effective_threat = c.threat_perception;
-        for (const auto& rel : state.relationships) {
-            if (rel.to == c.id && rel.threat > effective_threat) {
-                effective_threat = rel.threat;
-            }
-        }
-        // Plus military_strength disparity: hostile neighbour
-        // stronger than us → desire to militarise rises (RFC-090
-        // §3.8 — the load-bearing read of military_strength).
-        double max_neighbour_str = 0.0;
-        for (const auto& rel : state.relationships) {
-            if (rel.to == c.id && rel.from.valid()) {
-                const auto fidx =
-                    static_cast<std::size_t>(rel.from.value());
-                if (fidx < state.countries.size()) {
-                    const double s = state.countries[fidx].military_strength;
-                    if (s > max_neighbour_str) {
-                        max_neighbour_str = s;
-                    }
-                }
-            }
-        }
-        const double military_gap =
-            std::max(0.0, max_neighbour_str - c.military_strength);
-        // Normalise gap by 100 (typical compliance-fixture scale
-        // is 10..90); clamp to [0, 1].
-        const double military_gap_norm = std::min(1.0, military_gap / 100.0);
-        return effective_threat + 0.5 * military_gap_norm;
-    }
-    // Unknown country target (e.g. country.gdp, country.tax_revenue
-    // — not directly addressed by policies in the current fixtures):
-    // neutral.
-    return 0.0;
-}
+// Issue #112: pressure threshold for AI policy selection. Below
+// this total pressure (sum of normalised [0, 1] terms), a country
+// emits ZERO selections this tick. Tuned so the compliance
+// scenario (1930_rfc_compliance.json) at month 1 still exercises
+// AI policy auto-apply for at least 25% of its 20 countries —
+// see the calibration note in docs/rfc-090-010-compliance-audit.md
+// §6.1 RFC-090 §3.5 entry.
+constexpr double kPressureThreshold = 0.80;
+
+constexpr double kCapacityLowMax    = 0.30;   // [0, 0.30)   → 1 policy
+constexpr double kCapacityMediumMax = 0.60;   // [0.30, 0.60)→ 2 policies
+                                              // [0.60, ∞)   → 3 policies
 
 struct InterestGroupAggregate {
     double mean_radicalism_inf_weighted = 0.0;  // 0..1
@@ -132,29 +57,93 @@ aggregate_country_igs(const core::CountryState& c,
     return out;
 }
 
-// Compute a policy's score for a given country. Higher is better; on
-// equal scores the caller breaks the tie by lower vector index.
+// Issue #112: compute the country's total pressure as a sum of six
+// normalised [0, 1] terms (RFC-040 §4 factors). Above
+// kPressureThreshold → AI emits selections; below → emits 0.
+double compute_total_pressure(const core::CountryState& c,
+                              const core::GameState&    state) {
+    double p = 0.0;
+    p += (1.0 - c.stability);      // [0, 1]
+    p += (1.0 - c.legitimacy);     // [0, 1]
+    p += c.corruption;             // [0, 1]
+
+    // Budget deficit pressure, normalised by a GDP-tied scale,
+    // clamped to [0, 1].
+    const double scale = std::max(std::abs(c.gdp) * 0.01, 1.0);
+    const double raw   = -c.budget_balance / scale;
+    p += std::min(1.0, std::max(0.0, raw));
+
+    // Threat pressure: max(threat_perception, max inbound
+    // relationship threat). The military-disparity term is also
+    // a threat pressure (a weak country next to a stronger
+    // potential adversary feels pressure even with relationship
+    // threat = 0). Mirrors the policy scorer's military_power
+    // desire term so the gate and the picker stay aligned.
+    double effective_threat = c.threat_perception;
+    for (const auto& rel : state.relationships) {
+        if (rel.to == c.id && rel.threat > effective_threat) {
+            effective_threat = rel.threat;
+        }
+    }
+    double max_neighbour_str = 0.0;
+    for (const auto& rel : state.relationships) {
+        if (rel.to == c.id && rel.from.valid()) {
+            const auto fidx =
+                static_cast<std::size_t>(rel.from.value());
+            if (fidx < state.countries.size()) {
+                const double sval = state.countries[fidx].military_strength;
+                if (sval > max_neighbour_str) {
+                    max_neighbour_str = sval;
+                }
+            }
+        }
+    }
+    const double military_gap =
+        std::max(0.0, max_neighbour_str - c.military_strength);
+    const double military_gap_norm =
+        std::min(1.0, military_gap / 100.0);
+    p += std::min(1.0,
+                  std::max(0.0,
+                           effective_threat + 0.5 * military_gap_norm));
+
+    // IG aggregate pressure: influence-weighted radicalism.
+    const auto ig = aggregate_country_igs(c, state);
+    p += std::min(1.0, std::max(0.0, ig.mean_radicalism_inf_weighted));
+
+    return p;
+}
+
+// Issue #112: how many policies the country can enact this tick,
+// gated by administrative_efficiency + bureaucratic_compliance +
+// budget headroom. Returns 1 / 2 / 3.
+std::size_t capacity_to_count(const core::CountryState& c) {
+    const double scale = std::max(std::abs(c.gdp) * 0.01, 1.0);
+    const double raw   = -c.budget_balance / scale;
+    const double budget_pressure =
+        std::min(1.0, std::max(0.0, raw));
+    const double cap =
+        0.5 * c.administrative_efficiency +
+        0.3 * c.government_authority.bureaucratic_compliance +
+        0.2 * std::max(0.0, 1.0 - budget_pressure);
+    if (cap < kCapacityLowMax)    { return 1; }
+    if (cap < kCapacityMediumMax) { return 2; }
+    return 3;
+}
+
+// Score one policy for one country. Issue #112 keeps the same
+// scorer the issue-#110 work shipped; capacity / threshold gates
+// are layered on top in pick_top_k.
 double score_policy(const core::CountryState& c,
                     const core::PolicyData&   p,
                     const core::GameState&    state) {
     double score = 0.0;
-
-    // Effect-driven scoring: each country-targeted effect contributes
-    // `value × desire`. Faction-side effects (legacy M1.2 surface) are
-    // ignored — M3.1 InterestGroupState is the modern actor model.
     for (const auto& eff : p.effects) {
-        if (eff.op != "add") {
-            continue;
-        }
+        if (eff.op != "add") { continue; }
         if (eff.target.rfind("country.", 0) == 0) {
-            score += eff.value * target_desire(c, eff.target, state);
+            score += eff.value
+                   * effect_desire::for_country(c, eff.target, state);
         }
     }
-
-    // Interest-group pressure: RFC-040 §4 / RFC-090 §3.5 expect AI
-    // behaviour to reflect "派系利益". Aggregate radicalism (influence-
-    // weighted) boosts concession-flavoured policies and penalises
-    // crackdown ids; low loyalty penalises centralisation.
     const auto ig = aggregate_country_igs(c, state);
     if (p.category == "welfare" || p.category == "labor") {
         score += ig.mean_radicalism_inf_weighted * 0.7;
@@ -166,9 +155,6 @@ double score_policy(const core::CountryState& c,
     if (p.id_code == "centralize_authority") {
         score -= (1.0 - ig.mean_loyalty) * 0.5;
     }
-
-    // Category baselines for policies whose effects don't directly
-    // touch a country.* target but whose category names a pressure.
     if (p.category == "intelligence") {
         score += c.threat_perception * 0.20;
     }
@@ -178,7 +164,6 @@ double score_policy(const core::CountryState& c,
     if (p.id_code == "corruption_crackdown") {
         score += c.corruption * 0.30;
     }
-
     return score;
 }
 
@@ -193,33 +178,45 @@ bool has_unexpired_policy(const core::CountryState& c,
     return false;
 }
 
-// Pick the highest-scoring policy that isn't already active+unexpired
-// on the country. Returns nullopt if no eligible policy exists.
-std::optional<std::string>
-pick_policy_for_country(const core::CountryState& c,
-                        const core::GameState&    state) {
-    if (state.policies.empty()) {
-        return std::nullopt;
+// Pick the top-k highest-scoring policies that aren't already
+// active+unexpired on the country AND aren't already in the
+// picked set this tick (no-stack rule). Returns up to k id_codes
+// in descending-score order; tie-break by lower vector index.
+std::vector<std::string>
+pick_top_k_for_country(const core::CountryState& c,
+                       const core::GameState&    state,
+                       std::size_t               k) {
+    std::vector<std::string> out;
+    if (state.policies.empty() || k == 0) {
+        return out;
     }
-    double      best_score = -std::numeric_limits<double>::infinity();
-    std::size_t best_index = state.policies.size();  // sentinel: none
-    for (std::size_t i = 0; i < state.policies.size(); ++i) {
-        const auto& p = state.policies[i];
-        if (has_unexpired_policy(c, p.id_code, state.current_date)) {
-            continue;
+    std::unordered_set<std::string> picked_this_tick;
+
+    for (std::size_t round = 0; round < k; ++round) {
+        double      best_score = -std::numeric_limits<double>::infinity();
+        std::size_t best_index = state.policies.size();   // sentinel
+        for (std::size_t i = 0; i < state.policies.size(); ++i) {
+            const auto& p = state.policies[i];
+            if (has_unexpired_policy(c, p.id_code, state.current_date)) {
+                continue;
+            }
+            if (picked_this_tick.count(p.id_code) > 0) {
+                continue;
+            }
+            const double s = score_policy(c, p, state);
+            if (s > best_score) {
+                best_score = s;
+                best_index = i;
+            }
+            // Strict `>` keeps lower vector index on ties.
         }
-        const double s = score_policy(c, p, state);
-        if (s > best_score) {
-            best_score = s;
-            best_index = i;
+        if (best_index >= state.policies.size()) {
+            break;   // no eligible candidate left
         }
-        // Tie-break: strict `>` keeps the FIRST policy (lower vector
-        // index) on equal scores — deterministic vector-order rule.
+        out.push_back(state.policies[best_index].id_code);
+        picked_this_tick.insert(state.policies[best_index].id_code);
     }
-    if (best_index >= state.policies.size()) {
-        return std::nullopt;
-    }
-    return state.policies[best_index].id_code;
+    return out;
 }
 
 }  // namespace
@@ -236,7 +233,6 @@ select_policies(const core::GameState& state) {
     const bool player_valid = player.valid()
         && static_cast<std::size_t>(player.value()) < state.countries.size();
 
-    out.reserve(state.countries.size());
     for (std::size_t i = 0; i < state.countries.size(); ++i) {
         const auto& country = state.countries[i];
         const core::CountryId cid{
@@ -244,13 +240,19 @@ select_policies(const core::GameState& state) {
         if (player_valid && cid == player) {
             continue;
         }
-        auto pick = pick_policy_for_country(country, state);
-        if (!pick.has_value()) {
-            // No eligible candidate — counted as `skipped` by the
-            // apply path; no Selection emitted.
+
+        // Issue #112: pressure gate. Below threshold → 0 selections.
+        const double pressure = compute_total_pressure(country, state);
+        if (pressure < kPressureThreshold) {
             continue;
         }
-        out.push_back(Selection{cid, std::move(*pick)});
+
+        // Capacity bound: 1 / 2 / 3 picks based on admin / bcomp / budget.
+        const std::size_t k = capacity_to_count(country);
+        auto picks = pick_top_k_for_country(country, state, k);
+        for (auto& id_code : picks) {
+            out.push_back(Selection{cid, std::move(id_code)});
+        }
     }
 
     return core::Result<std::vector<Selection>>::success(std::move(out));
@@ -260,12 +262,16 @@ core::Result<ApplyOutcome>
 apply_selected_policies(core::GameState& state) {
     ApplyOutcome outcome;
 
-    // `considered` counts every non-player country we scanned, not
-    // every Selection we emit — so skipped-everything-active still
-    // appears in `skipped`.
     const core::CountryId player = state.player_country;
     const bool player_valid = player.valid()
         && static_cast<std::size_t>(player.value()) < state.countries.size();
+
+    // Count `considered` plus the pressure-gate skip-count and
+    // the no-eligible-candidate skip-count. Walk the countries
+    // ourselves so we can categorise each one before calling
+    // select_policies — necessary because select_policies emits
+    // a per-tick selection vector that doesn't distinguish "no
+    // pressure" from "all candidates stacked".
     for (std::size_t i = 0; i < state.countries.size(); ++i) {
         const core::CountryId cid{
             static_cast<core::CountryId::underlying_type>(i)};
@@ -273,6 +279,18 @@ apply_selected_policies(core::GameState& state) {
             continue;
         }
         outcome.considered += 1;
+
+        const auto& country = state.countries[i];
+        const double pressure = compute_total_pressure(country, state);
+        if (pressure < kPressureThreshold) {
+            outcome.pressure_below_threshold_skipped += 1;
+            continue;
+        }
+        const std::size_t k = capacity_to_count(country);
+        const auto picks = pick_top_k_for_country(country, state, k);
+        if (picks.empty()) {
+            outcome.skipped += 1;
+        }
     }
 
     auto sel_r = select_policies(state);
@@ -280,10 +298,6 @@ apply_selected_policies(core::GameState& state) {
         return core::Result<ApplyOutcome>::failure(std::move(sel_r.error()));
     }
     const auto& selections = sel_r.value();
-
-    // Anyone considered but absent from the selections list was
-    // skipped (no eligible policy).
-    outcome.skipped = outcome.considered - selections.size();
 
     for (const auto& sel : selections) {
         const core::PolicyData* policy = nullptr;

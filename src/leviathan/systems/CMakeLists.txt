@@ -36,6 +36,7 @@ add_library(leviathan_systems STATIC
     data_loader.cpp
     diagnostics.cpp
     economy_system.cpp
+    effect_desire.cpp
     event_effects.cpp
     event_engine.cpp
     event_evaluator.cpp

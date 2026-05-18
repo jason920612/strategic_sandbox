@@ -23,20 +23,45 @@ Current implementation milestones **M0 – M5 are closed as
 implementation milestones**. M6 is in progress at M6.5
 (`bias_noise` helper skeleton).
 
-**Issue #110 strict-RFC corrective PR** is the final step in
+**Issue #112 strict-RFC corrective PR** is the final step in
 the compliance recovery sequence: RCR-1 (PR #107) shipped the
 data layer + helpers; issue #108 fix (PR #109) wired the
 helpers into the monthly tick but with a first-policy stub;
-issue #110 replaces that stub with a deterministic scorer AND
-wires the event-engine helpers (rank_weighted_events,
-apply_default_option_effects, resolve_followup_ids,
-record_followup) into ordinary `tick_events` flow with
-descending-weight ordering, option-default dispatch, and
-depth-1 followup chains. From issue #110 onward, every `[X]`
-mark in §6 is backed by behaviour observable from an
-ordinary headless `leviathan.exe` run, not by a callable
-helper that no production code path invokes
-(per the project's RFC-as-contract standard).
+issue #110 corrective replaced that stub with a deterministic
+scorer AND wired the event-engine helpers — but the reviewer
+audit (issue #112) found the new wiring still re-interpreted
+RFC text in three places (fire-all-matched instead of "事件
+抽選", unconditional followups instead of "條件連鎖", options[0]
+default called "player choices complete"). Issue #112 replaces
+those carve-outs with the literal RFC semantics:
+
+- **Per-country / per-category weighted-random draw** using
+  `state.rng`. ONE event fires per (country, category) per
+  tick; same template may fire for multiple countries
+  independently. Per-country isolation: `country.*` and
+  `interest_group.*` triggers evaluate strictly within the
+  drawing country's scope.
+- **Recursive conditional followup chain**. Each followup
+  must satisfy its OWN triggers AFTER the parent applies;
+  if multiple followups match, weighted draw picks one;
+  recursion runs depth-N up to `kMaxFollowupDepth=5` with a
+  visited-set cycle guard.
+- **Author-controlled `EventOptionEffectMode`** (OptionOnly /
+  BaseThenOption / OptionThenBase) plus a state-based AI
+  option chooser (NOT options[0]); player-country events
+  defer effects until `PlayerCommandKind::ChooseEventOption`
+  resolves the pending entry.
+- **Pressure-gated, capacity-bounded AI policy selection**:
+  countries below `kPressureThreshold=0.80` emit zero
+  selections; above the gate, capacity returns 1/2/3 picks
+  based on administrative_efficiency / bureaucratic_compliance
+  / budget headroom.
+
+From issue #112 onward, every `[X]` mark in §6 is backed by
+behaviour observable from an ordinary headless
+`leviathan.exe` run, not by a callable helper that no
+production code path invokes (per the project's RFC-as-
+contract standard).
 
 The corrective batch ships:
 
@@ -46,13 +71,21 @@ The corrective batch ships:
   `1930_minimal.json` unchanged so M1.17 / M2.22 / M3.7 /
   M4.23 / M5.9 byte-identical determinism baselines stay
   green).
-- Save schema bump **v16 → v17** in one batched migration
-  covering every new persistent field:
-  - `CountryState.military_strength` (absolute scalar; RFC-090 §3.8)
-  - `EventDefinition.weight_modifiers` (RFC-090 §5.3)
-  - `EventDefinition.options` (RFC-090 §5.4)
-  - `EventDefinition.followup_event_ids` (RFC-090 §5.12)
-  - `GameState.relationships` (RFC-090 §3.6 / §3.7)
+- Save schema bumped twice in the recovery sequence:
+  - **v16 → v17** (RCR-1) covered: military_strength,
+    weight_modifiers, options, followup_event_ids,
+    relationships.
+  - **v17 → v18** (issue #112) covers: `EventDefinition.category`
+    (required non-empty), `EventDefinition.option_effect_mode`
+    (required when options non-empty; absent when options
+    empty), `GameState.pending_player_events` (deferred player
+    choices). `AppliedPlayerCommand` also gains the
+    `ChooseEventOption` kind with `{event_history_index,
+    option_id_code}` payload.
+  - `scenario_loader::load_into_state` preflight now rejects
+    9 containers (the original 7 plus `pending_player_events`
+    + `event_history` runtime-carryover surfaces) per
+    issue #112 §7.
 - New artefact `annual_world_stats.csv` bumps the runner's
   unconditional artefact contract from 10 to 11 (RFC-090
   §3.9 / RFC-010 §5).
@@ -91,8 +124,8 @@ The corrective batch ships:
 The implementation is internally consistent and passes the
 test surface it actually owns:
 
-- `leviathan_tests.exe` reports **1177 cases / 63125
-  assertions** all passing on the issue #110 branch.
+- `leviathan_tests.exe` reports **1188 cases / 63657
+  assertions** all passing on the issue #112 branch.
 - The canonical 70-year scenario (`data/scenarios/1930_minimal.json`,
   `--days 25567`) runs to `2000-01-01` with zero sanity
   issues and emits the 10 expected runner artefacts.
@@ -500,40 +533,42 @@ inline.
                   M1.17 / M2.22 / M3.7 / M4.23 / M5.9
                   byte-identical determinism baselines stay
                   green)
-[X] RFC-090 §3.5  AI policy selection                      — issue #110
-                  Selection + apply driven by a deterministic
-                  scorer (RFC-040 §4 inputs). For each candidate
-                  policy, score_policy() reads CountryState
-                  fields (stability / legitimacy / corruption /
-                  budget_balance / threat_perception /
-                  military_strength), state.relationships
-                  (inbound threat + neighbour military_strength
-                  for the military-gap term), state.interest_groups
-                  (influence-weighted radicalism + mean loyalty),
-                  plus PolicyData category + per-effect target /
-                  op / value. Highest-scored eligible policy
-                  wins; on a tie the lower vector index wins
-                  (RNG-free).
-                  No-stacking rule: a candidate whose id_code is
-                  already in country.active_policies AND
-                  expires_on > current_date is excluded;
-                  scorer picks the next-best instead. Once a
-                  policy expires it is eligible again.
-                  Wired into `monthly::tick_all_countries` as
-                  step 7 (between M3 state-wide and step 8
-                  event tick). MonthlyOutcome exposes
-                  ai_policies_considered / applied / skipped /
-                  failed counters. Player country always skipped.
-                  Six tests/integration/issue_110_ai_scorer_test.cpp
-                  cases prove each input axis observably steers
-                  selection (low_stability → stabilising,
-                  budget_crisis → revenue, high_threat →
-                  military, military_gap → military,
-                  high_radicalism IG → welfare, no-stack →
-                  next-best). tests/integration/m1_end_to_end
-                  asserts the 12 monthly entries per country
-                  vary by id_code rather than lockstepping the
-                  first policy.
+[X] RFC-090 §3.5  AI policy selection                      — issue #112
+                  Issue #112 layered TWO gates on top of the
+                  issue #110 scorer (RFC-040 §4 inputs):
+                  - **Pressure gate** (`kPressureThreshold=0.80`):
+                    countries whose `compute_total_pressure`
+                    (sum of stability + legitimacy + corruption
+                    + budget + threat (inbound rel-threat OR
+                    military-gap) + IG-radicalism, each
+                    normalised to [0,1]) falls below the
+                    threshold emit ZERO selections that tick.
+                    `ApplyOutcome.pressure_below_threshold_skipped`
+                    counts them.
+                  - **Capacity bound** (`capacity_to_count`):
+                    countries above the gate emit 1/2/3 picks
+                    based on
+                    `0.5×admin_efficiency + 0.3×bcomp + 0.2×budget_headroom`
+                    (kCapacityLowMax=0.30, kCapacityMediumMax=0.60).
+                  The scorer itself is unchanged from #110 —
+                  `score_policy` still reads stability, legitimacy,
+                  corruption, budget, threat, military_strength,
+                  IG influence/loyalty/radicalism, policy
+                  category, and per-effect target/op/value.
+                  No-stacking rule preserved: candidates already
+                  active+unexpired are excluded; chooser picks
+                  next-best.
+                  Calibration: with 0.80 threshold, all 20
+                  compliance countries clear the gate at least
+                  some months over 365 days (240 active-policy
+                  entries / 20 countries / 9 distinct id_codes
+                  in the live compliance run).
+                  Tests: tests/integration/issue_110_ai_scorer_test.cpp
+                  six pressure-above-threshold cases prove the
+                  scorer steers selection per input axis;
+                  ai_policy_test.cpp covers low-pressure → 0,
+                  high-pressure → 1/2/3 (capacity), no-stacking,
+                  player skip.
 [X] RFC-090 §3.6  relationship values                      — issue #110
                   Schema: core::CountryRelation POD
                   ({from, to, relationship, threat}) +
@@ -646,53 +681,81 @@ backlog.
                   weight_deltas; stable-sort descending by
                   weight, tie-break on event vector index).
                   Wired into `event_engine::tick_events`:
-                  matched events fire in
-                  weight-desc order, so authored
-                  weight_modifiers observably control firing
-                  priority. Test: event_engine_issue_110_test
-                  ::"tick_events fires matched events in
-                  descending-weight order" — two events match
-                  the same trigger, the one with the heavier
-                  weight_modifier lands at event_history[0].
-[X] RFC-090 §5.7  weighted event selection                  — issue #110
-                  The "select one weighted event" helper
-                  remains as select_weighted_event for ad-hoc
-                  use, but `tick_events` no longer collapses
-                  matches into a single pick — it fires
-                  EVERY matched event in weight-desc order
-                  (RFC-050 §2 / RFC-090 §5.6 + §5.7 are
-                  separate concerns: weights shape ordering,
-                  not gating). The canonical 1930_minimal
-                  scenario stays no-fire because its 2
-                  events were authored never to match GER /
-                  FRA / JPN initial state, preserving the M5
-                  byte-identical determinism baseline. Test:
-                  event_engine_issue_110_test::"canonical
-                  1930_minimal_still_zero_fires" regression
-                  guard (covered indirectly via the M1.17 /
-                  M2 / M3 / M5 byte-identical-determinism
-                  tests, which all still hold).
-[X] RFC-090 §5.8  event options / player choices            — issue #110
-                  Two extended event fixtures
-                  (legitimacy_crisis, corruption_scandal)
-                  author 2 options each.
-                  Wired: `event_engine::tick_events` now
-                  routes events with non-empty options
-                  through `apply_default_option_effects`
-                  (options[0]); events without options fall
-                  through to base `apply_event_effects`. The
-                  two surfaces are independent — never both.
-                  Tests: event_engine_issue_110_test::"fires
-                  options[0].effects for events with options"
-                  + "falls through to base effects when
-                  options is empty". A live compliance run
-                  (data/scenarios/1930_rfc_compliance.json
-                  with CZE seeded in legitimacy crisis)
-                  produces events.jsonl entries showing
-                  legitimacy_crisis firing on CZE under
-                  ordinary `leviathan.exe` execution. No
-                  player UI prompt — deterministic
-                  default-option selection only.
+                  weights feed `random::weighted_choice` in
+                  the per-country / per-category draw, so
+                  authored `weight_modifiers` shape selection
+                  probability (issue #112 §1 / §2). Tests:
+                  event_engine_issue_112_test::"different
+                  seeds can produce different selected events
+                  from the same matched pool" (200-seed
+                  statistical proof both events are drawn);
+                  + "single-candidate bucket still consumes
+                  one RNG draw" (documents the
+                  random::weighted_choice contract).
+[X] RFC-090 §5.7  weighted event selection                  — issue #112
+                  `tick_events` now performs a REAL weighted
+                  random draw (RFC-090 §5.7 "事件抽選").
+                  Each (country, category) bucket draws
+                  exactly ONE event via
+                  `random::weighted_choice(state.rng, weights,
+                  tag)`; ties are handled naturally by the
+                  weighted draw (NOT by deterministic
+                  highest-weight pick). Per-country isolation:
+                  one country's draw does NOT consume another
+                  country's match pool (issue #112 §3 / E1 —
+                  same template fires for multiple countries
+                  in the same tick). Non-selected matched
+                  events do NOT fire, do NOT log, do NOT
+                  apply effects. Canonical 1930_minimal
+                  preserves zero-fire (its events deliberately
+                  never match the canonical state); compliance
+                  scenario fires ~32 events / 365 days in the
+                  live run. Tests: event_engine_issue_112_test
+                  ::"fires ONE event per (country, category)
+                  bucket", "fires ONE event per DIFFERENT
+                  category", "same template fires for multiple
+                  countries independently", "no matched events
+                  → state.rng.counter unchanged".
+[X] RFC-090 §5.8  event options / player choices            — issue #112
+                  Issue #112 replaces the issue #110
+                  options[0] default with TWO real surfaces:
+                  - **AI / non-player chooser** (state-based):
+                    `select_best_option_for_country` scores
+                    each option's `effects` via
+                    `effect_desire::for_country` — option that
+                    most-improves the country's pressure-axes
+                    wins, with stable tie-break on lower
+                    option vector index.
+                  - **Player chooser** (command-layer): when
+                    `tick_events` draws an event with non-
+                    empty options for `state.player_country`,
+                    it records the parent EventInstance but
+                    applies NO effects and processes NO
+                    followups; a `PendingPlayerEvent` is
+                    appended to `state.pending_player_events`.
+                    The player resolves via
+                    `PlayerCommandKind::ChooseEventOption`
+                    (`event_history_index` +
+                    `option_id_code`), reachable through
+                    the existing `--commands` script /
+                    `apply_pending` path. NOTE: this satisfies
+                    "player choices" through the COMMAND
+                    LAYER; a graphical UI prompt remains a
+                    future UI milestone if/when interactive
+                    UI lands. We do NOT claim "UI complete".
+                  Author-controlled
+                  `EventOptionEffectMode` (OptionOnly /
+                  BaseThenOption / OptionThenBase) is a new
+                  required field (v18) on option-bearing
+                  events and gates how base + chosen-option
+                  effects compose.
+                  Tests: event_engine_issue_112_test::"AI
+                  option chooser picks state-best option, NOT
+                  options[0]", "option_effect_mode = OptionOnly
+                  / BaseThenOption / OptionThenBase" (one per
+                  mode), "player-country event with options
+                  creates pending entry, applies NO effects,
+                  processes NO followups".
 [X] RFC-090 §5.9  per-fire events.jsonl emission            — RCR-1
                   event_firer::record_match now appends
                   one LogEntry with category "event_fired"
@@ -721,27 +784,43 @@ backlog.
                   100+ entries, events.jsonl records
                   event_fired entries with the fired id_code,
                   and the save round-trip preserves them.
-[X] RFC-090 §5.12 event-chain / followup-event model        — issue #110
-                  EventDefinition.followup_event_ids vector
-                  + the resolver / firer helpers
-                  (resolve_followup_ids, record_followup)
-                  are now WIRED into
-                  `event_engine::tick_events`: after a parent
-                  event fires, each resolved followup id is
-                  appended to state.event_history via
-                  record_followup AND its own effects are
-                  applied (base or default-option, mirroring
-                  the parent path). Depth is capped at 1 —
-                  no recursion into the followup's own
-                  followup_event_ids — to preserve M5.7
-                  snapshot-evaluation semantics. Two
-                  extended event fixtures exercise the path
+[X] RFC-090 §5.12 event-chain / followup-event model        — issue #112
+                  Issue #112 replaces the issue #110 depth-1
+                  unconditional record with a CONDITIONAL,
+                  recursive chain matching RFC-050 §3 "事件
+                  鏈是條件連鎖":
+                  - Each followup must satisfy its OWN
+                    triggers AFTER the parent's effects apply
+                    (F1+G1). Followups whose triggers don't
+                    match are NOT recorded and DO NOT apply
+                    effects.
+                  - If multiple followups match, a weighted
+                    random draw (using `state.rng`) selects
+                    ONE — same primitive as the parent-fire
+                    draw.
+                  - `record_followup` uses the IMMEDIATE
+                    PREDECESSOR (not the root parent), so
+                    events.jsonl `followup_of` metadata points
+                    to the direct chain step.
+                  - Recursion runs depth-N up to
+                    `event_engine::kMaxFollowupDepth = 5`,
+                    with a visited-event-id_code cycle guard
+                    (faithful because the loader rejects
+                    duplicate id_codes). The depth guard and
+                    cycle guard run simultaneously.
+                  Two extended event fixtures exercise the path
                   (bureaucratic_strain ->
                    budget_shortfall_warning;
                    corruption_scandal -> legitimacy_crisis).
-                  Tests: event_engine_issue_110_test::
-                  "records and applies a depth-1 followup
-                   chain" + "DOES NOT recurse beyond depth-1".
+                  Tests: event_engine_issue_112_test::
+                  "followup whose triggers fail post-parent-
+                   apply is NOT recorded", "followup whose
+                   triggers DO match post-parent-apply records
+                   + applies", "followup chain immediate-
+                   predecessor `followup_of` metadata",
+                  "followup cycle guard stops A → B → A",
+                  "followup max-depth guard stops at
+                   kMaxFollowupDepth = 5".
 ```
 
 Note: §5.1 (`EventData`) is met by `EventDefinition` (M5.1);
