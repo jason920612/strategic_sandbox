@@ -217,7 +217,68 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.7
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.8
+  （monthly event tick wiring）** 是 M5 的第八個
+  sub-milestone。把 M5.7 的
+  `event_engine::tick_events(state)` composition helper
+  接進 M1.9 monthly pipeline，作為 **step 7** ── M3.4
+  `authority_pressure` 之後的最後一個 global step。
+  每個 month 邊界現在都會評估 triggers、fire 比對到的
+  events（append `EventInstance` 到
+  `state.event_history`），並透過 M5.6 / M1.5 shared
+  apply path 套用 effects。Step 7 是唯一一個位置，
+  每個 per-country（M1.6/M1.7/M1.8）和每個 state-wide
+  （M3.2/M3.3/M3.4）system 都已寫完 ── 所以「低
+  stability」/「高 radicalism」這類 event 看到的是
+  月末值，不是月初或部分漂移過的 snapshot。
+  **`MonthlyOutcome` 新增 `event_tick` field**，鏡像
+  M5.7 `TickOutcome { events_matched, events_recorded,
+  events_applied, total_effects_applied }`。
+  **失敗傳播**：`tick_events` 失敗時，
+  `tick_all_countries` 回
+  `Result::failure("monthly::tick_all_countries:
+  event_engine::tick_events failed: " + inner_error)`；
+  失敗時的 state 繼承 M5.7 record-then-apply 的部分
+  state contract。**Zero canonical determinism
+  rebake**：每個 M5.7-era test 都 byte-identical 通過，
+  因為 (a) M5.1 canonical 事件刻意調成 **不會**
+  在 canonical 1930 scenario 上 fire（country.stability
+  < 0.30 vs canonical GER stability 0.55+；
+  interest_group.radicalism > 0.75 vs canonical IG
+  radicalism 0.10），(b) hand-built test fixture
+  不填 `state.events`，step 7 對它們是 strict no-op。
+  **5 個新 doctest case（1034 total，62303
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：
+  無 `state.events` → counter 全零 + history 空；
+  unreachable trigger → 不 fire；matched event 同時
+  fire + record + 套效果；post-M3.4 snapshot ordering
+  用 dry-run-then-build-trigger 釘住（event 只在
+  evaluator 看到 post-step-6 stability 才 match，不是
+  pre-month 值）；失敗 bubble up 帶 `event_engine`
+  / `tick_events failed` 前綴 + 失敗前已 record。
+  新 `docs/m5-8-monthly-event-tick-wiring.md` design
+  note。**沒有 events.jsonl 變動 / log entry on tick
+  / state.logs / state.applied_commands append /
+  從 event 路徑 append country.active_policies / 新
+  artefact（仍 10）/ save format bump（仍 v14）/ 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / 新 state field（只有
+  `MonthlyOutcome::event_tick`）/ dedup / cooldown /
+  historical-once gating / selection-policy 變體
+  （M5.6 first-actor-wins 仍然）/ chained events /
+  choices / RNG outcomes / 更廣 trigger op / target /
+  actor kind / balance pass / canonical fixture 變動
+  / UI surface / 對 event_evaluator / event_firer /
+  event_effects / event_engine / policy_system module
+  API 的變動 / 對 scenario_loader 的變動 / 對
+  M1/M2/M3/M4 system 外部行為的變動 / 對 M1.17 /
+  M2 / M3 / M4 byte-identical determinism baseline
+  的變動（canonical events 刻意調成不 fire）/
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  wiring 存在但 canonical-content load-bearing 取決
+  於 author intent）**。M5 remains in progress。
+- **M5（歷史進行中）** — **M5.7
   （event runner integration skeleton）** 是 M5 的
   第七個 sub-milestone。把
   `match_events → record_matches → apply_event_effects`

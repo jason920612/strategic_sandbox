@@ -47,6 +47,30 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
+// M5.8 adds a fourth (and currently final) global step AFTER M3.4:
+//
+//   7.  event_engine::tick_events (state)
+//
+// `tick_events` is the M5.7 composition that evaluates all
+// `state.events` against the post-M3.4 state snapshot, fires
+// every matching event (appends to `state.event_history`), and
+// applies each fired event's effects via the M5.6 / M1.5
+// shared apply path. Runs LAST so it sees the freshest values
+// every other monthly system just produced — events about "low
+// stability" or "high radicalism" check the values as they
+// stand at month-end, not the pre-month-tick snapshot.
+//
+// `tick_events` is documented as snapshot-evaluation: the
+// evaluator runs once at the top of the call and subsequent
+// apply passes that mutate state do NOT re-trigger evaluation
+// in the same month. Cascade events (event B that becomes true
+// only because event A's apply dropped a value) wait for the
+// next monthly tick. `tick_events` does NOT append to
+// `state.logs` / `state.applied_commands` / `events.jsonl` /
+// any country's `active_policies`; it mutates only
+// `state.event_history` and any country fields that the
+// applied effects target.
+//
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
 // `economy::tick`'s political-instability drag reads the stability
@@ -94,6 +118,7 @@
 #include "leviathan/core/ids.hpp"
 #include "leviathan/core/result.hpp"
 #include "leviathan/systems/economy_system.hpp"
+#include "leviathan/systems/event_engine.hpp"
 #include "leviathan/systems/faction_system.hpp"
 #include "leviathan/systems/interest_group_system.hpp"
 #include "leviathan/systems/stability_system.hpp"
@@ -153,6 +178,14 @@ struct MonthlyOutcome {
         interest_group_country_feedback_trace_rows;
     std::vector<interest_group::AuthorityPressureTraceRow>
         interest_group_authority_pressure_trace_rows;
+
+    // M5.8: final global step's outcome. Mirrors the fields of
+    // `event_engine::TickOutcome` (events_matched / events_recorded
+    // / events_applied / total_effects_applied). Zero on a month
+    // where `state.events` is empty or nothing matched. The same
+    // counts as `event_engine::tick_events(state)` returned —
+    // the monthly pipeline just delegates and forwards.
+    event_engine::TickOutcome event_tick;
 };
 
 // Run one month-boundary pipeline for a single country in the

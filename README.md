@@ -8,8 +8,10 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.7). M5 has shipped seven decoupled
-  surfaces so far: **M5.1** opened M5 with the
+  in progress (at M5.8). M5 has shipped eight surfaces
+  so far — the previous seven were decoupled bricks;
+  **M5.8 is the wiring that ties them into the canonical
+  monthly tick.** **M5.1** opened M5 with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
   `EventTrigger { target, op, value }`; save v12 → v13;
@@ -83,18 +85,91 @@
   `docs/m5-4-event-instance-history-data-skeleton.md`,
   `docs/m5-5-event-firer-skeleton.md`,
   `docs/m5-6-event-effects-applicator-skeleton.md`,
-  and `docs/m5-7-event-runner-integration-skeleton.md`
-  for the M5 design notes, and
-  `docs/milestone-4-result.md` /
+  `docs/m5-7-event-runner-integration-skeleton.md`,
+  and `docs/m5-8-monthly-event-tick-wiring.md` for the
+  M5 design notes, and `docs/milestone-4-result.md` /
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
   reports. (`docs/milestone-5-checkpoint.md` is still
-  deliberately deferred — every M5 sub-milestone so far
-  has been a single decoupled surface, so the checkpoint
-  reads better alongside the M5.8 wiring PR where the
-  composition becomes load-bearing for canonical runs.)
-- Latest shipped sub-milestone: **M5.7 — event runner
+  deliberately deferred — M5.8 wired the composition
+  but canonical events deliberately don't fire on the
+  canonical scenario, so the wiring isn't yet
+  load-bearing for canonical content; the checkpoint
+  reads better alongside a balance-or-events.jsonl PR
+  that makes the wiring matter.)
+- Latest shipped sub-milestone: **M5.8 — monthly event
+  tick wiring.** Eighth M5 PR. Wires the M5.7
+  `event_engine::tick_events(state)` composition helper
+  into the M1.9 monthly pipeline as **step 7**, the
+  final global step after M3.4 `authority_pressure`.
+  Every month boundary now evaluates triggers, fires
+  matching events (appends `EventInstance`s to
+  `state.event_history`), and applies their effects
+  through the M5.6 / M1.5 shared apply path. Step 7
+  is the only position where every per-country and
+  every state-wide system has finished writing — so
+  events about "low stability" / "high radicalism"
+  evaluate against month-end values, not pre-month or
+  partially-drifted snapshots. **`MonthlyOutcome` gains
+  a new `event_tick` field** mirroring the M5.7
+  `TickOutcome { events_matched, events_recorded,
+  events_applied, total_effects_applied }`. **Failure
+  propagation**: if `tick_events` fails (e.g. an event
+  has a bad effect target → M1.5 pre-flight rejects),
+  `tick_all_countries` returns
+  `Result::failure("monthly::tick_all_countries:
+  event_engine::tick_events failed: " + inner_error)`;
+  state at failure inherits the M5.7 record-then-apply
+  partial-state contract. **Zero canonical determinism
+  rebake**: every M5.7-era test still passes byte-
+  identically because (a) canonical events at M5.1 are
+  deliberately tuned to NOT fire on the canonical 1930
+  scenario (`country.stability < 0.30` vs canonical
+  GER stability 0.55+; `interest_group.radicalism >
+  0.75` vs canonical IG radicalism 0.10), and (b) hand-
+  built test fixtures don't populate `state.events`,
+  so step 7 is a strict no-op for them. The day a
+  future PR ships an event that *does* fire on the
+  canonical scenario, THAT PR rebakes the M1.17
+  baselines — not this one. **5 new doctest cases
+  (1034 total, 62303 assertions; verified via direct
+  `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule): no `state.events`
+  → all counters zero + history empty; unreachable
+  trigger → no fire; matched event fires + records +
+  effects land (with effect mutation pinned to
+  `legitimacy` so it's robust to M1.7/M1.12 rebalances);
+  post-M3.4 snapshot ordering pinned via a dry-run-
+  then-build-trigger trick (event matches ONLY when
+  evaluator sees the post-step-6 stability, NOT the
+  pre-month value); failure bubbles up with
+  `event_engine` / `tick_events failed` prefix + match
+  recorded before apply failed. New
+  `docs/m5-8-monthly-event-tick-wiring.md` design note.
+  **No events.jsonl change, no log entry on tick (no
+  state.logs append), no state.applied_commands append,
+  no country.active_policies append from the event
+  path, no new artefact (still 10), no save format bump
+  (still v14), no new `RunnerOptions` field / CLI flag,
+  no new `PlayerCommandKind`, no new state field beyond
+  `MonthlyOutcome::event_tick`, no dedup / cooldown /
+  historical-once gating, no selection-policy variants
+  (M5.6 first-actor-wins stays), no chained events /
+  choices / RNG outcomes, no broader trigger ops /
+  targets / actor kinds, no balance pass, no canonical
+  fixture change, no UI surface, no changes to
+  event_evaluator / event_firer / event_effects /
+  event_engine / policy_system module APIs, no changes
+  to scenario_loader, no changes to M1/M2/M3/M4
+  systems' external behaviour, no changes to M1.17 /
+  M2 / M3 / M4 byte-identical determinism baselines
+  (canonical events deliberately tuned to not fire),
+  no `docs/milestone-5-checkpoint.md` (still
+  deferred — the wiring exists but canonical-content
+  load-bearing is conditional on author intent).** M5
+  remains in progress.
+- Previously shipped: **M5.7 — event runner
   integration skeleton.** Seventh M5 PR. Adds the
   `match_events → record_matches → apply_event_effects`
   composition brick as a single free function. New
