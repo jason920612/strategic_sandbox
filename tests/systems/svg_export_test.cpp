@@ -1718,33 +1718,59 @@ TEST_CASE("render_map_html: M4.19 :hover rules appear BEFORE .selected and :focu
     CHECK(hover_at < focus_at);
 }
 
-TEST_CASE("render_map_html: M4.19 hover is pure CSS — no JS hover handler, no tooltip, no <title> child") {
+TEST_CASE("render_map_html: M4.19 hover is pure CSS — no JS hover handler, no SVG <title> tooltip child") {
     // Pin the explicit non-goals of this skeleton:
     //   - no addEventListener("mouseover" / "mouseout") in
     //     the inline script
     //   - no element.onmouseover / .onmouseout assignment
-    //   - no SVG <title> child element (the SVG-native
-    //     tooltip mechanism — would compete with the
-    //     M4.17 aria-label).
+    //   - no SVG <title> child element on the markers (the
+    //     SVG-native tooltip mechanism — would compete with
+    //     the M4.17 aria-label as the accessible name).
+    // The HTML <head> <title>Leviathan Map</title> is the
+    // page title and is required by the M4.5 contract;
+    // M4.19 must not regress that, and must not add any
+    // additional <title> tag inside <body>.
     GameState state;
     state.countries.push_back(country(0, "GER", "Germany"));
     state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
     const std::string html = svg::render_map_html(state);
 
+    // No JS hover listener of any flavour.
     CHECK(html.find("\"mouseover\"")  == std::string::npos);
     CHECK(html.find("\"mouseout\"")   == std::string::npos);
     CHECK(html.find("\"mouseenter\"") == std::string::npos);
     CHECK(html.find("\"mouseleave\"") == std::string::npos);
     CHECK(html.find(".onmouseover")   == std::string::npos);
     CHECK(html.find(".onmouseout")    == std::string::npos);
-    // No SVG <title> child element on the province
-    // markers (would compete with aria-label as the
-    // accessible name).
-    CHECK(html.find("<title>")        == std::string::npos);
-    CHECK(html.find("</title>")       != std::string::npos);  // the <head> <title> still exists
-    // But no <title> immediately after a <circle> tag (the
-    // SVG-native tooltip pattern).
-    CHECK(html.find("/><title>") == std::string::npos);
+
+    // The HTML <head> <title> is preserved (M4.5 contract)
+    // and is the ONLY <title> tag in the document — no SVG
+    // <title> child anywhere.
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = html.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(html.find("<title>Leviathan Map</title>") != std::string::npos);
+    CHECK(count_occurrences("<title>")  == 1u);
+    CHECK(count_occurrences("</title>") == 1u);
+
+    // <body>...</body> carries NO <title> tag — that would
+    // be a child of an SVG element (the only legal location
+    // for <title> outside <head>), and is the M4.19 "no SVG
+    // tooltip" non-goal we explicitly enforce.
+    const auto body_open  = html.find("<body>");
+    const auto body_close = html.find("</body>");
+    REQUIRE(body_open  != std::string::npos);
+    REQUIRE(body_close != std::string::npos);
+    const std::string body =
+        html.substr(body_open, body_close - body_open);
+    CHECK(body.find("<title>")  == std::string::npos);
+    CHECK(body.find("</title>") == std::string::npos);
 }
 
 TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.19 :hover rules") {
