@@ -128,6 +128,37 @@ core::Result<ApplyOutcome> apply_event_effects(
 const core::EventOption*
 select_default_option(const core::EventDefinition& definition);
 
+// RCR-1: RFC-090 §5.4 / §5.8 — apply the default option's
+// effects to the actor's country.
+//
+// Composes `select_default_option(definition)` with the M1.5 /
+// M5.6 `policy::apply_effects_to_actor` machinery. The actor is
+// resolved from `instance.actors.front().country_id_code`
+// (same first-actor-wins convention as `apply_event_effects`).
+//
+// Semantics:
+//   - definition.options empty -> success with effects_applied=0
+//     (no option to choose); `state` unchanged.
+//   - instance.actors empty -> success with effects_applied=0;
+//     `state` unchanged.
+//   - first option's effects[] applied via
+//     policy::apply_effects_to_actor, inheriting M1.5 pre-flight
+//     atomicity. On failure the whole call returns Result::failure
+//     with `state` unchanged.
+//
+// The applicator deliberately does NOT call `apply_event_effects`
+// in addition — `definition.effects` (the base effect list) and
+// `options[i].effects` are independent surfaces. A future runner-
+// policy that wants to fire both base + option-default effects
+// would call this helper alongside `apply_event_effects`. RCR-1
+// ships the deterministic primitive; runner wiring is intentionally
+// out of scope (consistent with the rest of the event-engine
+// surface in this corrective batch).
+core::Result<ApplyOutcome> apply_default_option_effects(
+    core::GameState&             state,
+    const core::EventInstance&   instance,
+    const core::EventDefinition& definition);
+
 // RCR-1: RFC-090 §5.12 — followup-event-id resolver. Given a
 // definition's `followup_event_ids` vector, returns the matching
 // `state.events` indices for every id_code that resolves

@@ -1,57 +1,67 @@
-// RCR-1: AI policy selection skeleton.
+// RCR-1: AI policy selection + apply.
 //
-// Clears RFC-090 §3.5 ("AI policy selection") and partially
-// clears RFC-010 §2.2 ("AI countries can auto-select policy")
-// at the *selection* layer only.
+// Clears RFC-090 §3.5 ("AI policy selection") AND
+// RFC-010 §2.2 ("AI countries can auto-select policy") with
+// both a deterministic selection helper and a per-country
+// apply path that reuses the existing M1.5 policy machinery.
 //
-// RCR is a recovery-track identifier, NOT an M-milestone
-// number. RCR-1 ships a deterministic, RNG-free, mutation-free
-// selection primitive. The corresponding *apply* path is
-// deliberately out of scope — it requires careful integration
-// with M1.5 pre-flight atomicity + M1.15 active_policies
-// bookkeeping and is tracked in
-// docs/rfc-090-010-compliance-audit.md for a later RCR PR.
+// RCR-1 is a one-time corrective PR (NOT a long-running
+// recovery track and NOT an M-milestone number); see
+// docs/rfc-090-010-compliance-audit.md §5.1 for the framing
+// rule. M6.6 resumes per RFC-090 §6.6 after this PR lands.
 //
-// Selection rule for RCR-1:
+// Module surface:
 //
-//   For each country `c` in `state.countries`, in vector order:
-//     - If `state.player_country == c`, skip — the player picks
-//       their own policies.
-//     - Otherwise, select the FIRST policy in `state.policies`
-//       (vector order). When `state.policies` is empty, skip.
+//   select_policies(state) -> Result<vector<Selection>>
+//     Read-only / mutation-free. One Selection per
+//     non-player country in state.countries vector order
+//     (player skipped when state.player_country is a valid
+//     index). When state.policies is empty, returns an empty
+//     vector. Selection rule for RCR-1 is "first policy in
+//     state.policies (vector order)" — deliberately minimal,
+//     deterministic, RNG-free. A future refinement can swap
+//     in a fit-scoring routine without changing the API.
 //
-// That rule is deliberately minimal:
+//   apply_selected_policies(state) -> Result<ApplyOutcome>
+//     Calls select_policies, then dispatches every Selection
+//     through policy::apply_policy_effects(state, country,
+//     policy). Apply inherits M1.5 pre-flight atomicity
+//     (a failing effect leaves THAT country untouched) and
+//     M1.15 active_policies bookkeeping (a successful apply
+//     appends one ActivePolicy entry to country.active_policies
+//     via the existing policy path). Fail-continue across
+//     countries: a failure on country i records into
+//     ApplyOutcome.failed_countries but does NOT abort the
+//     remaining apply calls — mirrors the M5.6 applicator
+//     "broken event for country X doesn't block country Y"
+//     convention.
 //
-//   - deterministic         — no RNG, no time-based input
-//   - vector-order tie-break  — same canonical-load-order
-//                               convention used by the M5
-//                               evaluator
-//   - per-country emission   — one Selection per applicable
-//                              country; no scoring across
-//                              countries
-//   - no side effects        — returns a vector, does NOT
-//                              call apply_policy_effects
+// Determinism guarantees (both functions):
 //
-// A future RCR PR can replace "first policy" with a
-// fit-scoring routine that ranks policies against per-country
-// state (e.g. the country with the lowest stability prefers
-// a stability-raising policy). That refinement is data-only
-// and would not change this API.
+//   - RNG-free          (state.rng untouched)
+//   - vector order      (state.countries[i] -> Selection[i]
+//                        when neither i is the player nor
+//                        state.policies is empty)
+//   - apply atomicity   (per-country, via M1.5 pre-flight)
+//   - no time-based input
 //
 // What this module does NOT do:
 //
-//   - apply selected policies (no state mutation)
-//   - schedule policies for later application
-//   - consume state.rng (RNG-free, like the M5 evaluator)
-//   - emit logs (no state.logs append)
-//   - emit CSV / events.jsonl entries
-//   - consult RFC-010 §3.6 relationships / §3.7 threat (those
-//     fields exist on CountryState but no RCR-1 caller needs
-//     them; future RCR PRs that ship the relationships
-//     matrix can extend the selection rule)
-//   - run as part of monthly::tick_all_countries (this is
-//     a standalone caller-driven helper, mirroring M5.7's
-//     pre-M5.8 contract)
+//   - schedule policies for later application (no scheduler;
+//     each apply records ONE ActivePolicy entry via the
+//     existing M1.15 path)
+//   - consume state.rng (RNG-free)
+//   - emit logs / events.jsonl / CSV (consistent with the
+//     M3.4 / M5.6 applicator "no log emission" convention)
+//   - consult RFC-010 §3.6 relationships / §3.7 threat /
+//     §3.8 military_strength (those fields exist on state but
+//     are inputs for a future smarter selection rule, not
+//     the current first-policy rule)
+//   - run as part of monthly::tick_all_countries (standalone
+//     caller-driven helpers, mirroring M5.7's pre-M5.8
+//     contract; a future runner-policy may auto-call
+//     apply_selected_policies once per month)
+//   - apply to the player country (deliberately skipped)
 
 #ifndef LEVIATHAN_SYSTEMS_AI_POLICY_HPP
 #define LEVIATHAN_SYSTEMS_AI_POLICY_HPP

@@ -54,10 +54,25 @@ The corrective batch ships:
   §3.5 / RFC-010 §2.2).
 - New `leviathan::systems::annual_stats` module.
 - `event_evaluator::rank_weighted_events` deterministic
-  weighted ranker (RFC-090 §5.6 / §5.7).
-- `event_effects::select_default_option` +
-  `event_effects::resolve_followup_ids` helpers (RFC-090
-  §5.8 / §5.12).
+  weighted ranker (RFC-090 §5.6) **plus
+  `event_evaluator::select_weighted_event`** which picks
+  the highest-weight currently-matched candidate (RFC-090
+  §5.7); both RNG-free.
+- `event_effects::select_default_option` (returns first
+  option) **plus `event_effects::apply_default_option_effects`**
+  which routes the first option's effects through the
+  M1.5 / M5.6 `policy::apply_effects_to_actor` path
+  (RFC-090 §5.4 / §5.8). Two extended event fixtures
+  (`legitimacy_crisis`, `corruption_scandal`) author
+  representative options to exercise this path.
+- `event_effects::resolve_followup_ids` (resolves ids to
+  `state.events` indices) **plus `event_firer::record_followup`**
+  which appends a followup `EventInstance` to
+  `state.event_history` with parent-inherited actors plus
+  a per-fire `event_fired` `LogEntry` (RFC-090 §5.12).
+  Two extended event fixtures (`bureaucratic_strain`,
+  `corruption_scandal`) author followup chains
+  (`-> budget_shortfall_warning`, `-> legitimacy_crisis`).
 - `event_firer::record_match` now emits one per-fire
   `LogEntry` into `state.logs` so the M0.6 `events.jsonl`
   artefact records fired events (RFC-090 §5.9).
@@ -493,36 +508,68 @@ backlog.
                   ({target, op, value, weight_delta}) +
                   EventDefinition.weight_modifiers vector.
                   Save schema v17 makes the block required at
-                  the save layer; scenario loader treats it as
-                  optional with default empty vector;
-                  diagnostics walk + tests in place.
+                  the save layer; scenario loader (parse_event_file)
+                  parses optional weight_modifiers[] from
+                  event JSON; diagnostics::compare_states
+                  walks the field. Three extended event
+                  fixtures (bureaucratic_strain,
+                  budget_shortfall_warning,
+                  military_loyalty_concern) author
+                  representative modifiers; round-trip + load
+                  + save tests pin the path.
 [X] RFC-090 §5.4  EventOption model                         — RCR-1
                   New core::EventOption POD
                   ({id_code, label, effects[]}) +
                   EventDefinition.options vector. Save +
                   scenario loader + diagnostics same shape
-                  as §5.3.
+                  as §5.3. Two extended event fixtures
+                  (legitimacy_crisis, corruption_scandal)
+                  author two options each. The
+                  event_effects::apply_default_option_effects
+                  helper (§5.8 below) is the callable
+                  effect-application path for the first
+                  option.
 [X] RFC-090 §5.6  event weights system                      — RCR-1
                   Composed into new
                   event_evaluator::rank_weighted_events
-                  (RNG-free; base weight + sum of matching
-                  modifier weight_deltas).
+                  (RNG-free; base weight kBaseWeight = 1.0
+                  + sum of matching modifier weight_deltas;
+                  unmatched modifiers contribute zero).
+                  Stable-sort by descending weight; tie-break
+                  by original event vector order.
 [X] RFC-090 §5.7  weighted event selection                  — RCR-1
-                  rank_weighted_events returns
-                  WeightedEventCandidate entries sorted by
-                  descending weight with ties keeping the
-                  original event vector order. No random
-                  draw — the canonical M5.2 match_events
-                  Boolean evaluator stays unchanged so
-                  canonical determinism baselines hold; the
-                  ranker is the deterministic primitive.
+                  New event_evaluator::select_weighted_event
+                  returns the highest-weight candidate
+                  whose triggers currently match (the
+                  intersection of rank_weighted_events with
+                  M5.2's match_events). Returns std::nullopt
+                  when no event currently matches. No
+                  random draw — the canonical M5.2
+                  match_events Boolean evaluator stays
+                  unchanged so canonical determinism
+                  baselines hold; select_weighted_event is
+                  the deterministic primitive a future
+                  weighted-random extension would sit on
+                  top of.
 [X] RFC-090 §5.8  event options / player choices            — RCR-1
-                  Schema (§5.4) plus
-                  event_effects::select_default_option
-                  helper returning the first option (or
-                  nullptr for an empty options list). No
-                  player UI prompt; deterministic
-                  default-option selection only.
+                  Schema (§5.4) plus two helpers:
+                    - event_effects::select_default_option
+                      returns &definition.options[0] or
+                      nullptr when options is empty.
+                    - event_effects::apply_default_option_effects
+                      routes the first option's effects
+                      through the M1.5 / M5.6
+                      policy::apply_effects_to_actor path,
+                      inheriting M1.5 pre-flight atomicity.
+                      Empty options -> success with 0
+                      effects applied. Empty actors -> same.
+                      Bogus effect target -> failure with
+                      state unchanged.
+                  Two extended event fixtures
+                  (legitimacy_crisis, corruption_scandal)
+                  author runnable options. No player UI
+                  prompt — deterministic default-option
+                  selection only.
 [X] RFC-090 §5.9  per-fire events.jsonl emission            — RCR-1
                   event_firer::record_match now appends
                   one LogEntry with category "event_fired"
@@ -553,17 +600,32 @@ backlog.
                   and the save round-trip preserves them.
 [X] RFC-090 §5.12 event-chain / followup-event model        — RCR-1
                   EventDefinition.followup_event_ids vector
-                  (schema + save + diagnostics) +
-                  event_effects::resolve_followup_ids helper
-                  that resolves the strings to state.events
-                  indices. Unresolvable ids are skipped
-                  (cross-scenario reload tolerance, mirroring
-                  EventInstance.event_id_code semantics).
-                  No automatic followup cascade is wired in
-                  the runner — the resolver is the
-                  deterministic primitive a future
-                  runner-policy consumer would compose with
-                  the firer.
+                  (schema + save + scenario_loader +
+                  diagnostics) plus two helpers:
+                    - event_effects::resolve_followup_ids
+                      resolves followup id_codes to
+                      state.events indices. Unresolvable
+                      ids are skipped (cross-scenario reload
+                      tolerance, mirroring
+                      EventInstance.event_id_code semantics).
+                    - event_firer::record_followup
+                      (RCR-1's deterministic chain
+                      firing primitive) appends a new
+                      EventInstance to state.event_history
+                      with parent-inherited actors and
+                      emits a per-fire "event_fired"
+                      LogEntry whose metadata includes
+                      followup_of: <parent_event_id_code>.
+                  Two extended event fixtures
+                  (bureaucratic_strain ->
+                   budget_shortfall_warning;
+                   corruption_scandal -> legitimacy_crisis)
+                  author followup chains exercising the
+                  resolver path. No automatic recursive
+                  cascade is wired in the runner — that
+                  would change M5.7 snapshot-evaluation
+                  semantics; runner wiring is deliberately
+                  out of scope for this corrective batch.
 ```
 
 Note: §5.1 (`EventData`) is met by `EventDefinition` (M5.1);

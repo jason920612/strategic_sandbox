@@ -145,4 +145,40 @@ FireOutcome record_matches(
     return out;
 }
 
+void record_followup(core::GameState&             state,
+                     const core::EventInstance&   parent_instance,
+                     const core::EventDefinition& followup_definition,
+                     const core::GameDate&        fired_on) {
+    core::EventInstance inst;
+    inst.event_id_code = followup_definition.id_code;
+    inst.fired_on      = fired_on;
+    inst.actors        = parent_instance.actors;   // inherit from parent
+
+    // Same log emission shape as record_match. Use the parent's
+    // first-actor surface so events.jsonl can be filtered by
+    // country_id_code consistently across base + followup fires.
+    core::LogEntry entry;
+    entry.date     = fired_on;
+    entry.category = "event_fired";
+    entry.source   = "event_firer";
+    entry.message  = std::string("event ") + followup_definition.id_code +
+                     " fired (followup of " +
+                     parent_instance.event_id_code + ")";
+    entry.metadata.push_back({"event_id_code", followup_definition.id_code});
+    entry.metadata.push_back({"followup_of",   parent_instance.event_id_code});
+    if (!inst.actors.empty()) {
+        const auto& a0 = inst.actors.front();
+        entry.metadata.push_back({"actor_kind",      a0.kind});
+        entry.metadata.push_back({"actor_id_code",   a0.id_code});
+        entry.metadata.push_back({"country_id_code", a0.country_id_code});
+    } else {
+        entry.metadata.push_back({"actor_kind",      std::string("<none>")});
+        entry.metadata.push_back({"actor_id_code",   std::string()});
+        entry.metadata.push_back({"country_id_code", std::string()});
+    }
+    state.logs.push_back(std::move(entry));
+
+    state.event_history.push_back(std::move(inst));
+}
+
 }  // namespace leviathan::systems::event_firer

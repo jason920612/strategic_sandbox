@@ -110,6 +110,40 @@ FireOutcome record_matches(core::GameState&                                  sta
                            const std::vector<event_evaluator::EventMatch>&   matches,
                            const core::GameDate&                             fired_on);
 
+// RCR-1: RFC-090 §5.12 — followup-event-chain firing primitive.
+//
+// Given a `parent_instance` (already fired and recorded in
+// `state.event_history`) and a `followup_definition` resolved
+// via `event_effects::resolve_followup_ids`, append a new
+// `EventInstance` to `state.event_history` representing the
+// followup fire. The followup's `actors` are *inherited* from
+// the parent (same first-actor-wins convention used by
+// `event_effects::apply_event_effects`), since followups are
+// not triggered by their own EventTrigger match — they are
+// triggered by the parent's fire.
+//
+// Side effects mirror `record_match`:
+//   - Appends one EventInstance to state.event_history.
+//   - Appends one LogEntry{category="event_fired", ...} to
+//     state.logs so events.jsonl records the followup fire
+//     (with metadata {event_id_code, actor_kind,
+//      actor_id_code, country_id_code}, mirroring record_match).
+//
+// Determinism: identical inputs produce byte-identical
+// state mutation. RNG-free.
+//
+// No automatic cascade is performed: this is the
+// deterministic primitive. A runner-policy that wants
+// recursive followup firing must call `record_followup`
+// itself (or via a loop). RCR-1 ships the primitive; the
+// auto-cascade-wiring is intentionally out of scope to
+// preserve M5.7 snapshot-evaluation semantics in
+// `event_engine::tick_events`.
+void record_followup(core::GameState&             state,
+                     const core::EventInstance&   parent_instance,
+                     const core::EventDefinition& followup_definition,
+                     const core::GameDate&        fired_on);
+
 }  // namespace leviathan::systems::event_firer
 
 #endif  // LEVIATHAN_SYSTEMS_EVENT_FIRER_HPP

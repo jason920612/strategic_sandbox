@@ -240,4 +240,26 @@ rank_weighted_events(const core::GameState& state) {
     return out;
 }
 
+std::optional<WeightedEventCandidate>
+select_weighted_event(const core::GameState& state) {
+    const auto matches = match_events(state);
+    if (matches.empty()) {
+        return std::nullopt;
+    }
+
+    // Build a small lookup of currently-matched event indices.
+    // state.events is canonically small (~10 in RCR-1 fixtures),
+    // so a linear scan per ranked candidate is cheaper than a
+    // hash set allocation here.
+    const auto ranked = rank_weighted_events(state);
+    for (const auto& cand : ranked) {
+        for (const auto& m : matches) {
+            if (m.event_index == cand.event_index) {
+                return cand;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace leviathan::systems::event_evaluator

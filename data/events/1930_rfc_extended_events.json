@@ -19,7 +19,16 @@
           "op": "add",
           "value": -0.01
         }
-      ]
+      ],
+      "weight_modifiers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.40,
+          "weight_delta": 0.5
+        }
+      ],
+      "followup_event_ids": ["budget_shortfall_warning"]
     },
     {
       "id": "legitimacy_crisis",
@@ -45,6 +54,24 @@
           "op": "add",
           "value": -0.01
         }
+      ],
+      "options": [
+        {
+          "id_code": "concede_to_opposition",
+          "label": "Concede to the opposition",
+          "effects": [
+            { "target": "country.legitimacy", "op": "add", "value":  0.02 },
+            { "target": "country.central_control", "op": "add", "value": -0.02 }
+          ]
+        },
+        {
+          "id_code": "crackdown",
+          "label": "Order a crackdown",
+          "effects": [
+            { "target": "country.central_control", "op": "add", "value":  0.03 },
+            { "target": "country.legitimacy", "op": "add", "value": -0.02 }
+          ]
+        }
       ]
     },
     {
@@ -65,6 +92,14 @@
           "target": "country.budget_balance",
           "op": "add",
           "value": -0.05
+        }
+      ],
+      "weight_modifiers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.20,
+          "weight_delta": 1.0
         }
       ]
     },
@@ -87,7 +122,25 @@
           "op": "add",
           "value": -0.02
         }
-      ]
+      ],
+      "options": [
+        {
+          "id_code": "anti_corruption_campaign",
+          "label": "Launch anti-corruption campaign",
+          "effects": [
+            { "target": "country.corruption", "op": "add", "value": -0.03 },
+            { "target": "country.legitimacy", "op": "add", "value":  0.02 }
+          ]
+        },
+        {
+          "id_code": "ignore_scandal",
+          "label": "Ignore the scandal",
+          "effects": [
+            { "target": "country.legitimacy", "op": "add", "value": -0.02 }
+          ]
+        }
+      ],
+      "followup_event_ids": ["legitimacy_crisis"]
     },
     {
       "id": "weak_intelligence_warning",
@@ -149,6 +202,14 @@
           "target": "country.stability",
           "op": "add",
           "value": -0.01
+        }
+      ],
+      "weight_modifiers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.30,
+          "weight_delta": 0.3
         }
       ]
     },

@@ -190,11 +190,14 @@ TEST_CASE("RCR-1 integration: compliance scenario loads with 20 countries / 20 p
         CHECK(save.find(needle) != std::string::npos);
     }
 
-    // Save format stays at v16 — RCR-1 does NOT bump.
+    // Save format is now v17 (RCR-1 bumped v16 -> v17 in one
+    // batched migration: military_strength + weight_modifiers +
+    // options + followup_event_ids + relationships).
     CHECK(save.find("\"save_version\": 17") != std::string::npos);
 
-    // The 10 canonical artefacts still appear (RCR-1 does NOT
-    // change the 10-artefact contract).
+    // The original 10 artefacts still appear, plus the new
+    // annual_world_stats.csv as the 11th unconditional artefact
+    // (RFC-090 §3.9 / RFC-010 §5).
     CHECK(fs::exists(td.path / "save.json"));
     CHECK(fs::exists(td.path / "events.jsonl"));
     CHECK(fs::exists(td.path / "interest_groups.csv"));
@@ -202,10 +205,28 @@ TEST_CASE("RCR-1 integration: compliance scenario loads with 20 countries / 20 p
     CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
     CHECK(fs::exists(td.path / "provinces.svg"));
     CHECK(fs::exists(td.path / "map.html"));
-    // RCR-1 (RFC-090 §3.9 / RFC-010 §5): annual_world_stats.csv
-    // is the new 11th unconditional artefact. End_tick always
-    // writes it.
-    CHECK(fs::exists(td.path / "annual_world_stats.csv"));
+    CHECK(fs::exists(td.path / "annual_world_stats.csv"));   // 11th artefact, new in RCR-1
+
+    // RCR-1 schema fixtures: weight_modifiers / options /
+    // followup_event_ids on the extended events must round-trip
+    // into the on-disk save (the scenario_loader reads them from
+    // data/events/1930_rfc_extended_events.json and the save
+    // layer serialises them under v17). Pin one representative
+    // value of each kind.
+    CHECK(save.find("\"weight_modifiers\":")    != std::string::npos);
+    CHECK(save.find("\"options\":")             != std::string::npos);
+    CHECK(save.find("\"followup_event_ids\":")  != std::string::npos);
+    // legitimacy_crisis authors two options ("concede_to_opposition" + "crackdown").
+    CHECK(save.find("\"concede_to_opposition\"") != std::string::npos);
+    CHECK(save.find("\"crackdown\"")             != std::string::npos);
+    // bureaucratic_strain authors a followup ("budget_shortfall_warning")
+    // -- the followup id_code must appear inside followup_event_ids[],
+    // not just as the event id_code (which it also is — both are
+    // valid).
+    CHECK(save.find("\"budget_shortfall_warning\"") != std::string::npos);
+    // corruption_scandal authors two options + a followup
+    CHECK(save.find("\"anti_corruption_campaign\"") != std::string::npos);
+    CHECK(save.find("\"ignore_scandal\"")           != std::string::npos);
 }
 
 // =====================================================================

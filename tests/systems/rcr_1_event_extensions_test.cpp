@@ -21,6 +21,7 @@
 #include "leviathan/systems/event_effects.hpp"
 #include "leviathan/systems/event_evaluator.hpp"
 #include "leviathan/systems/event_firer.hpp"
+#include "leviathan/systems/save_system.hpp"
 
 using leviathan::core::CountryId;
 using leviathan::core::CountryState;
@@ -319,4 +320,272 @@ TEST_CASE("RCR-1 event_firer: record_match appends one LogEntry with event_fired
         }
     }
     CHECK(found_event_id_meta);
+}
+
+// =====================================================================
+// RCR-1 event_evaluator::select_weighted_event (RFC-090 §5.7)
+// =====================================================================
+
+TEST_CASE("RCR-1 select_weighted_event: empty events returns nullopt") {
+    GameState state;
+    CHECK_FALSE(ev_ev::select_weighted_event(state).has_value());
+}
+
+TEST_CASE("RCR-1 select_weighted_event: no triggers currently match -> nullopt") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.80));
+    state.events.push_back(make_event("low_stab",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "gt", 0.50, 5.0} }));
+    CHECK_FALSE(ev_ev::select_weighted_event(state).has_value());
+}
+
+TEST_CASE("RCR-1 select_weighted_event: returns matched candidate with highest weight") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    // a: matches, base weight 1.0
+    state.events.push_back(make_event("a",
+        { EventTrigger{"country.stability", "lt", 0.30} }));
+    // b: matches, +1.5 weight via modifier (total 2.5)
+    state.events.push_back(make_event("b",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30, 1.5} }));
+    // c: does NOT currently match -- excluded from selection
+    state.events.push_back(make_event("c",
+        { EventTrigger{"country.stability", "gt", 0.90} },
+        { WeightModifier{"country.stability", "lt", 0.30, 10.0} }));
+
+    const auto pick = ev_ev::select_weighted_event(state);
+    REQUIRE(pick.has_value());
+    CHECK(pick->event_id_code == "b");
+    CHECK(pick->weight        == doctest::Approx(2.5));
+}
+
+TEST_CASE("RCR-1 select_weighted_event: ties resolve by event vector order") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("first",
+        { EventTrigger{"country.stability", "lt", 0.30} }));
+    state.events.push_back(make_event("second",
+        { EventTrigger{"country.stability", "lt", 0.30} }));
+
+    const auto pick = ev_ev::select_weighted_event(state);
+    REQUIRE(pick.has_value());
+    CHECK(pick->event_id_code == "first");
+}
+
+// =====================================================================
+// RCR-1 event_effects::apply_default_option_effects (RFC-090 §5.4 / §5.8)
+// =====================================================================
+
+TEST_CASE("RCR-1 apply_default_option_effects: empty options -> success, effects_applied=0, state unchanged") {
+    GameState state;
+    auto c = make_country("GER", /*stab*/0.50);
+    c.id = CountryId{0};
+    state.countries.push_back(c);
+
+    leviathan::core::EventInstance inst;
+    inst.event_id_code = "no_options";
+    inst.fired_on      = GameDate(1930, 1, 1);
+    leviathan::core::EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    inst.actors.push_back(a);
+
+    EventDefinition d = make_event("no_options",
+        { EventTrigger{"country.stability", "lt", 0.30} });
+
+    const auto r = ev_ef::apply_default_option_effects(state, inst, d);
+    REQUIRE(r);
+    CHECK(r.value().effects_applied == 0);
+    CHECK(state.countries[0].stability == doctest::Approx(0.50));
+}
+
+TEST_CASE("RCR-1 apply_default_option_effects: first option's effects land on the actor's country") {
+    GameState state;
+    auto c = make_country("GER", /*stab*/0.50);
+    c.id        = CountryId{0};
+    c.legitimacy = 0.50;
+    state.countries.push_back(c);
+
+    leviathan::core::EventInstance inst;
+    inst.event_id_code = "with_options";
+    inst.fired_on      = GameDate(1930, 1, 1);
+    leviathan::core::EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    inst.actors.push_back(a);
+
+    EventDefinition d = make_event("with_options",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        {},
+        {
+            EventOption{"opt_a", "Option A",
+                {{"country.stability", "add", 0.05},
+                 {"country.legitimacy", "add", 0.10}}},
+            EventOption{"opt_b", "Option B",
+                {{"country.stability", "add", -0.05}}},
+        });
+
+    const auto r = ev_ef::apply_default_option_effects(state, inst, d);
+    REQUIRE(r);
+    CHECK(r.value().effects_applied == 2);
+    // opt_a applied (deterministic first-option selector)
+    CHECK(state.countries[0].stability  == doctest::Approx(0.55));
+    CHECK(state.countries[0].legitimacy == doctest::Approx(0.60));
+}
+
+TEST_CASE("RCR-1 apply_default_option_effects: actors empty -> success, no mutation") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.50));
+
+    leviathan::core::EventInstance inst;
+    inst.event_id_code = "no_actor";
+    // actors empty
+
+    EventDefinition d = make_event("no_actor",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        {},
+        { EventOption{"opt", "Opt",
+            {{"country.stability", "add", 0.5}}} });
+
+    const auto r = ev_ef::apply_default_option_effects(state, inst, d);
+    REQUIRE(r);
+    CHECK(r.value().effects_applied == 0);
+    CHECK(state.countries[0].stability == doctest::Approx(0.50));
+}
+
+TEST_CASE("RCR-1 apply_default_option_effects: bogus effect target -> failure, atomic state") {
+    GameState state;
+    auto c = make_country("GER", /*stab*/0.50);
+    c.id = CountryId{0};
+    state.countries.push_back(c);
+
+    leviathan::core::EventInstance inst;
+    inst.event_id_code = "bad_opt";
+    inst.fired_on      = GameDate(1930, 1, 1);
+    leviathan::core::EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    inst.actors.push_back(a);
+
+    EventDefinition d = make_event("bad_opt",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        {},
+        { EventOption{"opt", "Opt",
+            {{"country.does_not_exist", "add", 0.1}}} });
+
+    const auto r = ev_ef::apply_default_option_effects(state, inst, d);
+    CHECK_FALSE(r);
+    // M1.5 pre-flight atomicity inherited.
+    CHECK(state.countries[0].stability == doctest::Approx(0.50));
+}
+
+// =====================================================================
+// RCR-1 event_firer::record_followup (RFC-090 §5.12)
+// =====================================================================
+
+TEST_CASE("RCR-1 record_followup: appends EventInstance + LogEntry, actors inherited from parent") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+
+    leviathan::core::EventInstance parent;
+    parent.event_id_code = "parent_event";
+    parent.fired_on      = GameDate(1930, 3, 15);
+    leviathan::core::EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    parent.actors.push_back(a);
+
+    EventDefinition followup_def = make_event("followup_event",
+        { EventTrigger{"country.stability", "lt", 0.30} });
+
+    const auto history_before = state.event_history.size();
+    const auto logs_before    = state.logs.size();
+    ev_fi::record_followup(state, parent, followup_def, GameDate(1930, 4, 15));
+
+    REQUIRE(state.event_history.size() == history_before + 1);
+    const auto& inst = state.event_history.back();
+    CHECK(inst.event_id_code == "followup_event");
+    CHECK(inst.fired_on      == GameDate(1930, 4, 15));
+    REQUIRE(inst.actors.size() == 1u);
+    CHECK(inst.actors[0].country_id_code == "GER");
+
+    REQUIRE(state.logs.size() == logs_before + 1);
+    const auto& last = state.logs.back();
+    CHECK(last.category == "event_fired");
+    CHECK(last.message.find("followup of parent_event") != std::string::npos);
+    bool found_followup_of_meta = false;
+    for (const auto& kv : last.metadata) {
+        if (kv.first == "followup_of" && kv.second == "parent_event") {
+            found_followup_of_meta = true;
+            break;
+        }
+    }
+    CHECK(found_followup_of_meta);
+}
+
+// =====================================================================
+// RCR-1 fixture round-trip: weight_modifiers / options /
+// followup_event_ids survive scenario_loader -> save -> deserialize
+// =====================================================================
+
+TEST_CASE("RCR-1 fixture round-trip: non-empty weight_modifiers / options / followup_event_ids survive save round-trip") {
+    // Build a state with a hand-built event carrying all three new
+    // fields populated. Round-trip via save_system::serialize +
+    // deserialize and verify every byte of the new schema survives.
+    GameState state;
+    EventDefinition d;
+    d.id_code        = "rich_event";
+    d.name           = "Rich Event";
+    d.description    = "An event exercising every RCR-1 schema field.";
+    d.visible_report = "public report";
+    d.true_cause     = "private cause";
+    d.triggers.push_back({"country.stability", "lt", 0.30});
+    d.effects.push_back({"country.legitimacy", "add", -0.01});
+    d.weight_modifiers.push_back({"country.stability", "lt", 0.20, 1.5});
+    d.weight_modifiers.push_back({"country.legitimacy", "lt", 0.30, 0.5});
+    d.options.push_back({"calm", "Calm response",
+                         {{"country.legitimacy", "add", 0.02}}});
+    d.options.push_back({"crackdown", "Crackdown",
+                         {{"country.central_control", "add", 0.03},
+                          {"country.legitimacy", "add", -0.02}}});
+    d.followup_event_ids = {"escalation", "diplomatic_fallout"};
+    state.events.push_back(d);
+
+    const std::string serialised =
+        leviathan::systems::save_system::serialize(state);
+    const auto re_r =
+        leviathan::systems::save_system::deserialize(serialised);
+    REQUIRE(re_r);
+    const auto& re = re_r.value();
+    REQUIRE(re.events.size() == 1u);
+    const auto& e = re.events.front();
+
+    REQUIRE(e.weight_modifiers.size() == 2u);
+    CHECK(e.weight_modifiers[0].target       == "country.stability");
+    CHECK(e.weight_modifiers[0].op           == "lt");
+    CHECK(e.weight_modifiers[0].value        == doctest::Approx(0.20));
+    CHECK(e.weight_modifiers[0].weight_delta == doctest::Approx(1.5));
+    CHECK(e.weight_modifiers[1].target       == "country.legitimacy");
+
+    REQUIRE(e.options.size() == 2u);
+    CHECK(e.options[0].id_code == "calm");
+    CHECK(e.options[0].label   == "Calm response");
+    REQUIRE(e.options[0].effects.size() == 1u);
+    CHECK(e.options[0].effects[0].target == "country.legitimacy");
+    CHECK(e.options[1].id_code == "crackdown");
+    REQUIRE(e.options[1].effects.size() == 2u);
+
+    REQUIRE(e.followup_event_ids.size() == 2u);
+    CHECK(e.followup_event_ids[0] == "escalation");
+    CHECK(e.followup_event_ids[1] == "diplomatic_fallout");
 }
