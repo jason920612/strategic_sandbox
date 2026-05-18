@@ -71,9 +71,10 @@ EventDefinition make_event(const std::string& id_code,
                            std::vector<EventTrigger> triggers,
                            std::vector<PolicyEffect> effects = {}) {
     EventDefinition d;
-    d.id_code  = id_code;
-    d.name     = id_code;
-    d.triggers = std::move(triggers);
+    d.id_code    = id_code;
+    d.name       = id_code;
+    d.true_cause = "test true cause";   // M6.1: required non-empty
+    d.triggers   = std::move(triggers);
     d.effects  = std::move(effects);
     return d;
 }
@@ -349,4 +350,47 @@ TEST_CASE("M5.7 tick_events: empty state.events keeps state byte-identical") {
     REQUIRE(eng::tick_events(s));
     const std::string after = ss::serialize(s);
     CHECK(before == after);
+}
+
+// =====================================================================
+// M6.1 runtime regression: tick_events does NOT consult true_cause
+// =====================================================================
+
+TEST_CASE("M6.1 tick_events: events with different true_cause fire identically") {
+    // Two states differing ONLY in true_cause should produce
+    // identical event firing semantics (same matched count, same
+    // recorded count, same applied count, same field mutation).
+    // Pins that no part of the engine (evaluator, firer, effects
+    // applicator, composition) reads true_cause.
+    GameState s_a;
+    s_a.current_date = GameDate(1930, 1, 1);
+    s_a.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def_a = make_event("unrest",
+        { make_trigger("country.stability", "lt", 0.30) },
+        { make_effect("country.stability", "add", -0.02) });
+    def_a.true_cause = "narrative version A";
+    s_a.events.push_back(def_a);
+
+    GameState s_b;
+    s_b.current_date = GameDate(1930, 1, 1);
+    s_b.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def_b = make_event("unrest",
+        { make_trigger("country.stability", "lt", 0.30) },
+        { make_effect("country.stability", "add", -0.02) });
+    def_b.true_cause = "completely different narrative version B";
+    s_b.events.push_back(def_b);
+
+    const auto r_a = eng::tick_events(s_a);
+    const auto r_b = eng::tick_events(s_b);
+    REQUIRE(r_a);
+    REQUIRE(r_b);
+    CHECK(r_a.value().events_matched         == r_b.value().events_matched);
+    CHECK(r_a.value().events_recorded        == r_b.value().events_recorded);
+    CHECK(r_a.value().events_applied         == r_b.value().events_applied);
+    CHECK(r_a.value().total_effects_applied  == r_b.value().total_effects_applied);
+    CHECK(s_a.countries[0].stability         == doctest::Approx(s_b.countries[0].stability));
+    CHECK(s_a.event_history.size()           == s_b.event_history.size());
+    REQUIRE(s_a.event_history.size() == 1u);
+    // event_history records event_id_code, NOT true_cause.
+    CHECK(s_a.event_history[0].event_id_code == s_b.event_history[0].event_id_code);
 }

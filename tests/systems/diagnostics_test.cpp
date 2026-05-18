@@ -821,6 +821,7 @@ leviathan::core::EventDefinition m51_event(
     ev.id_code     = id_code;
     ev.name        = name;
     ev.description = description;
+    ev.true_cause  = "test cause";   // M6.1: required non-empty
     leviathan::core::EventTrigger t;
     t.target = trig_target;
     t.op     = trig_op;
@@ -983,6 +984,38 @@ TEST_CASE("compare_states: M5.4 event_history actors.size mismatch reported (ski
     const auto m = dg::compare_states(a, b);
     REQUIRE(m.size() == 1u);
     CHECK(m[0].field_path == "event_history[0].actors.size()");
+}
+
+// ---------------------------------------------------------------------
+// M6.1 - EventDefinition.true_cause (RFC-090 §6.1) walk
+// ---------------------------------------------------------------------
+
+TEST_CASE("compare_states: M6.1 events[N].true_cause mismatch reported per path") {
+    GameState a;
+    GameState b;
+    auto ea = m51_event("x", "X", "desc");
+    auto eb = m51_event("x", "X", "desc");
+    ea.true_cause = "alpha";
+    eb.true_cause = "beta";
+    a.events.push_back(std::move(ea));
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    // Only the true_cause field differs.
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "events[0].true_cause");
+}
+
+TEST_CASE("compare_states: M6.1 identical events with identical true_cause produce no mismatch") {
+    GameState a;
+    GameState b;
+    auto ea = m51_event("x", "X", "desc");
+    auto eb = m51_event("x", "X", "desc");
+    ea.true_cause = "same cause text";
+    eb.true_cause = "same cause text";
+    a.events.push_back(std::move(ea));
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
 }
 
 // ---------------------------------------------------------------------

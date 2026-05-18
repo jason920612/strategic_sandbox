@@ -790,6 +790,7 @@ std::string serialize(const core::GameState& state) {
         entry["id_code"]     = ev.id_code;
         entry["name"]        = ev.name;
         entry["description"] = ev.description;
+        entry["true_cause"]  = ev.true_cause;   // M6.1 (RFC-090 §6.1)
         json triggers_arr = json::array();
         for (const auto& t : ev.triggers) {
             json tj = json::object();
@@ -1468,6 +1469,24 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         const std::string desc =
             entry.at("description").get<std::string>();
 
+        // M6.1 (RFC-090 §6.1): true_cause is required non-empty.
+        // A v14 save's events[] entries lacked true_cause; the
+        // M6.1 save bump (v14 -> v15) makes this field required.
+        // Silently defaulting to an empty string on reload would
+        // erase author intent (the author-written truth
+        // narrative).
+        if (!entry.contains("true_cause")
+            || !entry.at("true_cause").is_string()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'true_cause' missing or not a string");
+        }
+        const std::string true_cause =
+            entry.at("true_cause").get<std::string>();
+        if (true_cause.empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'true_cause' must be non-empty");
+        }
+
         // triggers: required, non-empty array.
         if (!entry.contains("triggers")
             || !entry.at("triggers").is_array()) {
@@ -1575,6 +1594,7 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         ev.id_code     = std::move(id_code_r).value();
         ev.name        = std::move(name_r).value();
         ev.description = desc;
+        ev.true_cause  = true_cause;   // M6.1
         ev.triggers    = std::move(triggers);
         ev.effects     = std::move(effects);
         state.events.push_back(std::move(ev));

@@ -217,6 +217,81 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
+- **M6（進行中，RFC-090 §M6 hidden truth /
+  information distortion）** — **M6.1
+  （EventDefinition true_cause schema）** 是 M6 的
+  第一個 sub-milestone。完全照 RFC-090 §6.1（`6.1
+  為事件加入 true_cause`）實作：在
+  `core::EventDefinition` 的 `description` 與
+  `triggers` 之間加上 required non-empty
+  `std::string true_cause` 欄位。`true_cause` 是
+  **作者寫的真相敘述** ── 這事件「實際上是怎麼發生
+  的」的描述，未來 M6 sub-milestone（M6.2
+  `visible_report` / M6.3 `information_accuracy` /
+  M6.4 reported value / M6.5 bias/noise / M6.6 情報
+  預算影響 / M6.7 腐敗影響 / M6.8 debug 模式顯示 /
+  M6.9 非 debug 模式隱藏）會透過資訊管線把它隱藏、
+  失真、洩漏。M6.1 本身 **schema-only**：欄位被儲
+  存、round-trip、被 diagnostics 走訪，但 **沒有
+  系統消費它**。**Save format v14 → v15**：
+  `true_cause` 在 save 層 required non-empty；v14
+  save 直接以 `supports 15` reject；`event_history`
+  schema 不變（欄位在 `EventDefinition` 上，不在
+  `EventInstance` ── instance-level dynamic
+  true_cause 是未來 M6.x 的事）。
+  `scenario_loader::parse_event_file` 透過與
+  `id` / `name` 相同的 `need_string_nonempty` helper
+  驗證 required non-empty。`diagnostics::compare_states`
+  在 `events[N].description` 之後走訪
+  `events[N].true_cause`。Canonical fixture
+  `data/events/1930_core_events.json` 更新：
+  `low_stability_unrest` 與 `radical_interest_group_warning`
+  都拿到描述底層數值狀態的事實型 `true_cause`。
+  **沒有 event runtime 程式變動** ── `event_evaluator`
+  / `event_firer` / `event_effects` / `event_engine`
+  / `monthly_pipeline` / `runner` 全部不動。專屬
+  runtime regression test 釘住：兩個只差
+  `true_cause` 的 state 產生完全相同的
+  `tick_events` outcome + 完全相同的 post-tick
+  state + 完全相同的 `event_history` 內容。
+  **Canonical no-fire 屬性保留** ── 閾值 / trigger
+  / effect 完全不變；canonical 事件仍不 fire；
+  M1.17 / M2 / M3 / M4 / M5 byte-identical
+  determinism baseline 全部仍通過。**13 個新
+  doctest case（1052 total，62400 assertions；
+  per `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：save serialize
+  emits `"true_cause":`；canonical round-trip 保留
+  欄位；v14 拒；v15 missing / wrong-type / empty
+  拒；loader missing / wrong-type / empty 拒；
+  diagnostics mismatch path；identical-`true_cause`
+  no-mismatch；runtime regression 釘住 `tick_events`
+  對 `true_cause` 視而不見。所有 M5-era 手寫
+  EventDefinition 都遷移成 set `true_cause`；所有
+  M5.x 手寫 v14 save JSON fixture 都遷移成 v15 +
+  帶 `"true_cause"`。新
+  `docs/m6-1-event-definition-true-cause-schema.md`
+  design note。**沒有 visible_report（M6.2）/
+  information_accuracy（M6.3）/ reported value
+  （M6.4）/ bias/noise（M6.5）/ 情報預算公式
+  （M6.6）/ 腐敗公式（M6.7）/ debug 模式（M6.8）/
+  非 debug 隱藏（M6.9）/ EventReport 類型或
+  artefact / events.jsonl 語意變動 / UI / map
+  整合 / 新事件定義 / 新 EventTrigger /
+  EventInstance / EventInstanceActor 欄位 / trigger
+  / effect 行為變動 / event_evaluator /
+  event_firer / event_effects / event_engine /
+  monthly_pipeline / runner 程式變動 / 新 artefact
+  （仍 10）/ 新 `RunnerOptions` field / CLI flag /
+  新 `PlayerCommandKind` / 新 state field（只有
+  `EventDefinition.true_cause`）/ 來自 event
+  pipeline 的 RNG draw（M5-era RNG-free 保留）/
+  對 M1.17 / M2 / M3 / M4 / M5 byte-identical
+  determinism baseline 的變動（canonical 事件仍不
+  fire ── `true_cause` 是敘事 metadata，不是行為）/
+  M6.2 工作 / `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」字樣 ──
+  M6 才剛 開始**。M6 remains in progress。
 - **M5（已關閉，RFC-090 §M5 event engine）** — **M5.10
   （M5 exit / close-out）** 是 docs-only 的 M5 出口
   PR，形式對應 M1.17 / M2.22 / M3.9 / M4.23。發布

@@ -255,9 +255,11 @@ struct PolicyData {
 // the trigger evaluator with AND semantics across a definition's
 // triggers. M5.3 enriched matches with actor binding (which
 // country / interest group satisfied each trigger). M5.4 added
-// the event_history data layer for fired-event records. Auto-fire
-// / effects application / runner integration / events.jsonl
-// integration are still deferred to a future M5.x.
+// the event_history data layer for fired-event records. M5.5–M5.8
+// shipped the firer / effects applicator / composition helper /
+// monthly-tick wiring; M5.10 closed M5. M6.1 adds the
+// `true_cause` field on EventDefinition (RFC-090 §6.1) — see
+// the EventDefinition struct below.
 struct EventTrigger {
     std::string target;
     std::string op;
@@ -265,19 +267,25 @@ struct EventTrigger {
 };
 
 // One event definition loaded from a scenario fixture and stored
-// in `GameState::events`. M5.1 ships the schema only — no firing,
-// no effects application, no event history. Effects reuse the
-// existing `PolicyEffect` shape so a future M5.x can extract a
-// shared effect applicator.
+// in `GameState::events`. M5.1 shipped the schema (loader + save
+// round-trip); M5.2-M5.8 added evaluator + firer + effects
+// applicator + monthly pipeline wiring; M5.10 closed M5. M6.1
+// adds `true_cause` (author-written truth narrative) per
+// RFC-090 §6.1 — the first step of M6 "hidden truth / information
+// distortion". M6.1 itself is schema-only: `true_cause` is stored
+// and round-tripped through the save layer but no system consumes
+// it. Later M6 sub-milestones (6.2 visible_report, 6.3
+// information_accuracy, etc.) will read it.
 //
 // M0 had an `{ EventId id; std::string name; }` stub here; M5.1
-// upgrades it in place. `id_code` is the natural string identifier
+// upgraded it in place. `id_code` is the natural string identifier
 // (matches `ProvinceNode::id_code` / `InterestGroupState::id_code`
 // style — no separate numeric `EventId` until a system needs one).
 struct EventDefinition {
     std::string               id_code;
     std::string               name;
     std::string               description;
+    std::string               true_cause;   // M6.1 (RFC-090 §6.1) — non-empty at load
     std::vector<EventTrigger> triggers;   // non-empty at load
     std::vector<PolicyEffect> effects;    // may be empty (warning-only)
 };

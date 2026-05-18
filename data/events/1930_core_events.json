@@ -4,6 +4,7 @@
       "id": "low_stability_unrest",
       "name": "Low Stability Unrest",
       "description": "Low stability creates unrest pressure.",
+      "true_cause": "The country's actual stability has fallen below the unrest threshold.",
       "triggers": [
         {
           "target": "country.stability",
@@ -23,6 +24,7 @@
       "id": "radical_interest_group_warning",
       "name": "Radical Interest Group Warning",
       "description": "A highly radical interest group signals political risk.",
+      "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
       "triggers": [
         {
           "target": "interest_group.radicalism",
