@@ -158,16 +158,21 @@ If you're new to the codebase:
 
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are closed
 > as **implementation milestones**, not as full original
-> RFC-090 / RFC-010 acceptance milestones. M3 and M5 in
-> particular diverged from RFC-090 §M3 / §M5 task lists
-> (multi-country simulation, event content / options /
-> followup chains); RFC-010 v0.1 floors (20 countries / 20
-> policies / 10 events / 6+ factions / AI auto-policy /
-> annual statistics CSV) remain deferred. The full
+> RFC-090 / RFC-010 acceptance milestones. The full
 > deferred-scope backlog is tracked in
 > [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md);
 > issue #105 is the corresponding audit ticket. New
 > milestone work should read the audit doc first.
+>
+> **RCR track.** A separate recovery-track sequence —
+> `RCR-1`, `RCR-2`, … — clears items from the audit-doc
+> backlog. `RCR-N` is a recovery-track identifier, NOT an
+> M-milestone number. **RCR-1 has shipped**: 20-country /
+> 20-policy / 10-event / 6+-IG floors via new
+> `data/scenarios/1930_rfc_compliance.json`; new
+> `leviathan::systems::ai_policy` selection-only
+> skeleton. M6.6 implementation work stays paused while
+> the RCR track runs.
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.

@@ -8,21 +8,30 @@
 
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are
 > closed as **implementation milestones**, not as full
-> original RFC-090 / RFC-010 acceptance milestones. M3 and
-> M5 in particular drifted from their RFC-090 task lists:
-> M3 shipped an interest-group reaction loop rather than
-> the 20–30-country multi-country simulation listed in
-> RFC-090 §M3, and M5 shipped an event-engine skeleton
-> rather than the weighted-selection / options /
-> 10-events / followup-chains scope listed in RFC-090 §M5.
-> RFC-010 v0.1 acceptance floors (20 countries / 20
-> policies / 10 events / 6+ factions / AI auto-policy
-> selection / annual statistics CSV) also remain deferred.
-> The full deferred-scope backlog is tracked in
+> original RFC-090 / RFC-010 acceptance milestones. The
+> full deferred-scope backlog is tracked in
 > [`docs/rfc-090-010-compliance-audit.md`](docs/rfc-090-010-compliance-audit.md);
 > issue #105 is the corresponding audit ticket. Future
 > milestone close-out docs cross-link there rather than
 > re-litigating the gap.
+>
+> **RCR (RFC Compliance Recovery) track.** A separate
+> recovery-track sequence — **RCR-1, RCR-2, …** — clears
+> the audit-doc backlog. `RCR-N` is a recovery-track
+> identifier, NOT an M-milestone number, so RCR work
+> does not consume RFC-090 milestone numbering. **RCR-1
+> has shipped** (this batch): 20-country / 20-policy /
+> 10-event / 6+-IG-across-countries floors now met via
+> new `data/scenarios/1930_rfc_compliance.json`; new
+> `leviathan::systems::ai_policy::select_policies`
+> selection-only AI-policy skeleton. Items still labelled
+> "deferred to RCR-2" in the audit doc (annual world
+> stats CSV, save schema v17 bump for relationships /
+> `EventOption` / `WeightModifier` / followup-event
+> chains, events.jsonl per-fire emission, 10-year event
+> stress test, AI-policy apply path) remain backlog.
+> **M6.6 implementation work stays paused** while the
+> RCR track runs.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**

@@ -28,6 +28,7 @@ FetchContent_MakeAvailable(doctest)
 
 add_executable(leviathan_tests
     test_main.cpp
+    systems/ai_policy_test.cpp
     systems/bias_noise_test.cpp
     core/ids_test.cpp
     core/result_test.cpp
@@ -64,6 +65,7 @@ add_executable(leviathan_tests
     integration/m3_end_to_end_test.cpp
     integration/m4_dom_contract_test.cpp
     integration/m5_event_pipeline_test.cpp
+    integration/rcr_1_rfc_compliance_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE

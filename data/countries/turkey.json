@@ -1,0 +1,24 @@
+{
+  "id":                        "TUR",
+  "name":                      "Turkey",
+  "display_name":              "Republic of Turkey",
+  "initial_gdp":               20.0,
+  "initial_stability":         0.55,
+  "legal_tax_burden":          0.16,
+  "fiscal_capacity":           0.40,
+  "administrative_efficiency": 0.50,
+  "central_control":           0.65,
+  "corruption":                0.28,
+  "legitimacy":                0.55,
+  "military_power":            0.40,
+  "threat_perception":         0.40,
+  "budget": {
+    "administration":  0.25,
+    "military":        0.30,
+    "education":       0.12,
+    "welfare":         0.08,
+    "intelligence":    0.05,
+    "infrastructure":  0.12,
+    "industry":        0.08
+  }
+}

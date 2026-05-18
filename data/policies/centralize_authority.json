@@ -1,0 +1,12 @@
+{
+  "id":            "centralize_authority",
+  "name":          "Centralize Authority",
+  "category":      "administration",
+  "duration_days": 90,
+  "admin_cost":    0.12,
+  "effects": [
+    { "target": "country.central_control",          "op": "add", "value":  0.05 },
+    { "target": "country.legitimacy",               "op": "add", "value": -0.02 },
+    { "target": "faction:local_elites.support",     "op": "add", "value": -0.05 }
+  ]
+}

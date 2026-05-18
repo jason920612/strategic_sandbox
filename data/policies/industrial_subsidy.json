@@ -1,0 +1,12 @@
+{
+  "id":            "industrial_subsidy",
+  "name":          "Industrial Subsidy Program",
+  "category":      "industry",
+  "duration_days": 90,
+  "admin_cost":    0.10,
+  "effects": [
+    { "target": "country.budget.industry",          "op": "add", "value":  0.03 },
+    { "target": "country.budget_balance",           "op": "add", "value": -0.05 },
+    { "target": "faction:technical_elites.support", "op": "add", "value":  0.04 }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id":            "corruption_crackdown",
+  "name":          "Corruption Crackdown",
+  "category":      "administration",
+  "duration_days": 60,
+  "admin_cost":    0.15,
+  "effects": [
+    { "target": "country.corruption",               "op": "add", "value": -0.04 },
+    { "target": "country.administrative_efficiency","op": "add", "value":  0.02 },
+    { "target": "faction:bureaucracy.support",      "op": "add", "value": -0.04 },
+    { "target": "faction:media.support",            "op": "add", "value":  0.03 }
+  ]
+}

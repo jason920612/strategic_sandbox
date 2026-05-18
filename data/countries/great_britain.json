@@ -1,0 +1,24 @@
+{
+  "id":                        "GBR",
+  "name":                      "Great Britain",
+  "display_name":              "United Kingdom",
+  "initial_gdp":               110.0,
+  "initial_stability":         0.65,
+  "legal_tax_burden":          0.22,
+  "fiscal_capacity":           0.60,
+  "administrative_efficiency": 0.65,
+  "central_control":           0.65,
+  "corruption":                0.15,
+  "legitimacy":                0.70,
+  "military_power":            0.60,
+  "threat_perception":         0.30,
+  "budget": {
+    "administration":  0.20,
+    "military":        0.30,
+    "education":       0.15,
+    "welfare":         0.10,
+    "intelligence":    0.10,
+    "infrastructure":  0.10,
+    "industry":        0.05
+  }
+}

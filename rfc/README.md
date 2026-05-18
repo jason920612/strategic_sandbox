@@ -63,6 +63,29 @@ they are *implementation milestone* close-outs or *full
 original RFC acceptance* close-outs, and link to the
 compliance-audit doc when the two diverge.
 
+### Recovery track (RCR)
+
+`RCR-N` is a **recovery-track identifier** for clearing
+items from the compliance-audit backlog. It is **not** an
+RFC milestone number and does not consume M0–M9 numbering.
+**RCR-1 has shipped**:
+
+- 20-country / 20-policy / 10-event / 6+-IG floors via
+  new `data/scenarios/1930_rfc_compliance.json` (the
+  canonical `1930_minimal.json` stays at 3 countries to
+  preserve byte-identical M1–M5 determinism baselines).
+- `leviathan::systems::ai_policy::select_policies` —
+  selection-only AI-policy skeleton (RNG-free,
+  mutation-free, deterministic).
+
+Items the audit doc currently labels "deferred to RCR-2"
+(relationships matrix + EventOption + WeightModifier +
+followup-event chains under one v16→v17 save bump; annual
+world stats CSV artefact; events.jsonl per-fire emission;
+AI-policy apply path; 10-year event stress test) remain
+backlog. M6.6 implementation work stays paused while the
+RCR track runs.
+
 ## 實作進度（與 RFC 對應）
 
 RFC 是設計意圖；實作版本由 milestone PR 推進。RFC 的部分內容已在

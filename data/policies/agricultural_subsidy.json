@@ -1,0 +1,12 @@
+{
+  "id":            "agricultural_subsidy",
+  "name":          "Agricultural Subsidy",
+  "category":      "welfare",
+  "duration_days": 90,
+  "admin_cost":    0.08,
+  "effects": [
+    { "target": "country.budget.welfare",           "op": "add", "value":  0.02 },
+    { "target": "country.budget_balance",           "op": "add", "value": -0.04 },
+    { "target": "faction:farmers.support",          "op": "add", "value":  0.06 }
+  ]
+}

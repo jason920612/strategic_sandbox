@@ -21,7 +21,11 @@ docs cross-link here rather than re-litigating the gap.
 
 Current implementation milestones **M0 – M5 are closed as
 implementation milestones**. M6 is in progress at M6.5
-(`bias_noise` helper skeleton; current main).
+(`bias_noise` helper skeleton). The first **RCR** (RFC
+Compliance Recovery) batch, RCR-1, has shipped and cleared
+the data-shaped portion of the audit-doc backlog
+(see §6 for the precise per-item status). M6.6
+implementation work is paused while the RCR track runs.
 
 The implementation is internally consistent and passes the
 test surface it actually owns:
@@ -282,6 +286,49 @@ items: cross out the line, link the implementing PR, move
 on. New milestone close-out docs link to this audit doc
 rather than re-litigating the gap.
 
+### 5.1 RCR identifiers are NOT milestone numbers
+
+Recovery PRs that clear items from §6 use the identifier
+**`RCR-N`** (RFC Compliance Recovery, batch N). `RCR-N` is a
+**recovery-track identifier**, not an RFC milestone number. It
+**does not** consume or replace M0–M9 / RFC-090 §M3 / §M5
+numbering. The 2026-05-17 force-reset lesson (don't invent
+milestone numbers that don't map to an RFC section — see
+memory file `feedback_rfc_milestone_alignment`) stands; RCR
+identifiers are deliberately *outside* the M-number sequence
+so they don't pollute the RFC milestone history.
+
+Concretely:
+
+- `RCR-1` (this batch) clears the data + selection items
+  that don't require save schema changes.
+- `RCR-2` (planned) will clear the items currently labelled
+  "deferred to RCR-2" in §6 — primarily the save schema
+  bump v16 → v17 batching `EventOption` / `WeightModifier` /
+  `EventDefinition.followup_event_ids` / a `GameState`-level
+  relationships matrix, plus the annual world stats CSV
+  artefact, the AI policy *apply* path, and the
+  events.jsonl per-fire emission.
+- Subsequent `RCR-N` batches continue until every bullet
+  in §6.1 / §6.2 / §6.3 is `[X]`.
+
+PR titles for the track look like
+`RCR-N RFC-090 / RFC-010 compliance recovery batch`. PR bodies
+must contain a section stating "RCR-N is a recovery-track PR,
+not an M-number milestone" so reviewers don't misread the
+identifier as an invented milestone number.
+
+RCR work does NOT mark M3 / M5 closed-as-full-RFC. The two
+result docs stay labelled as *implementation milestone*
+close-outs (see the governance notes at the top of
+`docs/milestone-3-result.md` and
+`docs/milestone-5-result.md`). RCR work only crosses items
+off the §6 backlog.
+
+Once every backlog item is `[X]`, this audit doc gets a
+"RFC-090 / RFC-010 v0.1 fully satisfied as of PR #NNN" note
+at the top and `RCR-*` identifiers stop being load-bearing.
+
 This rule applies retroactively to the three close-outs that
 already shipped (M0 / M1 / M2 / M3 / M4 / M5). M3 and M5 are
 the two with material drift; their result docs have been
@@ -320,18 +367,76 @@ inline.
 ### 6.1 Original RFC-090 M3 backlog (multi-country simulation)
 
 ```text
-[ ] RFC-090 §3.2  10-country fixture set
-[ ] RFC-090 §3.3  20–30 country fixture set
-[ ] RFC-090 §3.5  AI policy selection
-[ ] RFC-090 §3.6  relationship values
-[ ] RFC-090 §3.7  threat values
-[ ] RFC-090 §3.8  simple military values
-[ ] RFC-090 §3.9  annual world statistics
-[ ] RFC-090 §3.10 full 1930–2000 automated test aligned to
-                  RFC-090 M3 (20–30 countries with AI policy
-                  selection + relationships + threat + military
-                  + annual stats)
+[X] RFC-090 §3.2  10-country fixture set                   — RCR-1
+[X] RFC-090 §3.3  20–30 country fixture set                — RCR-1
+                  (20 countries in
+                  data/scenarios/1930_rfc_compliance.json;
+                  the canonical 1930_minimal.json stays at
+                  3 countries to preserve byte-identical
+                  M1.17 / M2.22 / M3.7 / M4.23 / M5.9
+                  determinism baselines)
+[~] RFC-090 §3.5  AI policy selection                      — RCR-1 (partial)
+                  selection-only skeleton shipped
+                  (leviathan::systems::ai_policy::
+                  select_policies). The corresponding
+                  *apply* path (calling
+                  policy::apply_policy_effects for each
+                  AI selection) is deferred to a future
+                  RCR PR because it touches M1.5
+                  pre-flight atomicity + M1.15
+                  active_policies bookkeeping + every
+                  byte-identical determinism baseline.
+[ ] RFC-090 §3.6  relationship values                      — deferred to RCR-2
+                  (requires new persistent state + save
+                  schema bump v16 -> v17 + scenario_loader
+                  + diagnostics walk + every test
+                  fixture update; out of scope for the
+                  single-PR RCR-1 batch)
+[~] RFC-090 §3.7  threat values
+                  Field `country.threat_perception`
+                  already exists on `core::CountryState`
+                  since M1.1 and is loaded / saved /
+                  diagnosed. No system currently *drives*
+                  the value. RCR-1 ships 20 countries
+                  with hand-authored threat_perception
+                  initial values; the system that
+                  computes / mutates it remains future
+                  work (likely combined with §3.6 in
+                  RCR-2).
+[~] RFC-090 §3.8  simple military values
+                  Field `country.military_power` already
+                  exists on `core::CountryState` since
+                  M1.1 and is loaded / saved / diagnosed.
+                  No system currently *drives* the
+                  value. RCR-1 ships 20 countries with
+                  hand-authored military_power initial
+                  values; the system that computes /
+                  mutates it remains future work (likely
+                  combined with §3.6 / §3.7 in RCR-2).
+[ ] RFC-090 §3.9  annual world statistics                  — deferred to RCR-2
+                  (new artefact bumps the unconditional
+                  artefact contract from 10 to 11;
+                  requires runner wiring + opt-in CLI
+                  flag pattern mirroring M1.14 / M1.16
+                  + new tests; out of scope for RCR-1)
+[~] RFC-090 §3.10 full 1930–2000 automated test aligned to
+                  RFC-090 M3                               — RCR-1 (partial)
+                  RCR-1 ships a 365-day automated test
+                  against the 20-country compliance
+                  scenario in
+                  tests/integration/rcr_1_rfc_compliance_test.cpp
+                  ("compliance scenario survives a
+                  365-day run with zero sanity issues").
+                  The full 1930–2000 (25567-day) sweep
+                  aligned to AI auto-policy + annual
+                  stats + relationships is deferred
+                  until §3.5 apply path + §3.6 + §3.9
+                  ship in RCR-2.
 ```
+
+Legend: `[ ]` = unmet; `[X]` = cleared; `[~]` = partially
+cleared (read the inline note for what shipped vs. what
+remains).
 
 Note: §3.1 (`CountryData` schema) and §3.4 (multi-country
 `GameState`) are both met by current main (`CountryState`
@@ -342,23 +447,54 @@ backlog.
 ### 6.2 Original RFC-090 M5 backlog (event engine)
 
 ```text
-[ ] RFC-090 §5.3  WeightModifier model
-[ ] RFC-090 §5.4  EventOption model
-[ ] RFC-090 §5.6  event weights system
-[ ] RFC-090 §5.7  weighted event selection (current selection
-                  is deterministic ANY-entity-satisfies / AND
-                  across triggers / first-in-vector, not
-                  weighted)
+[ ] RFC-090 §5.3  WeightModifier model                      — deferred to RCR-2
+                  (schema addition on EventDefinition;
+                  requires save schema bump v16 -> v17 +
+                  every event-related test fixture
+                  update; batched with §5.4 / §5.12 in
+                  RCR-2 under one save bump)
+[ ] RFC-090 §5.4  EventOption model                         — deferred to RCR-2
+                  (same save-bump batching as §5.3)
+[ ] RFC-090 §5.6  event weights system                      — deferred to RCR-2
+                  (depends on §5.3 model)
+[ ] RFC-090 §5.7  weighted event selection (current
+                  selection is deterministic
+                  ANY-entity-satisfies / AND across
+                  triggers / first-in-vector, not
+                  weighted)                                 — deferred to RCR-2
+                  (depends on §5.3 / §5.6)
 [ ] RFC-090 §5.8  event options / player choices on
-                  EventInstance
+                  EventInstance                             — deferred to RCR-2
+                  (depends on §5.4 model)
 [ ] RFC-090 §5.9  per-fire event log artefact (events.jsonl
                   emission for fired EventInstances; current
-                  state.event_history is in-memory only)
-[ ] RFC-090 §5.10 10 event definitions (current canonical
-                  fixture has 2, both tuned to NOT fire on
-                  the canonical scenario)
-[ ] RFC-090 §5.11 10-year event stress test
-[ ] RFC-090 §5.12 event-chain / followup-event model
+                  state.event_history is in-memory only)    — deferred to RCR-2
+                  (small firer change but flips the M5.9
+                  "events.jsonl semantics unchanged"
+                  invariant and would rebake M5.9 tests;
+                  batched with the other M5-extension
+                  items so the M5.9 invariant migrates
+                  once)
+[X] RFC-090 §5.10 10 event definitions                      — RCR-1
+                  (2 canonical events from
+                  data/events/1930_core_events.json +
+                  8 extended events from new
+                  data/events/1930_rfc_extended_events.json;
+                  the compliance scenario references both
+                  files. The extended events deliberately
+                  use thresholds tuned NOT to fire on
+                  the compliance scenario's authored
+                  initial values — same canonical-non-fire
+                  property M5 added.)
+[ ] RFC-090 §5.11 10-year event stress test                 — deferred to RCR-2
+                  (needs a stress scenario with
+                  thresholds tuned to fire + ties into
+                  §5.9 fire-record emission for
+                  assertions)
+[ ] RFC-090 §5.12 event-chain / followup-event model        — deferred to RCR-2
+                  (schema addition on EventDefinition;
+                  batched with §5.3 / §5.4 under one
+                  save bump)
 ```
 
 Note: §5.1 (`EventData`) is met by `EventDefinition` (M5.1);
@@ -370,16 +506,33 @@ by the `PolicyEffect`-reuse decision in M5.1 and the
 ### 6.3 RFC-010 v0.1 backlog
 
 ```text
-[ ] RFC-010 §5    20-country floor   (current: 3)
-[ ] RFC-010 §5    20-policy floor    (current: 10)
-[ ] RFC-010 §5    10-event floor     (current: 2)
-[ ] RFC-010 §5    6+-faction / actor floor across countries
-                  (current: 3 legacy faction JSONs all
-                  GER-scoped + 3 canonical Bureaucracy
-                  interest groups via M3.8)
-[ ] RFC-010 §2.2  AI countries auto-select policies
+[X] RFC-010 §5    20-country floor                          — RCR-1
+                  (20 countries in
+                  data/scenarios/1930_rfc_compliance.json;
+                  see §6.1 RFC-090 §3.3 entry above)
+[X] RFC-010 §5    20-policy floor                           — RCR-1
+                  (20 policy JSONs under data/policies/;
+                  the compliance scenario loads all 20)
+[X] RFC-010 §5    10-event floor                            — RCR-1
+                  (see §6.2 RFC-090 §5.10 entry above)
+[X] RFC-010 §5    6+-faction / actor floor across countries — RCR-1
+                  (10 interest groups across 10
+                  countries: GER / FRA / JPN
+                  Bureaucracy + GBR Workers + USA
+                  Business + SOV Military + CHN Farmers
+                  + ITA Media + IND Religious + SWE
+                  Technocrats; spread satisfies the "not
+                  all GER-scoped" requirement. The 3
+                  legacy faction JSONs are still
+                  GER-scoped and unchanged.)
+[~] RFC-010 §2.2  AI countries auto-select policies         — RCR-1 (partial)
+                  Selection-only skeleton shipped
+                  (`leviathan::systems::ai_policy::select_policies`).
+                  Apply path deferred to RCR-2 (see §6.1
+                  RFC-090 §3.5 entry above).
 [ ] RFC-010 §5    annual statistics CSV (current CSVs are
-                  monthly)
+                  monthly)                                  — deferred to RCR-2
+                  (see §6.1 RFC-090 §3.9 entry above)
 ```
 
 Met items (kept for reference, not in the backlog):
@@ -453,19 +606,25 @@ It deliberately does NOT:
 
 When a future PR implements one of the bullets in §6:
 
-1. The implementing PR opens under whatever milestone
-   numbering matches the work (an explicit RFC-090 §3.5
-   "AI policy selection" sub-milestone, or a dedicated
-   "events: 10 event definitions" sub-milestone, etc.).
-   Do not invent new milestone numbers that don't map to
-   an RFC section — that lesson is captured in
-   `docs/milestone-3-result.md` §7 and in memory file
-   `feedback_rfc_milestone_alignment`.
+1. The implementing PR opens under the **`RCR-N`**
+   recovery-track identifier (preferred), or — if the
+   work cleanly aligns with an upcoming RFC milestone — a
+   matching RFC milestone PR. **Do not invent new
+   milestone numbers that don't map to an RFC section** —
+   that lesson is captured in `docs/milestone-3-result.md`
+   §7 and in memory file
+   `feedback_rfc_milestone_alignment`. RCR identifiers are
+   the safe default for clearing audit-doc items; see §5.1
+   for the rule.
 2. The implementing PR edits this audit doc inline:
    - Change `[ ]` to `[X]` on the line that ships.
-   - Optionally add the PR number / commit at the end of
-     the line: `[X] RFC-090 §5.10 10 event definitions
-     — PR #NNN`.
+   - Use `[~]` when an item is only partially cleared and
+     write a one-paragraph note explaining what shipped
+     vs. what remains (see RCR-1's `[~]` entries for the
+     pattern).
+   - Add the PR / RCR identifier at the end of the line:
+     `[X] RFC-090 §5.10 10 event definitions — RCR-N`
+     or `[X] RFC-090 §3.5 AI policy selection — PR #NNN`.
 3. If a future PR ships an *implementation milestone* that
    maps to the original RFC scope cleanly, its close-out
    doc can be both an implementation close-out **and** a
@@ -474,4 +633,5 @@ When a future PR implements one of the bullets in §6:
 4. Once every bullet in §6.1 / §6.2 / §6.3 is `[X]`, this
    audit doc gets a final "RFC-090 / RFC-010 v0.1 fully
    satisfied as of PR #NNN" note at the top and stops
-   being load-bearing for new work.
+   being load-bearing for new work. `RCR-*` identifiers
+   then stop being load-bearing too.

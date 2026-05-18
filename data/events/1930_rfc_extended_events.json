@@ -1,0 +1,182 @@
+{
+  "events": [
+    {
+      "id": "bureaucratic_strain",
+      "name": "Bureaucratic Strain",
+      "description": "Bureaucratic compliance has slipped, signalling administrative drift.",
+      "visible_report": "Ministry reports describe delays in routine compliance and weakening enforcement.",
+      "true_cause": "country.government_authority.bureaucratic_compliance has fallen below the warning threshold.",
+      "triggers": [
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "lt",
+          "value": 0.25
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.administrative_efficiency",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "legitimacy_crisis",
+      "name": "Legitimacy Crisis",
+      "description": "A sustained drop in legitimacy provokes a public-confidence crisis.",
+      "visible_report": "Editorials and polling lines describe a country losing public confidence in its leadership.",
+      "true_cause": "country.legitimacy has fallen below the legitimacy-crisis threshold.",
+      "triggers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.20
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.01
+        },
+        {
+          "target": "country.stability",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "budget_shortfall_warning",
+      "name": "Budget Shortfall Warning",
+      "description": "Stability decline coincides with a flagged budget shortfall warning.",
+      "visible_report": "Finance briefings warn that revenue is failing to keep up with planned expenditure.",
+      "true_cause": "Stability has slipped far enough that fiscal stress signals appear in the public reports.",
+      "triggers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.25
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.budget_balance",
+          "op": "add",
+          "value": -0.05
+        }
+      ]
+    },
+    {
+      "id": "corruption_scandal",
+      "name": "Corruption Scandal",
+      "description": "A bureaucracy-tied interest group's loyalty has slumped to a politically dangerous low.",
+      "visible_report": "Press exposés describe a scandal damaging confidence in the bureaucracy.",
+      "true_cause": "An interest group's loyalty has fallen below the corruption-scandal threshold.",
+      "triggers": [
+        {
+          "target": "interest_group.loyalty",
+          "op": "lt",
+          "value": 0.10
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
+      "id": "weak_intelligence_warning",
+      "name": "Weak Intelligence Warning",
+      "description": "Legitimacy has fallen to a level that exposes weak intelligence coverage.",
+      "visible_report": "Intelligence reviewers note thin coverage in domestic affairs.",
+      "true_cause": "Legitimacy has dropped far enough that intelligence shortcomings surface in public discussion.",
+      "triggers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.30
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "media_control_backlash",
+      "name": "Media Control Backlash",
+      "description": "Heavy-handed information control sparks a backlash among interest groups.",
+      "visible_report": "Independent commentary describes a chilling effect; an interest group reacts with high radicalism.",
+      "true_cause": "An interest group's radicalism has crossed the backlash threshold.",
+      "triggers": [
+        {
+          "target": "interest_group.radicalism",
+          "op": "gt",
+          "value": 0.85
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "military_loyalty_concern",
+      "name": "Military Loyalty Concern",
+      "description": "A flagged dip in central-government compliance prompts loyalty concerns.",
+      "visible_report": "Defence-ministry summaries describe officers questioning current directives.",
+      "true_cause": "Bureaucratic compliance has dropped far enough that loyalty concerns appear in military briefings.",
+      "triggers": [
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "lt",
+          "value": 0.20
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.stability",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "economic_slowdown_warning",
+      "name": "Economic Slowdown Warning",
+      "description": "A combined stability + legitimacy slip signals economic confidence loss.",
+      "visible_report": "Treasury notes describe a sluggish quarter and fragile investor sentiment.",
+      "true_cause": "Both stability and legitimacy have declined enough to flag the economic-slowdown warning.",
+      "triggers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.30
+        },
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.35
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.budget_balance",
+          "op": "add",
+          "value": -0.03
+        }
+      ]
+    }
+  ]
+}

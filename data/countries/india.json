@@ -1,0 +1,24 @@
+{
+  "id":                        "IND",
+  "name":                      "India",
+  "display_name":              "British Raj",
+  "initial_gdp":               45.0,
+  "initial_stability":         0.45,
+  "legal_tax_burden":          0.12,
+  "fiscal_capacity":           0.35,
+  "administrative_efficiency": 0.45,
+  "central_control":           0.60,
+  "corruption":                0.30,
+  "legitimacy":                0.40,
+  "military_power":            0.30,
+  "threat_perception":         0.25,
+  "budget": {
+    "administration":  0.30,
+    "military":        0.20,
+    "education":       0.08,
+    "welfare":         0.07,
+    "intelligence":    0.05,
+    "infrastructure":  0.18,
+    "industry":        0.12
+  }
+}

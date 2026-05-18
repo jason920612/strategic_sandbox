@@ -29,6 +29,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(nlohmann_json)
 
 add_library(leviathan_systems STATIC
+    ai_policy.cpp
     bias_noise.cpp
     commands.cpp
     data_loader.cpp
