@@ -171,11 +171,20 @@ core::Result<ApplyOutcome> apply_default_option_effects(
 // the result preserves the order of `definition.followup_event_ids`.
 // Empty input → empty output. Pure read.
 //
-// No system *fires* the resolved followup events automatically in
-// RCR-1 — that wiring is the M5/event-engine extension that this
-// corrective batch deliberately keeps small. The helper exists so
-// a future runner-policy can call it and feed the result through
-// `event_firer::record_match` per followup.
+// Scope split between resolver + firer:
+//   - `resolve_followup_ids` (THIS function) only resolves
+//     followup id_code strings to `state.events` indices.
+//   - `event_firer::record_followup` is the matching firing
+//     primitive: takes one resolved followup definition + the
+//     parent instance + a date, and appends one EventInstance
+//     to event_history plus one `event_fired` LogEntry to
+//     state.logs (RCR-1 deterministic chain firing).
+//   - Automatic recursive runner cascade (looping
+//     record_followup over resolved chains every tick) remains
+//     out of scope for RCR-1 — wiring it into
+//     `event_engine::tick_events` would change M5.7
+//     snapshot-evaluation semantics and is intentionally
+//     deferred.
 std::vector<std::size_t>
 resolve_followup_ids(const core::GameState&       state,
                      const core::EventDefinition& definition);
