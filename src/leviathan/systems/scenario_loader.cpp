@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -813,6 +814,85 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
         }
     }
 
+    // ---- Issue #108 fix: optional relationships block ----------------
+    // RFC-090 §3.6 / §3.7: pairwise inter-country relationship +
+    // threat record. Authored on the manifest as
+    //   "relationships": [
+    //     { "from": "GER", "to": "FRA", "relationship": -0.4, "threat": 0.6 },
+    //     ...
+    //   ]
+    // Each entry's `from` / `to` id_code is resolved against
+    // `state.countries` inside `load_into_state`. Range validation
+    // (relationship in [-1, 1]; threat in [0, 1]) happens here at
+    // parse time so a malformed manifest fails before any state
+    // mutation.
+    if (s.contains("relationships")) {
+        const json& arr = s.at("relationships");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.relationships' is not an array"));
+        }
+        m.relationships.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            const std::string ctx =
+                "'scenario.relationships[" + std::to_string(i) + "]'";
+            if (!arr[i].is_object()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + " is not an object"));
+            }
+            const json& e = arr[i];
+            ManifestRelation rel;
+            if (!e.contains("from") || !e.at("from").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".from missing or not a string"));
+            }
+            rel.from_id_code = e.at("from").get<std::string>();
+            if (rel.from_id_code.empty()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + ".from must be non-empty"));
+            }
+            if (!e.contains("to") || !e.at("to").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".to missing or not a string"));
+            }
+            rel.to_id_code = e.at("to").get<std::string>();
+            if (rel.to_id_code.empty()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + ".to must be non-empty"));
+            }
+            if (!e.contains("relationship")
+                || !e.at("relationship").is_number()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".relationship missing or not a number"));
+            }
+            rel.relationship = e.at("relationship").get<double>();
+            if (!std::isfinite(rel.relationship)
+                || rel.relationship < -1.0 || rel.relationship > 1.0) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".relationship out of range"
+                            " (expected [-1, 1])"));
+            }
+            if (!e.contains("threat") || !e.at("threat").is_number()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".threat missing or not a number"));
+            }
+            rel.threat = e.at("threat").get<double>();
+            if (!std::isfinite(rel.threat)
+                || rel.threat < 0.0 || rel.threat > 1.0) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".threat out of range (expected [0, 1])"));
+            }
+            m.relationships.push_back(std::move(rel));
+        }
+    }
+
     return core::Result<ScenarioManifest>::success(std::move(m));
 }
 
@@ -1132,6 +1212,52 @@ core::Result<ScenarioLoadOutcome> load_into_state(
             }
         }
         outcome.events_loaded = static_cast<int>(state.events.size());
+    }
+
+    // ---- Issue #108 fix: resolve manifest relationships --------------
+    // After state.countries is fully populated, walk
+    // manifest.relationships and resolve each from/to id_code to a
+    // CountryId by linear scan. Unresolvable id_codes are a hard
+    // failure (mirrors M1.13 starting_policies' "unknown actor"
+    // rejection). The resolved CountryRelation entries are
+    // appended to state.relationships in manifest order.
+    if (!manifest.relationships.empty()) {
+        auto resolve_country = [&](const std::string& id_code)
+            -> std::optional<core::CountryId> {
+            for (std::size_t k = 0; k < state.countries.size(); ++k) {
+                if (state.countries[k].id_code == id_code) {
+                    return core::CountryId{
+                        static_cast<core::CountryId::underlying_type>(k)};
+                }
+            }
+            return std::nullopt;
+        };
+        state.relationships.reserve(manifest.relationships.size());
+        for (std::size_t i = 0; i < manifest.relationships.size(); ++i) {
+            const auto& mr = manifest.relationships[i];
+            const std::string ctx =
+                "relationships[" + std::to_string(i) + "]";
+            auto from = resolve_country(mr.from_id_code);
+            if (!from.has_value()) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() + ": " + ctx +
+                    ": unknown 'from' country id_code '" +
+                    mr.from_id_code + "'");
+            }
+            auto to = resolve_country(mr.to_id_code);
+            if (!to.has_value()) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() + ": " + ctx +
+                    ": unknown 'to' country id_code '" +
+                    mr.to_id_code + "'");
+            }
+            core::CountryRelation r;
+            r.from         = from.value();
+            r.to           = to.value();
+            r.relationship = mr.relationship;
+            r.threat       = mr.threat;
+            state.relationships.push_back(std::move(r));
+        }
     }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);

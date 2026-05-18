@@ -100,13 +100,43 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.interest_group_authority_countries_updated =
         ap.value().countries_updated;
 
-    // ---- 7. M5.8: event_engine::tick_events --------------------------
+    // ---- 7. Issue #108 fix: ai_policy::apply_selected_policies ------
+    // RFC-010 §2.2 ("AI 國家可自動選政策") and RFC-090 §3.5 expect
+    // AI auto-selection to be part of normal simulation, not a
+    // helper that exists but is never called. Wire it here, after
+    // the per-country + M3 state-wide steps (so AI decisions see
+    // freshly-drifted faction / interest-group state) but BEFORE
+    // event_engine::tick_events (so events can react to the
+    // AI-applied state in the same monthly tick). RCR-1 shipped
+    // the helper as RNG-free + mutation-via-existing-policy-path;
+    // wiring it into the monthly pipeline does NOT change the
+    // helper's semantics. Fail-continue: a per-country apply
+    // failure is captured in ApplyOutcome.failed_countries and
+    // does NOT abort the monthly pipeline (mirrors the M5.6
+    // event-effects convention: a broken event for country X
+    // doesn't block country Y).
+    auto ai = ai_policy::apply_selected_policies(state);
+    if (!ai.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: ai_policy::"
+            "apply_selected_policies failed: " + ai.error());
+    }
+    out.ai_policies_considered =
+        static_cast<int>(ai.value().considered);
+    out.ai_policies_applied =
+        static_cast<int>(ai.value().applied);
+    out.ai_policies_skipped =
+        static_cast<int>(ai.value().skipped);
+    out.ai_policies_failed =
+        static_cast<int>(ai.value().failed_countries.size());
+
+    // ---- 8. M5.8: event_engine::tick_events --------------------------
     // Final global step: evaluate every state.events trigger
-    // against the post-M3.4 state snapshot, fire every matching
-    // event, and apply each fired event's effects. Runs LAST so
-    // events about "low stability / high radicalism" check the
-    // values as they stand at month-end, not pre-month. M5.7's
-    // tick_events ships the snapshot-evaluation contract
+    // against the post-M3.4 + post-AI-apply state snapshot, fire
+    // every matching event, and apply each fired event's effects.
+    // Runs LAST so events about "low stability / high radicalism"
+    // check the values as they stand at month-end, not pre-month.
+    // M5.7's tick_events ships the snapshot-evaluation contract
     // (evaluator runs once at the top; cascade events wait for
     // the next monthly tick).
     auto ev = event_engine::tick_events(state);

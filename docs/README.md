@@ -163,13 +163,20 @@ If you're new to the codebase:
 > [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md);
 > issue #105 is the corresponding audit ticket.
 >
-> **RCR-1 was a one-time corrective PR** that closed the
-> audit-doc compliance gap in a single batch — not the first
-> of a long-running recovery track. After RCR-1 lands,
-> execution returns to the M-numbered milestone sequence
-> (M6.6 resumes per RFC-090 §6.6 on explicit go-ahead). See
-> the audit doc §5.1 for the framing rule and §6 for the
-> per-item per-PR status.
+> **RCR-1 (PR #107) + issue #108 residual fix PR** together
+> form the corrective batch that closed the audit-doc
+> compliance gap — RCR-1 shipped data fixtures + helpers +
+> save bump v17 + artefact 11, and the follow-up wired AI
+> policy apply into the monthly pipeline, authored
+> `military_strength` on every compliance country, and
+> authored representative `relationships` entries on the
+> compliance scenario. Together they fix the spots where
+> RCR-1 had initially stopped at "helper only". After issue
+> #108 lands, execution returns to the M-numbered milestone
+> sequence (M6.6 resumes per RFC-090 §6.6 on explicit
+> go-ahead). See audit doc §1.1 for the issue-#108 fix
+> summary and §6 for the per-item status. **There is no
+> RCR-2 track.**
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.

@@ -64,6 +64,18 @@
       { "id_code": "ita_media",        "name": "Italian Press",             "kind": "Media",       "country": "ITA", "influence": 0.40, "loyalty": 0.50, "radicalism": 0.15 },
       { "id_code": "ind_religious",    "name": "Indian Religious Bodies",   "kind": "Religious",   "country": "IND", "influence": 0.50, "loyalty": 0.50, "radicalism": 0.15 },
       { "id_code": "swe_technocrats",  "name": "Swedish Technocrats",       "kind": "Technocrats", "country": "SWE", "influence": 0.45, "loyalty": 0.60, "radicalism": 0.10 }
+    ],
+    "relationships": [
+      { "from": "GER", "to": "FRA", "relationship": -0.40, "threat": 0.60 },
+      { "from": "FRA", "to": "GER", "relationship": -0.40, "threat": 0.70 },
+      { "from": "GER", "to": "POL", "relationship": -0.30, "threat": 0.55 },
+      { "from": "POL", "to": "GER", "relationship": -0.50, "threat": 0.75 },
+      { "from": "JPN", "to": "CHN", "relationship": -0.55, "threat": 0.65 },
+      { "from": "CHN", "to": "JPN", "relationship": -0.45, "threat": 0.70 },
+      { "from": "USA", "to": "GBR", "relationship":  0.65, "threat": 0.05 },
+      { "from": "GBR", "to": "USA", "relationship":  0.65, "threat": 0.05 },
+      { "from": "SOV", "to": "POL", "relationship": -0.35, "threat": 0.50 },
+      { "from": "POL", "to": "SOV", "relationship": -0.40, "threat": 0.65 }
     ]
   }
 }

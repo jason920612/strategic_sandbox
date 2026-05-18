@@ -106,7 +106,57 @@ implementation milestone closed
 original RFC-090 / RFC-010 acceptance fully satisfied
 ```
 
-## 2. Finding 1 — RFC-090 original M3 drift
+### 1.1 Post-issue-#108 residual fixes
+
+After RCR-1 (PR #107) landed, issue #108 flagged four residual mismatches:
+the AI policy helpers shipped in RCR-1 were not wired into the normal
+monthly simulation; the `military_strength` field on every compliance
+country was the loader-default `0.0` rather than authored fixture
+content; the `GameState.relationships` block was empty on the compliance
+scenario despite the schema landing; and sections 2 / 3 / 4 below still
+read as "current main" snapshots from the pre-RCR-1 era. The PR that
+followed issue #108 (per memory rule
+[[feedback-respect-rfc-over-skeleton]] "respect RFC over skeleton
+minimalism"):
+
+- Wires `ai_policy::apply_selected_policies` into
+  `monthly::tick_all_countries` as the new step 7 (between M3
+  state-wide and M5.8 `event_engine::tick_events`). AI policy
+  selection + apply is now part of every monthly tick on the
+  compliance scenario, not just a callable helper. The `MonthlyOutcome`
+  exposes `ai_policies_considered` / `applied` / `skipped` / `failed`
+  counters. M1 byte-identical assertions on canonical scenarios were
+  rebaked deliberately (e.g. the M1.13 scenario now sees 12 monthly
+  AI-applied entries per country in addition to the 2 day-0
+  enactments).
+- Authors a non-zero `military_strength` on every compliance country
+  fixture (20 countries; values range from 10.0 — Mexico — to 90.0 —
+  USA — for a rough-historical relative ordering). The save layer
+  reflects authored values, not loader defaults.
+- Authors 10 representative pairwise relationship/threat entries on
+  `data/scenarios/1930_rfc_compliance.json` (GER↔FRA, GER↔POL,
+  JPN↔CHN, USA↔GBR, SOV↔POL). Scenario loader extended with a new
+  optional `relationships` manifest block + `ManifestRelation` POD;
+  `load_into_state` resolves `from`/`to` id_codes against
+  `state.countries`. Round-trip + range-validation tests in place.
+- Reframes sections 2–4 below as "Issue #105 baseline before RCR-1"
+  (not "current main"), so the doc no longer contradicts itself.
+
+Save schema is unchanged (still v17 — no new persistent field; the
+relationships block was added in RCR-1's v17). Artefact contract
+unchanged (11). Test count rose from 1154 → 1158 (+4 new tests in
+`monthly_pipeline_test.cpp` covering the new AI auto-apply step) /
+62951 → 62982 (+31 assertions for the new compliance content
+checks).
+
+## 2. Finding 1 — RFC-090 original M3 drift (issue #105 baseline; see §6.1 for post-RCR-1 + #108 state)
+
+> **Section reframing:** the prose below describes `main` **at the
+> time of issue #105** (i.e. **before** PR #107 / RCR-1 and the issue
+> #108 residual fix PR). The current per-item status — every
+> actionable bullet `[X]` — lives in §6 below. This historical
+> framing is kept verbatim so future readers can match the issue
+> #105 narrative against the implementing work without re-deriving.
 
 `rfc/RFC-090-roadmap.md` defines **Milestone 3：多國模擬**
 (*multi-country simulation*) with the goal **"20–30 國能
@@ -178,7 +228,11 @@ close-out of the *interest-group reaction-loop
 implementation milestone*. It is not full original RFC-090
 M3 multi-country-simulation acceptance.
 
-## 3. Finding 2 — RFC-090 original M5 drift
+## 3. Finding 2 — RFC-090 original M5 drift (issue #105 baseline; see §6.2 for post-RCR-1 + #108 state)
+
+> **Section reframing:** prose below describes `main` **at the time
+> of issue #105** (before RCR-1 / issue #108 fix). Current per-item
+> status is in §6.2.
 
 `rfc/RFC-090-roadmap.md` defines **Milestone 5：事件引擎**
 (*event engine*) with the goal **"條件加權事件"** and the
@@ -272,7 +326,11 @@ schema fields, M6.3 / M6.4 / M6.5 helper skeletons) layers
 on top of this skeleton event engine. It does not retroactively
 satisfy the deferred RFC-090 §M5 scope.
 
-## 4. Finding 3 — RFC-010 v0.1 acceptance floors remain deferred
+## 4. Finding 3 — RFC-010 v0.1 acceptance floors remain deferred (issue #105 baseline; see §6.3 for post-RCR-1 + #108 state)
+
+> **Section reframing:** prose below describes `main` **at the time
+> of issue #105** (before RCR-1 / issue #108 fix). Current per-item
+> status is in §6.3.
 
 `rfc/RFC-010-prototype-v0_1.md` §5 lists the v0.1
 acceptance criteria:
@@ -435,7 +493,7 @@ inline.
                   M1.17 / M2.22 / M3.7 / M4.23 / M5.9
                   byte-identical determinism baselines stay
                   green)
-[X] RFC-090 §3.5  AI policy selection                      — RCR-1
+[X] RFC-090 §3.5  AI policy selection                      — RCR-1 + #108
                   Selection + apply both shipped:
                   leviathan::systems::ai_policy::
                   select_policies and apply_selected_policies.
@@ -444,32 +502,57 @@ inline.
                   M1.15 active_policies bookkeeping; fail-
                   continue across countries mirrors the M5.6
                   applicator convention.
-[X] RFC-090 §3.6  relationship values                      — RCR-1
+                  Issue #108 fix wired apply_selected_policies
+                  into `monthly::tick_all_countries` as step 7
+                  (between M3 state-wide and M5.8 event tick),
+                  so AI auto-policy is now part of every monthly
+                  tick — not just a callable helper. The
+                  MonthlyOutcome exposes ai_policies_considered
+                  / applied / skipped / failed counters.
+                  Determinism baselines for canonical scenarios
+                  with policies were rebaked deliberately (e.g.
+                  M1.13 365-day soak now sees 12 monthly
+                  AI-applied entries per non-player country).
+[X] RFC-090 §3.6  relationship values                      — RCR-1 + #108
                   New core::CountryRelation POD
                   ({from, to, relationship, threat}) +
-                  GameState::relationships vector. Save
-                  schema bumped v16 -> v17; scenario manifest
-                  treats the block as optional with default
-                  empty; data_loader / save_system / diagnostics
-                  walk + tests all in place. RCR-1 ships the
-                  data layer + round-trip; the diplomacy-AI
+                  GameState::relationships vector + scenario
+                  manifest `relationships` block parsed by
+                  scenario_loader::parse_manifest. Save schema
+                  v17. Issue #108 fix authors 10 representative
+                  pairwise entries in
+                  data/scenarios/1930_rfc_compliance.json
+                  (GER<->FRA, GER<->POL, JPN<->CHN, USA<->GBR,
+                  SOV<->POL), with from/to id_codes resolved
+                  against state.countries inside
+                  load_into_state. Range validation
+                  (relationship in [-1, 1]; threat in [0, 1])
+                  fires at parse time. The diplomacy-AI
                   *driver* of these values is M8 / RFC-040
                   scope (out of M3 acceptance).
-[X] RFC-090 §3.7  threat values                            — RCR-1
+[X] RFC-090 §3.7  threat values                            — RCR-1 + #108
                   Folded into CountryRelation.threat ([0, 1]).
-                  Save / load / diagnostics walk all cover it.
+                  Save / load / scenario_loader / diagnostics
+                  walk all cover it. Authored values land via
+                  the same compliance-scenario `relationships`
+                  fixture as §3.6.
                   (CountryState.threat_perception also exists
-                  since M1.1 as the per-country aggregate;
-                  RCR-1 leaves it untouched.)
-[X] RFC-090 §3.8  simple military values                   — RCR-1
+                  since M1.1 as a per-country aggregate;
+                  unchanged.)
+[X] RFC-090 §3.8  simple military values                   — RCR-1 + #108
                   New CountryState.military_strength
                   absolute scalar (>= 0), distinct from the
                   existing military_power ratio. Save schema
                   v17 makes it required at the save layer;
                   data_loader treats it as optional with
-                  default 0.0 in country JSON. Every
-                  RCR-1 country fixture authors a value;
-                  diagnostics::compare_states walks it.
+                  default 0.0 in country JSON.
+                  Issue #108 fix: every one of the 20
+                  compliance country JSONs now authors a
+                  non-zero value (10.0 — Mexico — up to
+                  90.0 — USA — for a rough-historical
+                  relative ordering). Save round-trip,
+                  scenario load, and diagnostics walk
+                  pinned by tests.
 [X] RFC-090 §3.9  annual world statistics                  — RCR-1
                   New leviathan::systems::annual_stats
                   module + new unconditional
@@ -656,10 +739,12 @@ by the `PolicyEffect`-reuse decision in M5.1 and the
                   all GER-scoped" requirement. The 3
                   legacy faction JSONs are still
                   GER-scoped and unchanged.)
-[X] RFC-010 §2.2  AI countries auto-select policies         — RCR-1
-                  Selection + apply both shipped (see §6.1
-                  RFC-090 §3.5 entry above for the full
-                  surface description).
+[X] RFC-010 §2.2  AI countries auto-select policies         — RCR-1 + #108
+                  Selection + apply both shipped AND wired
+                  into `monthly::tick_all_countries` as step
+                  7 (issue #108 fix). See §6.1 RFC-090 §3.5
+                  entry above for the full surface
+                  description.
 [X] RFC-010 §5    annual statistics CSV                     — RCR-1
                   New annual_world_stats.csv unconditional
                   artefact (see §6.1 RFC-090 §3.9 entry

@@ -63,14 +63,23 @@ they are *implementation milestone* close-outs or *full
 original RFC acceptance* close-outs, and link to the
 compliance-audit doc when the two diverge.
 
-### RCR-1 (one-time corrective PR)
+### RCR-1 + issue #108 residual fix (one-time corrective batch)
 
-`RCR-1` was a **one-time corrective PR** that closed the
-audit-doc compliance gap in a single batch — not the first
-of a long-running recovery track. After RCR-1 lands,
-execution returns to the M-numbered milestone sequence; M6.6
-resumes per RFC-090 §6.6 on explicit go-ahead. `RCR` is **not**
-an RFC milestone number and does not consume M0–M9 numbering.
+`RCR-1` (PR #107) was a **one-time corrective PR** that closed
+the audit-doc compliance gap in a single batch — not the first
+of a long-running recovery track. A follow-up **residual-fix
+PR** (issue #108) wired AI policy apply into the monthly
+pipeline, authored `military_strength` on every compliance
+country fixture, and authored representative relationship/
+threat values on the compliance scenario — fixing the spots
+where RCR-1 had stopped at "helper only" rather than the
+ordinary simulation behavior the RFC describes (per
+[[feedback-respect-rfc-over-skeleton]]).
+
+After issue #108 lands, execution returns to the M-numbered
+milestone sequence; M6.6 resumes per RFC-090 §6.6 on explicit
+go-ahead. `RCR` is **not** an RFC milestone number and does
+not consume M0–M9 numbering. **There is no RCR-2 track.**
 
 What RCR-1 shipped:
 

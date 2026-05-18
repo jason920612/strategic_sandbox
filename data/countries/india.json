@@ -12,6 +12,7 @@
   "legitimacy":                0.40,
   "military_power":            0.30,
   "threat_perception":         0.25,
+  "military_strength":         30.0,
   "budget": {
     "administration":  0.30,
     "military":        0.20,

@@ -906,3 +906,128 @@ TEST_CASE("M5.8 tick_all_countries: event_tick failure bubbles up with monthly-p
     REQUIRE(state.event_history.size() == 1u);
     CHECK(state.event_history[0].event_id_code == "bad_effect_event");
 }
+
+// =====================================================================
+// Issue #108 fix: AI policy apply runs as step 7 of the monthly pipeline
+// =====================================================================
+
+TEST_CASE("Issue #108: monthly tick auto-applies the first policy to non-player countries") {
+    // Build a 3-country / 1-policy state with NO player set. After
+    // one monthly tick, every country should have one ActivePolicy
+    // entry recording the AI-applied first policy.
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.countries[0].id_code = "GER";
+    auto c1 = germany_baseline(1); c1.id_code = "FRA";
+    auto c2 = germany_baseline(2); c2.id_code = "JPN";
+    state.countries.push_back(c1);
+    state.countries.push_back(c2);
+
+    leviathan::core::PolicyData policy;
+    policy.id_code       = "first_policy";
+    policy.name          = "First Policy";
+    policy.duration_days = 30;
+    policy.effects.push_back({"country.legitimacy", "add", 0.01});
+    state.policies.push_back(policy);
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    const auto& out = r.value();
+    CHECK(out.ai_policies_considered == 3);
+    CHECK(out.ai_policies_applied    == 3);
+    CHECK(out.ai_policies_skipped    == 0);
+    CHECK(out.ai_policies_failed     == 0);
+
+    for (std::size_t i = 0; i < 3u; ++i) {
+        CAPTURE(i);
+        REQUIRE(state.countries[i].active_policies.size() == 1u);
+        CHECK(state.countries[i].active_policies[0].policy_id_code ==
+              "first_policy");
+    }
+}
+
+TEST_CASE("Issue #108: monthly tick skips the player country in AI auto-apply") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.countries[0].id_code = "GER";
+    auto c1 = germany_baseline(1); c1.id_code = "FRA";
+    state.countries.push_back(c1);
+    state.player_country = CountryId{0};   // GER is the player
+
+    leviathan::core::PolicyData policy;
+    policy.id_code       = "first_policy";
+    policy.name          = "First Policy";
+    policy.duration_days = 30;
+    policy.effects.push_back({"country.legitimacy", "add", 0.01});
+    state.policies.push_back(policy);
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().ai_policies_considered == 1);
+    CHECK(r.value().ai_policies_applied    == 1);
+    // GER (player) untouched.
+    CHECK(state.countries[0].active_policies.empty());
+    // FRA (AI) got the policy.
+    REQUIRE(state.countries[1].active_policies.size() == 1u);
+    CHECK(state.countries[1].active_policies[0].policy_id_code ==
+          "first_policy");
+}
+
+TEST_CASE("Issue #108: AI auto-apply is deterministic across repeated monthly ticks") {
+    auto build = []() {
+        GameState s;
+        s.countries.push_back(germany_baseline(0));
+        s.countries[0].id_code = "GER";
+        auto c1 = germany_baseline(1); c1.id_code = "FRA";
+        s.countries.push_back(c1);
+        leviathan::core::PolicyData policy;
+        policy.id_code       = "first_policy";
+        policy.duration_days = 30;
+        policy.effects.push_back({"country.legitimacy", "add", 0.01});
+        s.policies.push_back(policy);
+        return s;
+    };
+    GameState a = build();
+    GameState b = build();
+    REQUIRE(monthly::tick_all_countries(a).ok());
+    REQUIRE(monthly::tick_all_countries(b).ok());
+    REQUIRE(a.countries.size() == b.countries.size());
+    for (std::size_t i = 0; i < a.countries.size(); ++i) {
+        CAPTURE(i);
+        CHECK(a.countries[i].legitimacy == b.countries[i].legitimacy);
+        CHECK(a.countries[i].active_policies.size() ==
+              b.countries[i].active_policies.size());
+    }
+}
+
+TEST_CASE("Issue #108: AI auto-apply runs BEFORE event_engine::tick_events") {
+    // An event triggered by post-AI-applied state should fire in the
+    // same monthly tick — this pins the step-7-before-step-8 ordering.
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.countries[0].id_code   = "GER";
+    state.countries[0].legitimacy = 0.20;   // starts below the event threshold
+
+    // A policy that LOWERS legitimacy further when applied — so post-AI
+    // state has legitimacy < 0.15 (the event's trigger).
+    leviathan::core::PolicyData policy;
+    policy.id_code       = "drop_legitimacy";
+    policy.duration_days = 30;
+    policy.effects.push_back({"country.legitimacy", "add", -0.07});
+    state.policies.push_back(policy);
+
+    // Event fires when legitimacy < 0.15 (so requires the AI-apply
+    // to have run first).
+    state.events.push_back(m58_event(
+        "legitimacy_collapse",
+        "country.legitimacy", "lt", 0.15,
+        "country.stability", "add", -0.05));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().ai_policies_applied == 1);
+    // Event saw post-AI legitimacy ≈ 0.13 (< 0.15) → fired.
+    CHECK(r.value().event_tick.events_recorded == 1);
+    REQUIRE(state.event_history.size() == 1u);
+    CHECK(state.event_history[0].event_id_code == "legitimacy_collapse");
+}

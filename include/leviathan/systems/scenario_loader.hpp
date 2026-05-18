@@ -108,6 +108,26 @@ struct ManifestInterestGroup {
     double radicalism = 0.0;
 };
 
+// Issue #108 fix: pairwise relationship/threat entry parsed from
+// the scenario manifest's optional `relationships` block. Each
+// entry authors:
+//   {
+//     "from":         "GER",   // matches a loaded CountryState::id_code
+//     "to":           "FRA",   // matches a loaded CountryState::id_code
+//     "relationship": -0.4,    // [-1, 1]
+//     "threat":        0.6     // [0,  1]
+//   }
+// Resolution of id_codes to CountryId numeric handles happens
+// inside `load_into_state`. RFC-090 §3.6 / §3.7 ship the data
+// layer + authored compliance values; dynamic drift / diplomacy
+// driver remains RFC-040 / M8 scope.
+struct ManifestRelation {
+    std::string from_id_code;
+    std::string to_id_code;
+    double relationship = 0.0;
+    double threat       = 0.0;
+};
+
 // One map-node entry parsed from a province file (M4.1). Each
 // province file at `<base>/provinces/<name>.json` carries a
 // `provinces` array of objects with this shape. The
@@ -202,6 +222,13 @@ struct ScenarioManifest {
     // loudly. Cross-file uniqueness of event id_code is enforced
     // inside `load_into_state`.
     std::vector<std::filesystem::path> events;
+    // Issue #108 fix: optional inline `relationships` block on
+    // the manifest. Missing key in JSON => empty vector
+    // (manifests authored before this point stay valid). Each
+    // entry references a `from`/`to` country id_code; resolution
+    // happens inside `load_into_state` after `state.countries`
+    // is populated.
+    std::vector<ManifestRelation> relationships;
 };
 
 // Summary returned from a successful `load_into_state`.

@@ -58,6 +58,7 @@
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/ai_policy.hpp"
 #include "leviathan/systems/runner.hpp"
+#include "leviathan/systems/save_system.hpp"
 
 namespace fs = std::filesystem;
 using leviathan::core::CountryId;
@@ -227,6 +228,47 @@ TEST_CASE("RCR-1 integration: compliance scenario loads with 20 countries / 20 p
     // corruption_scandal authors two options + a followup
     CHECK(save.find("\"anti_corruption_campaign\"") != std::string::npos);
     CHECK(save.find("\"ignore_scandal\"")           != std::string::npos);
+
+    // Issue #108 fix 2: every compliance country fixture authors a
+    // non-zero military_strength. The save reflects authored values,
+    // not the data_loader default 0.0.
+    CHECK(save.find("\"military_strength\":") != std::string::npos);
+    // Spot-check a high authored value (USA = 90.0) and a low one
+    // (Mexico = 10.0) appear; rough-historical relative ordering
+    // pinned at fixture-author time. The exact format mirrors
+    // save_system's double serialization.
+    {
+        const auto from_state = leviathan::systems::save_system::deserialize(save);
+        REQUIRE(from_state.ok());
+        const auto& reloaded = from_state.value();
+        std::size_t nonzero_count = 0;
+        for (const auto& c : reloaded.countries) {
+            CAPTURE(c.id_code);
+            CHECK(c.military_strength > 0.0);
+            if (c.military_strength > 0.0) ++nonzero_count;
+        }
+        CHECK(nonzero_count == 20u);
+    }
+
+    // Issue #108 fix 3: compliance scenario authors a non-empty
+    // relationships array. 10 pairwise entries authored
+    // (GER<->FRA, GER<->POL, JPN<->CHN, USA<->GBR, SOV<->POL).
+    CHECK(save.find("\"relationships\":")    != std::string::npos);
+    CHECK(save.find("\"relationships\": []") == std::string::npos);
+    {
+        const auto from_state = leviathan::systems::save_system::deserialize(save);
+        REQUIRE(from_state.ok());
+        const auto& reloaded = from_state.value();
+        REQUIRE(reloaded.relationships.size() == 10u);
+        // Spot-check GER -> FRA hostile relationship was preserved
+        // through scenario -> save round-trip.
+        const auto& first = reloaded.relationships[0];
+        // GER is country index 0; FRA is country index 1.
+        CHECK(first.from == leviathan::core::CountryId{0});
+        CHECK(first.to   == leviathan::core::CountryId{1});
+        CHECK(first.relationship == doctest::Approx(-0.40));
+        CHECK(first.threat       == doctest::Approx( 0.60));
+    }
 }
 
 // =====================================================================

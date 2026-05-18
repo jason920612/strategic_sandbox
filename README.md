@@ -29,9 +29,21 @@
 > per-fire `event_fired` LogEntries into `events.jsonl`;
 > integration tests pin a deterministic byte-identical
 > 1930–2000 sweep on the 20-country compliance scenario
-> plus a 10-year event stress run. After RCR-1, execution
-> returns to the M-numbered milestone sequence — **M6.6
-> resumes per RFC-090 §6.6 on explicit go-ahead**.
+> plus a 10-year event stress run.
+>
+> A follow-up **residual-fix PR** (issue #108) tightened
+> the corrective batch where RCR-1 had stopped at helpers:
+> `ai_policy::apply_selected_policies` is now wired into
+> `monthly::tick_all_countries` as step 7 so AI auto-policy
+> is part of every monthly tick; every compliance country
+> fixture authors a non-zero `military_strength`;
+> `data/scenarios/1930_rfc_compliance.json` authors 10
+> representative pairwise relationship/threat entries.
+> Save schema unchanged (still v17), artefact contract
+> unchanged (11). After issue #108 lands, execution returns
+> to the M-numbered milestone sequence — **M6.6 resumes
+> per RFC-090 §6.6 on explicit go-ahead**. **There is no
+> RCR-2 track.**
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**

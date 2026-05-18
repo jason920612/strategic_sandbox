@@ -161,16 +161,43 @@ TEST_CASE("M1 end-to-end: scenario load -> day-0 enactment -> 365-day tick -> sa
     // The starting-policies scenario enacts:
     //   raise_taxes              on GER (duration_days = 60)
     //   increase_military_budget on GER (duration_days = 30)
-    // in that order, on day 0 (1930-01-01). Each enactment records an
-    // ActivePolicy entry on GER; FRA and JPN should have empty lists.
+    // in that order, on day 0 (1930-01-01).
+    //
+    // Issue #108 fix (post-RCR-1): the monthly pipeline now invokes
+    // `ai_policy::apply_selected_policies` every month boundary. Over
+    // a 365-day run starting 1930-01-01, 12 month boundaries are
+    // crossed (Feb-1, Mar-1, ..., Dec-1 1930, Jan-1 1931). The AI
+    // selection rule is "first policy in state.policies" — for the
+    // M1.13 fixture that is `increase_military_budget` — applied to
+    // every non-player country (no --player set here, so all 3).
+    //
+    // Expected active_policies counts on reload:
+    //   GER: 2 day-0 entries (raise_taxes, increase_military_budget)
+    //        + 12 AI-apply entries (increase_military_budget × 12)
+    //        = 14
+    //   FRA: 0 day-0 + 12 AI-apply = 12
+    //   JPN: 0 day-0 + 12 AI-apply = 12
+    //
+    // Day-0 entries appear FIRST in the vector (M1.13 day-0 enactment
+    // happens during begin_tick, before any month_changed boundary).
     const auto& ger = reloaded.countries[0];
-    REQUIRE(ger.active_policies.size() == 2u);
+    REQUIRE(ger.active_policies.size() == 14u);
     CHECK(ger.active_policies[0].policy_id_code == "raise_taxes");
     CHECK(ger.active_policies[0].expires_on     == GameDate(1930, 3, 2));
     CHECK(ger.active_policies[1].policy_id_code == "increase_military_budget");
     CHECK(ger.active_policies[1].expires_on     == GameDate(1930, 1, 31));
-    CHECK(reloaded.countries[1].active_policies.empty());
-    CHECK(reloaded.countries[2].active_policies.empty());
+    // The remaining 12 entries are AI-applied monthly enactments of
+    // the first policy in state.policies (increase_military_budget,
+    // duration_days=30). Spot-check the first one fires at the
+    // 1930-02-01 boundary (expires_on = 1930-02-01 + 30 = 1930-03-03).
+    CHECK(ger.active_policies[2].policy_id_code == "increase_military_budget");
+    CHECK(ger.active_policies[2].expires_on     == GameDate(1930, 3, 3));
+    CHECK(reloaded.countries[1].active_policies.size() == 12u);
+    CHECK(reloaded.countries[1].active_policies[0].policy_id_code ==
+          "increase_military_budget");
+    CHECK(reloaded.countries[2].active_policies.size() == 12u);
+    CHECK(reloaded.countries[2].active_policies[0].policy_id_code ==
+          "increase_military_budget");
 
     // ---- Step 4: M1.12 coupling produced a non-zero growth signal --------
     // After 12 economy ticks the GDP and last_gdp_growth_rate must

@@ -117,6 +117,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/ai_policy.hpp"
 #include "leviathan/systems/economy_system.hpp"
 #include "leviathan/systems/event_engine.hpp"
 #include "leviathan/systems/faction_system.hpp"
@@ -178,6 +179,26 @@ struct MonthlyOutcome {
         interest_group_country_feedback_trace_rows;
     std::vector<interest_group::AuthorityPressureTraceRow>
         interest_group_authority_pressure_trace_rows;
+
+    // Issue #108 fix: AI policy auto-apply counters, populated by
+    // the new global step that runs between M3.4 authority_pressure
+    // and M5.8 event_engine::tick_events. RFC-010 §2.2 / RFC-090
+    // §3.5 expect AI countries to *automatically* select policies
+    // every tick; the helper-only ai_policy::apply_selected_policies
+    // shipped in RCR-1 is now wired into the monthly pipeline so
+    // the simulation actually exercises the AI behavior the RFC
+    // describes. Counters mirror ai_policy::ApplyOutcome:
+    //   ai_policies_considered  = non-player countries scanned
+    //   ai_policies_applied     = successful per-country apply
+    //   ai_policies_skipped     = no policy / no selection
+    //   ai_policies_failed      = per-country apply returned failure
+    //                             (fail-continue: monthly pipeline
+    //                              does NOT abort on a single
+    //                              country's failure)
+    int ai_policies_considered = 0;
+    int ai_policies_applied    = 0;
+    int ai_policies_skipped    = 0;
+    int ai_policies_failed     = 0;
 
     // M5.8: final global step's outcome. Mirrors the fields of
     // `event_engine::TickOutcome` (events_matched / events_recorded
