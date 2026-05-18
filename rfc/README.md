@@ -217,8 +217,68 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.17
-  （ARIA labels skeleton）** 讓 M4.15-focusable /
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.18
+  （accessibility checkpoint refresh）** 對應 M4.14 在
+  當時的角色：**零新行為**，只刷新狀態快照 + 補一個
+  小型 integration assertion。
+  `docs/milestone-4-checkpoint.md` 上一次刷新是 M4.14
+  （涵蓋 M4.2–M4.13），M4.18 把它擴充到覆蓋 M4.15–M4.17
+  三個 a11y surface：M4.15（keyboard focus skeleton ──
+  `tabindex="0"` + keydown Enter/Space listener）、
+  M4.16（focus-visible CSS skeleton ── `#1976d2` 藍色
+  `:focus-visible` rings 與 M4.12 黑色 `.selected`
+  stroke 視覺上分明）、M4.17（ARIA labels skeleton ──
+  `role="button"` + `aria-label="<name>, <owner_name>"`
+  ── narrowly reverses M4.15/M4.16 的「no ARIA」非目標）。
+  刷新後的 checkpoint 列出 `<style>` block 裡 17 條
+  selector（M4.14 時是 13 條；M4.16 多了 4 條
+  `:focus`/`:focus-visible` rule）、一個新的
+  「Accessibility surface (M4.15–M4.17)」區塊枚舉
+  tabindex / keydown / focus-visible / role=button /
+  aria-label / decorative-legend-swatch invariant、
+  並把 deferred items 重新分類：KEYBOARD+FOCUS surface
+  已 SHIPPED；更廣的 BROADER ARIA（`aria-selected` /
+  `aria-current` / `aria-pressed` / `aria-live` /
+  `aria-describedby` / `aria-labelledby`）仍 deferred；
+  KEYBOARD POLISH（arrow-key nav / Escape-to-clear /
+  Tab-within-panel）仍 deferred。
+  在 `tests/integration/m4_dom_contract_test.cpp` 加
+  一個新的 integration assertion（test F）：canonical
+  scenario 在 `provinces.svg` 與 `map.html` 兩個
+  artefact 都有 6 個 `role="button"`（3 個 province ×
+  circle+text）、每個 province 在每個 artefact 都有
+  2 個 composed `aria-label`（"Berlin, Germany" /
+  "Paris, France" / "Tokyo, Japan"）；3 個 legend
+  swatch 都不帶 `role` / `aria-label` / `tabindex`；
+  M4.16 `:focus-visible` + `#1976d2` CSS 只出現在
+  `map.html`、`provinces.svg` 完全沒有；以及仍 deferred
+  的 ARIA surface 在兩個 artefact 都絕對沒出現。
+  這條 test 是 M4.15/M4.16/M4.17 svg_export_test
+  單元測試的 end-to-end 對應，透過實際 runner /
+  canonical fixture 路徑驗證。**M4 仍在 in progress**
+  ── 沒有寫 `docs/milestone-4-result.md`，M4.18 是
+  checkpoint refresh 不是 exit。**renderer bytes 與
+  M4.17 完全相同** ── 這次只加 docs + 1 個
+  integration test。**Artefact 數量不變（仍 10）；
+  save 格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 仍 by construction
+  通過。2 個新 doctest cases（共 880）。
+  **M4 in progress.**
+  **M4.18 不做** 新 system / 新 formula / 新 artefact
+  / save schema bump / 新 state field / 新 fixture
+  / 新 `InterestGroupKind` / `PlayerCommandKind` / 新
+  feature surface（M4.18 只動 docs + 1 個 integration
+  test）/ rename 任何 data-* attribute / 動
+  render_svg_root / render_map_html bytes / 更廣的
+  ARIA / M4.15 之外的 keyboard polish / `<meta
+  name="viewport">` / CSS animation / transition /
+  media query / 鄰接 edge / terrain / overlay /
+  events / AI / commands / hover / tooltip /
+  selection 持久化 / runner CLI flag / atomic
+  `end_tick` write / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣 /
+  動 `provinces.svg` 或 `map.html` bytes。
+  **M4.17（ARIA labels skeleton）** 讓 M4.15-focusable /
   M4.10-clickable 的 province markers **可以被 screen
   reader 讀出來**。`render_svg_root` 現在會在每個
   `<circle>` 與每個 `<text>` 上 emit 兩個新屬性：

@@ -14,7 +14,65 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.17 — ARIA labels
+- Latest shipped sub-milestone: **M4.18 — accessibility
+  checkpoint refresh.** Mirrors M4.14's role for the M4
+  DOM contract: zero new behaviour, just a refreshed
+  status snapshot + one new integration assertion.
+  Refreshes `docs/milestone-4-checkpoint.md` from its
+  M4.14 scope (M4.2–M4.13) to cover the three a11y
+  surfaces that landed in M4.15–M4.17: keyboard focus
+  (`tabindex="0"` + keydown Enter/Space listener),
+  focus-visible CSS (`#1976d2` blue rings via
+  `:focus-visible`), and ARIA labels (`role="button"` +
+  `aria-label="<name>, <owner_name>"`). The refreshed
+  checkpoint now enumerates 17 `<style>` selectors (was
+  13 at M4.14; M4.16 added four `:focus`/`:focus-visible`
+  rules), a new "Accessibility surface (M4.15–M4.17)"
+  section listing tabindex / keydown / focus-visible /
+  role=button / aria-label / decorative-legend-swatch
+  invariant, and a reworked deferred-items list:
+  KEYBOARD+FOCUS surface SHIPPED; BROADER ARIA
+  (`aria-selected`, `aria-current`, `aria-pressed`,
+  `aria-live`, `aria-describedby`, `aria-labelledby`)
+  still deferred; KEYBOARD POLISH (arrow-key nav,
+  Escape-to-clear, Tab-within-panel) still deferred.
+  Adds **one** new integration assertion in
+  `tests/integration/m4_dom_contract_test.cpp` (test F)
+  that pins the M4.15–M4.17 a11y surface end-to-end on
+  the canonical scenario: 6 `role="button"` occurrences
+  per artefact (3 provinces × circle+text); 2
+  `aria-label="<name>, <owner_name>"` per province per
+  artefact with the canonical composed values; all 3
+  legend swatches carry NO `role` / `aria-label` /
+  `tabindex` (decorative invariant); `:focus-visible` +
+  `#1976d2` CSS in `map.html` but NOT in
+  `provinces.svg`; the still-deferred ARIA surface
+  stays absent in both artefacts. End-to-end mirror of
+  the M4.15–M4.17 svg_export_test unit cases through
+  the runner / canonical fixture path. **M4 remains in
+  progress** — no `docs/milestone-4-result.md`; M4.18
+  is a checkpoint refresh, not an exit. **Renderer
+  bytes byte-identical with M4.17** — only tests + docs
+  ship. Artefact set unchanged (still 10). Save format
+  unchanged (still v12). M1.17 / M2.22 / M3.7
+  byte-identical determinism contracts continue to pass.
+  2 new doctest cases (880 total: 1 integration test F
+  with multiple sub-checks). **No new system / formula /
+  artefact / state field / fixture, no save schema
+  bump, no new `InterestGroupKind` / `PlayerCommandKind`,
+  no new feature surface (M4.18 is docs + 1 integration
+  test), no rename of any data-* attribute, no change
+  to render_svg_root / render_map_html bytes, no
+  broader ARIA, no keyboard polish beyond M4.15, no
+  `<meta name="viewport">`, no CSS animations /
+  transitions / media queries, no adjacency / terrain /
+  overlays, no events / AI / commands, no hover /
+  tooltip, no selection persistence, no runner CLI
+  flag, no atomic `end_tick` writes, no M4 close-out,
+  no `docs/milestone-4-result.md`, no "M4 closed"
+  wording, no change to `provinces.svg` or `map.html`
+  bytes.**
+- Previously shipped: **M4.17 — ARIA labels
   skeleton.** Makes the M4.15-focusable / M4.10-clickable
   province markers **screen-reader-readable**. Every
   `<circle>` and every `<text>` in the SVG body now
@@ -1158,7 +1216,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.17): **M4.18** — open.
+- Next sub-milestone candidate (post-M4.18): **M4.19** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1181,7 +1239,9 @@
   `.selected` stroke); M4.17 added `role="button"` +
   `aria-label="<name>, <owner_name>"` so screen-reader
   users get an interactive-control announcement with a
-  readable name. Natural next steps include
+  readable name; M4.18 refreshed the checkpoint doc to
+  cover M4.15–M4.17 and added one new integration
+  assertion. Natural next steps include
   (a) broader ARIA polish (`aria-selected` on the M4.12
   `.selected` markers, `aria-live` region on the
   details panel for click-update announcements,
@@ -1197,7 +1257,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1228,7 +1288,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 shipped. Sixty-four sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 shipped. Sixty-five sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1375,6 +1435,58 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.18 accessibility checkpoint refresh — mirrors
+M4.14's role for the M4 DOM contract: zero new
+behaviour, just a refreshed status snapshot + one new
+integration assertion. Refreshes
+`docs/milestone-4-checkpoint.md` from its M4.14 scope
+(M4.2–M4.13) to cover the three a11y surfaces shipped
+in M4.15–M4.17: keyboard focus (`tabindex="0"` +
+keydown Enter/Space listener), focus-visible CSS
+(`#1976d2` blue rings via `:focus-visible`), and ARIA
+labels (`role="button"` + `aria-label="<name>,
+<owner_name>"`). The refreshed checkpoint now
+enumerates 17 `<style>` selectors (was 13 at M4.14;
+M4.16 added four `:focus`/`:focus-visible` rules), a
+new "Accessibility surface (M4.15–M4.17)" section, and
+a rebucketed deferred-items list (KEYBOARD+FOCUS
+SHIPPED; BROADER ARIA + KEYBOARD POLISH still
+deferred). Adds **one** new integration assertion
+(`tests/integration/m4_dom_contract_test.cpp` test F):
+the canonical scenario carries 6 `role="button"`
+occurrences per artefact, 2 `aria-label="<name>,
+<owner_name>"` per province per artefact, all 3
+legend swatches carry NO `role` / `aria-label` /
+`tabindex` (decorative invariant), M4.16
+`:focus-visible` + `#1976d2` CSS appears in `map.html`
+but NOT in `provinces.svg`, and the still-deferred
+ARIA surface (aria-selected / aria-current /
+aria-pressed / aria-live / aria-describedby /
+aria-labelledby) stays absent end-to-end. End-to-end
+mirror of the M4.15–M4.17 svg_export_test unit cases
+through the runner / canonical fixture path.
+**M4 remains in progress** — no
+`docs/milestone-4-result.md`; M4.18 is a checkpoint
+refresh, not an exit. Renderer bytes byte-identical
+with M4.17 — only tests + docs ship. **Artefact set
+unchanged (still 10); save format unchanged (still
+v12);** M1.17 / M2.22 / M3.7 byte-identical
+determinism contracts continue to pass. 2 new doctest
+cases (880 total: 1 integration test F with multiple
+sub-checks). **No new system / formula / artefact /
+state field / fixture, no save schema bump, no new
+`InterestGroupKind` / `PlayerCommandKind`, no new
+feature surface, no rename of any data-* attribute,
+no change to render_svg_root / render_map_html bytes,
+no broader ARIA, no keyboard polish beyond M4.15, no
+`<meta name="viewport">`, no CSS animations /
+transitions / media queries, no adjacency / terrain /
+overlays, no events / AI / commands, no hover /
+tooltip, no selection persistence, no runner CLI
+flag, no atomic `end_tick` writes, no M4 close-out,
+no `docs/milestone-4-result.md`, no "M4 closed"
+wording, no change to `provinces.svg` or `map.html`
+bytes.**;
 **M4.17 ARIA labels skeleton — makes the
 M4.15-focusable / M4.10-clickable province markers
 screen-reader-readable. Every `<circle>` and `<text>`

@@ -407,4 +407,100 @@ TEST_CASE("M4 DOM contract: M4.15 tabindex=\"0\" on every canonical province cir
     CHECK(svg.find("keydown")           == std::string::npos);
 }
 
+// =====================================================================
+// F. (M4.18) Accessibility surface end-to-end
+//
+//    Every canonical province <circle> + <text> carries
+//    role="button" + aria-label with the canonical
+//    composed value in BOTH provinces.svg and map.html
+//    (M4.17 attrs live in render_svg_root). Legend swatch
+//    <circle> carries neither (M4.17 intent — decorative).
+//    map.html's <style> block carries the M4.16
+//    :focus-visible CSS rules; provinces.svg has neither
+//    the CSS nor the <style> block (asymmetric CSS surface
+//    established at M4.10).
+// =====================================================================
+TEST_CASE("M4 DOM contract: M4.17 role=button + aria-label end-to-end; M4.16 focus-visible CSS asymmetric") {
+    TempDir td("leviathan_m4_dom_a11y_surface");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string svg  = read_file(td.path / "provinces.svg");
+    const std::string html = read_file(td.path / "map.html");
+
+    auto count_occurrences = [&](const std::string& body,
+                                 const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = body.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    // Canonical scenario has three provinces × (circle + text)
+    // = 6 role="button" occurrences in each artefact.
+    CHECK(count_occurrences(svg,  "role=\"button\"") == 6u);
+    CHECK(count_occurrences(html, "role=\"button\"") == 6u);
+
+    // Each canonical province produces one composed aria-label
+    // shared by its <circle> and <text>: 2 occurrences per
+    // province per artefact.
+    for (const auto& p : kCanonicalProvinces) {
+        INFO("province = " << p.id);
+        const std::string aria_label_attr =
+            std::string("aria-label=\"") + p.name + ", " + p.owner_name + "\"";
+        CHECK(count_occurrences(svg,  aria_label_attr) == 2u);
+        CHECK(count_occurrences(html, aria_label_attr) == 2u);
+    }
+
+    // Legend swatch <circle> elements stay decorative — they
+    // are emitted in render_map_html (NOT in render_svg_root),
+    // and live inside <svg class="swatch">. Locate each swatch
+    // and assert role / aria-label absent inside its span.
+    std::size_t scan_at = 0;
+    std::size_t swatches_checked = 0;
+    while (true) {
+        const auto open = html.find("<svg class=\"swatch\"", scan_at);
+        if (open == std::string::npos) { break; }
+        const auto close = html.find("</svg>", open);
+        REQUIRE(close != std::string::npos);
+        const std::string swatch =
+            html.substr(open, close - open + 6);
+        CHECK(swatch.find("role=")       == std::string::npos);
+        CHECK(swatch.find("aria-label=") == std::string::npos);
+        CHECK(swatch.find("tabindex=")   == std::string::npos);
+        scan_at = close + 6;
+        ++swatches_checked;
+    }
+    // Three canonical countries → three legend swatches.
+    CHECK(swatches_checked == 3u);
+
+    // M4.16 :focus-visible CSS lives in map.html's <style>
+    // block; provinces.svg carries none of it.
+    CHECK(html.find(":focus-visible")              != std::string::npos);
+    CHECK(html.find("svg circle:focus-visible")    != std::string::npos);
+    CHECK(html.find("svg text:focus-visible")      != std::string::npos);
+    CHECK(html.find("#1976d2")                     != std::string::npos);
+    CHECK(svg.find(":focus-visible")               == std::string::npos);
+    CHECK(svg.find(":focus")                       == std::string::npos);
+    CHECK(svg.find("#1976d2")                      == std::string::npos);
+
+    // Still-deferred ARIA surface (M4.17 explicit non-goals)
+    // stays absent end-to-end in both artefacts.
+    for (const std::string& body : {svg, html}) {
+        CHECK(body.find("aria-selected=")    == std::string::npos);
+        CHECK(body.find("aria-current=")     == std::string::npos);
+        CHECK(body.find("aria-pressed=")     == std::string::npos);
+        CHECK(body.find("aria-live=")        == std::string::npos);
+        CHECK(body.find("aria-describedby=") == std::string::npos);
+        CHECK(body.find("aria-labelledby=")  == std::string::npos);
+    }
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR
