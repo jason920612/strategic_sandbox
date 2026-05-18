@@ -217,7 +217,55 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.8
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.9
+  （event observability checkpoint）** 是 M5 的
+  第九個 sub-milestone，shape 與 M3.7 / M4.9 / M4.14
+  / M4.18 / M4.22 一致：**docs + integration tests，
+  zero 新 gameplay**。M5.9 把 M5.1–M5.8 的 contract
+  end-to-end 寫進
+  `docs/milestone-5-checkpoint.md`（M5 status snapshot
+  ── 10 個 section：M5.1–M5.8 ledger / dataflow / schema
+  / allowlist / artefact set / ~25 invariants /
+  deferred items / 「checkpoint 不變動什麼」/ close-out
+  readiness assessment Category A/B/C 分類 + verdict
+  「M5 結構上完整；reviewer 下一步是 close-out / 一個
+  polish PR / 移到 M6 ── M5.9 不選」/ 給下一位
+  reviewer 的 notes）。新
+  `docs/m5-9-event-observability-checkpoint.md`
+  per-PR design note。新
+  `tests/integration/m5_event_pipeline_test.cpp` 5 個
+  doctest case 透過 runner exercise 整條 pipeline：
+  (A) canonical 1930 scenario 在 M5.9 仍是
+  `event_history: []` + save_version 14 + 10 artefact
+  + events.jsonl 不含 canonical event id_code + 沒有
+  新事件 artefact 出現在 disk；(B) 手寫狀態的事件
+  在第一個月 fire → event_history 增長 + effect 套用
+  （legitimacy 0.50→0.45）+ save round-trip 保留；
+  (C) fire 的 run 仍產 10 個 artefact、events.jsonl
+  不汙染、不汙染 applied_commands / active_policies；
+  (D) fire 的 run 是 deterministic（同 state + 同
+  options → byte-identical 10 artefact 同時 fire）；
+  (E) bad effect target 透過 runner 失敗 → monthly
+  tick 失敗 → M2.9 pre-end_tick contract（不寫
+  artefact）。**5 個新 doctest case（1039 total，
+  62364 assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）。
+  **Zero 既有 test 變動** ── 只動
+  `tests/CMakeLists.txt`（註冊新 integration test）。
+  1034 個 M5.8-era test 全部 byte-identical 通過。
+  **沒有新 system / formula / artefact（仍 10）/
+  save format bump（仍 v14）/ 新 state field / 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / canonical fixture 變動 /
+  scenario_loader / event_evaluator / event_firer /
+  event_effects / event_engine / policy_system /
+  monthly_pipeline / save_system 程式變動 /
+  events.jsonl 語意變動 / UI surface / balance pass /
+  M1/M2/M3/M4 system 外部行為變動 / M1.17 / M2 / M3
+  / M4 byte-identical determinism baseline 變動 /
+  M5 close-out（沒有 `docs/milestone-5-result.md`、
+  沒有「M5 closed」字樣）**。M5 remains in progress。
+- **M5（歷史進行中）** — **M5.8
   （monthly event tick wiring）** 是 M5 的第八個
   sub-milestone。把 M5.7 的
   `event_engine::tick_events(state)` composition helper
