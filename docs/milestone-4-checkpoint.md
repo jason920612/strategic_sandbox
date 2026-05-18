@@ -5,7 +5,8 @@ Status: in progress
 Refreshed at **M4.18** (companion notes for
 `feature/rfc090-m4-18-accessibility-checkpoint-refresh`),
 **inline-refreshed at M4.19** for the hover affordance
-surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
+surface, **inline-refreshed at M4.20** for the
+hover-status text bar surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
 DOM contract); refreshed at M4.14 to cover M4.10–M4.13
 (first JavaScript, decoupled labels, transient
 `.selected`, fifth `data-owner-name`); refreshed at M4.18
@@ -63,6 +64,12 @@ M4.18  accessibility checkpoint refresh
 M4.19  hover affordance skeleton — `svg circle:hover`
        grey stroke + `svg text:hover` underline (pure CSS;
        no JS hover handler)
+M4.20  hover tooltip skeleton — <p id="hover-status">
+       text bar + .hover-status CSS + mouseover/mouseout
+       listeners that write composed "<name> (<owner-name>)"
+       to the bar via textContent (XSS-safe). Narrowly
+       reverses M4.19's "no JS hover handler" non-goal.
+       Still no SVG <title> child.
 ```
 
 ## 2. Current artefact contract
@@ -197,6 +204,10 @@ additive — no removed or renamed attribute.
   .details dt     { font-weight: bold; margin-top: 4px; }
   .details dd     { margin: 0 0 4px 16px; }
   .details-empty  { margin: 0; color: #666; }
+  .hover-status   { max-width: 1000px; margin: 8px auto;          // M4.20
+                    min-height: 1em; font-family: sans-serif;
+                    color: #666; font-style: italic;
+                    text-align: center; }
   svg circle[data-id], svg text[data-id]                          // M4.10
                   { cursor: pointer; }
   svg circle:hover { stroke: #666666; stroke-width: 2; }          // M4.19
@@ -216,6 +227,7 @@ additive — no removed or renamed attribute.
   <svg ...>...</svg>            // same body as provinces.svg
                                 // (M4.15+M4.17 tabindex/role/
                                 // aria-label included), no XML prolog
+  <p id="hover-status" class="hover-status">&nbsp;</p>           // M4.20
   <div id="details" class="details">                              // M4.10
     <p class="details-empty">Click a province to see its details.</p>
   </div>
@@ -234,6 +246,7 @@ additive — no removed or renamed attribute.
   (function() {
     var details = document.getElementById("details");
     if (!details) { return; }
+    var hoverStatus = document.getElementById("hover-status");    // M4.20
     var fields = [                                                // M4.11+M4.13
       { attr: "data-id",         label: "Province ID"   },
       { attr: "data-owner",      label: "Owner Index"   },
@@ -263,6 +276,13 @@ additive — no removed or renamed attribute.
             activate();
           }
         });
+        el.addEventListener("mouseover", function() {             // M4.20
+          // hoverStatus.textContent = "<name> (<owner-name>)"
+          //   (or just "<name>" when owner-name is empty)
+        });
+        el.addEventListener("mouseout", function() {              // M4.20
+          // hoverStatus.textContent = ""
+        });
       })(nodes[j]);
     }
   })();
@@ -273,11 +293,12 @@ additive — no removed or renamed attribute.
 
 where:
 
-- `<style>` block now carries **19 selectors** (M4.6 three
+- `<style>` block now carries **20 selectors** (M4.6 three
   + M4.7 three + M4.10 six + M4.12 two + M4.16 four +
-  M4.19 two; was 13 at M4.14 and 17 at M4.18). All are
-  layout / state rules — no animations, no transitions,
-  no media queries, no `@import`, no `@font-face`.
+  M4.19 two + M4.20 one; was 13 at M4.14, 17 at M4.18,
+  19 at M4.19). All are layout / state rules — no
+  animations, no transitions, no media queries, no
+  `@import`, no `@font-face`.
 - The inline SVG body is byte-identical to
   `provinces.svg` minus the XML prolog (M4.15 / M4.17
   attributes are included in the shared body, so both
@@ -364,8 +385,18 @@ Interactivity surface (map.html only, M4.10–M4.16):
                         sits before .selected / :focus-visible
                         in source order so those (equal
                         specificity) win on the same element.
-                        Pure CSS — no JS hover handler, no
-                        tooltip, no <title> child.
+                        Pure CSS for the visual cue itself.
+  - <p id="hover-status"> + .hover-status CSS                  // M4.20
+                        + mouseover/mouseout listeners that
+                        write composed "<name> (<owner-name>)"
+                        to the bar via textContent, and clear
+                        on mouseout. XSS-safe — textContent
+                        only, never innerHTML. Reads
+                        getAttribute("data-name") +
+                        getAttribute("data-owner-name") (no
+                        new attribute). Hover NEVER touches
+                        the M4.10 details panel — click and
+                        hover are independent surfaces.
 
 Accessibility surface (M4.15–M4.17):
   - tabindex="0"        on every <circle> + <text>; legend
@@ -457,14 +488,22 @@ explicitly out of scope.
 
 ```text
 HOVER + TOOLTIPS (basic :hover CSS shipped at M4.19;
+                  hover-status text bar shipped at M4.20;
                   richer hover behaviour still deferred)
   pair-hover (hovering a circle does NOT also highlight
     its matching <text>, and vice versa — would need JS
-    mouseover/mouseout + classList toggling on the
-    sibling sharing data-id)
-  tooltips (the M4.10 details panel is click/keydown-only;
-    no SVG <title> child element, no CSS-only tooltip)
+    classList toggling on the sibling sharing data-id;
+    the M4.20 mouseover/mouseout listener only writes the
+    hover-status bar, doesn't touch sibling CSS classes)
+  position-aware tooltip near cursor (current M4.20 bar
+    is fixed-position above the details panel, not a
+    cursor-following popup)
+  SVG <title> child element on markers (still deferred —
+    would compete with M4.17 aria-label)
   hover-driven detail-panel preview / hover delay
+  hover/mouseover via mouseenter / mouseleave (M4.20 uses
+    mouseover/mouseout only; the enter/leave pair does
+    not bubble, slightly different semantics)
 
 BROADER ARIA (the narrower ARIA surface — role=button +
               aria-label — shipped at M4.17)

@@ -1718,30 +1718,37 @@ TEST_CASE("render_map_html: M4.19 :hover rules appear BEFORE .selected and :focu
     CHECK(hover_at < focus_at);
 }
 
-TEST_CASE("render_map_html: M4.19 hover is pure CSS — no JS hover handler, no SVG <title> tooltip child") {
-    // Pin the explicit non-goals of this skeleton:
-    //   - no addEventListener("mouseover" / "mouseout") in
-    //     the inline script
-    //   - no element.onmouseover / .onmouseout assignment
-    //   - no SVG <title> child element on the markers (the
-    //     SVG-native tooltip mechanism — would compete with
-    //     the M4.17 aria-label as the accessible name).
+TEST_CASE("render_map_html: M4.20 narrows the M4.19 'no JS hover' non-goal — mouseover/mouseout legitimately appear; mouseenter/mouseleave + inline onmouseover= still absent; no SVG <title> tooltip child") {
+    // M4.19 originally pinned "no JS hover handler at all";
+    // M4.20 narrowly reverses that to ship the hover-status
+    // bar (mouseover + mouseout listeners that update
+    // <p id="hover-status"> via textContent). The still-
+    // deferred surface is narrower:
+    //   - mouseenter / mouseleave (not used)
+    //   - element.onmouseover / .onmouseout (inline-attribute
+    //     property assignment — NOT used; M4.20 uses
+    //     addEventListener)
+    //   - inline onmouseover= / onmouseout= attributes (NOT used)
+    //   - SVG <title> child element on markers (NOT used;
+    //     M4.17 aria-label is the accessible name)
     // The HTML <head> <title>Leviathan Map</title> is the
-    // page title and is required by the M4.5 contract;
-    // M4.19 must not regress that, and must not add any
-    // additional <title> tag inside <body>.
+    // page title and is required by the M4.5 contract.
     GameState state;
     state.countries.push_back(country(0, "GER", "Germany"));
     state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
     const std::string html = svg::render_map_html(state);
 
-    // No JS hover listener of any flavour.
-    CHECK(html.find("\"mouseover\"")  == std::string::npos);
-    CHECK(html.find("\"mouseout\"")   == std::string::npos);
+    // M4.20: mouseover + mouseout DO appear (via addEventListener).
+    CHECK(html.find("addEventListener(\"mouseover\"") != std::string::npos);
+    CHECK(html.find("addEventListener(\"mouseout\"")  != std::string::npos);
+
+    // Still-deferred hover-handler patterns stay absent.
     CHECK(html.find("\"mouseenter\"") == std::string::npos);
     CHECK(html.find("\"mouseleave\"") == std::string::npos);
     CHECK(html.find(".onmouseover")   == std::string::npos);
     CHECK(html.find(".onmouseout")    == std::string::npos);
+    CHECK(html.find("onmouseover=")   == std::string::npos);
+    CHECK(html.find("onmouseout=")    == std::string::npos);
 
     // The HTML <head> <title> is preserved (M4.5 contract)
     // and is the ONLY <title> tag in the document — no SVG
@@ -1761,8 +1768,8 @@ TEST_CASE("render_map_html: M4.19 hover is pure CSS — no JS hover handler, no 
 
     // <body>...</body> carries NO <title> tag — that would
     // be a child of an SVG element (the only legal location
-    // for <title> outside <head>), and is the M4.19 "no SVG
-    // tooltip" non-goal we explicitly enforce.
+    // for <title> outside <head>), and is the M4.19 + M4.20
+    // "no SVG tooltip" non-goal we explicitly enforce.
     const auto body_open  = html.find("<body>");
     const auto body_close = html.find("</body>");
     REQUIRE(body_open  != std::string::npos);
@@ -1782,4 +1789,154 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.19 :hover r
     CHECK(svg_text.find(":hover")            == std::string::npos);
     CHECK(svg_text.find("text-decoration")   == std::string::npos);
     CHECK(svg_text.find("#666666")           == std::string::npos);
+}
+
+// =====================================================================
+// M4.20 — hover tooltip skeleton (status-text bar)
+// =====================================================================
+// M4.20 adds a small <p id="hover-status"> bar between
+// the inline SVG and the M4.10 details panel. The inline
+// <script> registers mouseover + mouseout listeners on
+// every province marker (same per-element loop as the
+// M4.10 click + M4.15 keydown listeners). On mouseover
+// the bar's textContent is updated to "<name> (<owner-name>)"
+// (or just <name> when owner-name is empty); on mouseout
+// it's cleared. Reads via getAttribute on the existing
+// M4.8/M4.13 data-* attrs; writes via textContent only.
+//
+// Reverses the M4.19 "no JS hover handler" non-goal in a
+// narrowly-scoped way: only mouseover + mouseout via
+// addEventListener; never inline event attributes.
+// Still NO SVG <title> child on markers, NO innerHTML,
+// NO state mutation, NO new artifact / schema bump.
+
+TEST_CASE("render_map_html: M4.20 emits <p id=\"hover-status\"> between SVG and details panel") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // The element appears.
+    CHECK(html.find("<p id=\"hover-status\" class=\"hover-status\">")
+          != std::string::npos);
+    // Initial body is a non-breaking space (avoids
+    // layout jump on first hover).
+    CHECK(html.find("<p id=\"hover-status\" class=\"hover-status\">&nbsp;</p>")
+          != std::string::npos);
+
+    // Positioned between </svg> and <div id="details">.
+    const auto svg_close   = html.find("</svg>");
+    const auto hover_at    = html.find("<p id=\"hover-status\"");
+    const auto details_at  = html.find("<div id=\"details\"");
+    REQUIRE(svg_close  != std::string::npos);
+    REQUIRE(hover_at   != std::string::npos);
+    REQUIRE(details_at != std::string::npos);
+    CHECK(svg_close < hover_at);
+    CHECK(hover_at < details_at);
+}
+
+TEST_CASE("render_map_html: M4.20 <style> block carries the .hover-status rule") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find(".hover-status { max-width: 1000px;")
+          != std::string::npos);
+    // min-height keeps the line taking layout space when empty.
+    CHECK(html.find("min-height: 1em;") != std::string::npos);
+    // Italic muted styling marks this as transient UI text.
+    CHECK(html.find("font-style: italic;") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.20 inline <script> wires mouseover + mouseout with textContent writes") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // Listener type via addEventListener (NOT inline attribute
+    // form, NOT property assignment).
+    CHECK(html.find("addEventListener(\"mouseover\"") != std::string::npos);
+    CHECK(html.find("addEventListener(\"mouseout\"")  != std::string::npos);
+    // The hoverStatus variable is looked up by element id.
+    CHECK(html.find("getElementById(\"hover-status\")") != std::string::npos);
+    // Writes go via textContent (XSS-safe). hoverStatus assignment
+    // is to textContent specifically.
+    CHECK(html.find("hoverStatus.textContent") != std::string::npos);
+    // Reads use getAttribute on the existing M4.8/M4.13 keys —
+    // not a new data-* attribute.
+    CHECK(html.find("el.getAttribute(\"data-name\")")       != std::string::npos);
+    CHECK(html.find("el.getAttribute(\"data-owner-name\")") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.20 hover handler stays XSS-safe — never innerHTML, no eval, no new escape hatch") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The M4.10 XSS-safe DOM API contract still holds end-to-end.
+    CHECK(html.find("innerHTML")        == std::string::npos);
+    CHECK(html.find("outerHTML")        == std::string::npos);
+    CHECK(html.find("document.write")   == std::string::npos);
+    CHECK(html.find("eval(")            == std::string::npos);
+    CHECK(html.find("Function(")        == std::string::npos);
+    // No DOM-fragment parsing alternatives either.
+    CHECK(html.find("insertAdjacentHTML") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.20 hover handler does NOT mutate state, persist, or call out") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The M4.10 no-storage / no-network / no-navigation
+    // discipline still holds. M4.20 only added textContent
+    // writes to the hover-status bar.
+    CHECK(html.find("fetch(")            == std::string::npos);
+    CHECK(html.find("XMLHttpRequest")    == std::string::npos);
+    CHECK(html.find("localStorage")      == std::string::npos);
+    CHECK(html.find("sessionStorage")    == std::string::npos);
+    CHECK(html.find("document.cookie")   == std::string::npos);
+    CHECK(html.find("history.pushState") == std::string::npos);
+    CHECK(html.find("window.location")   == std::string::npos);
+    CHECK(html.find("navigator.")        == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.20 hover handler does NOT touch the details panel (click + hover are independent surfaces)") {
+    // M4.10 click semantics: details panel only repaints on
+    // click/Enter/Space, not on hover. The M4.20 hover handler
+    // must not call showDetails / selectProvince and must not
+    // touch `details` directly.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // Find the mouseover listener body (between
+    // `addEventListener("mouseover", function() {` and the
+    // matching `});`).
+    const auto mouseover_at = html.find("addEventListener(\"mouseover\"");
+    REQUIRE(mouseover_at != std::string::npos);
+    const auto body_open  = html.find('{', mouseover_at);
+    REQUIRE(body_open != std::string::npos);
+    // Naive matching brace — sufficient for the simple
+    // listener body M4.20 emits.
+    int depth = 1;
+    std::size_t i = body_open + 1;
+    for (; i < html.size() && depth > 0; ++i) {
+        if (html[i] == '{') { ++depth; }
+        else if (html[i] == '}') { --depth; }
+    }
+    REQUIRE(depth == 0);
+    const std::string mouseover_body =
+        html.substr(body_open, i - body_open);
+
+    // The handler must NOT invoke the click-handler helpers
+    // or touch the details panel.
+    CHECK(mouseover_body.find("showDetails")    == std::string::npos);
+    CHECK(mouseover_body.find("selectProvince") == std::string::npos);
+    CHECK(mouseover_body.find("details.")       == std::string::npos);
+    CHECK(mouseover_body.find(".classList")     == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.20 hover-status surface") {
+    // The hover-status element, .hover-status CSS, and the
+    // mouseover/mouseout listeners all live in
+    // render_map_html. Standalone SVG carries none of it.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("hover-status")  == std::string::npos);
+    CHECK(svg_text.find(".hover-status") == std::string::npos);
+    CHECK(svg_text.find("mouseover")     == std::string::npos);
+    CHECK(svg_text.find("mouseout")      == std::string::npos);
+    CHECK(svg_text.find("textContent")   == std::string::npos);
 }
