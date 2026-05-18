@@ -736,6 +736,7 @@ TEST_CASE("render_provinces: data-* attributes appear twice per node (circle + t
     CHECK(count_occurrences("data-id=\"berlin\"")        == 2u);
     CHECK(count_occurrences("data-owner=\"0\"")          == 2u);
     CHECK(count_occurrences("data-owner-code=\"GER\"")   == 2u);
+    CHECK(count_occurrences("data-owner-name=\"Germany\"") == 2u);
     CHECK(count_occurrences("data-name=\"Berlin\"")      == 2u);
 }
 
@@ -1107,4 +1108,145 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.12 selectio
     CHECK(svg_text.find("classList")          == std::string::npos);
     // Initial-paint invariant also holds.
     CHECK(svg_text.find("class=\"selected\"") == std::string::npos);
+}
+
+// =====================================================================
+// M4.13 — details panel owner-name polish (widens the M4.8 surface)
+// =====================================================================
+// M4.13 adds a fifth `data-*` attribute to every <circle>
+// and every <text> — `data-owner-name`, resolved from
+// `state.countries[owner.value()].name` (or `""` when the
+// owner index is invalid; same defensive fallback as the
+// M4.8 `data-owner-code`). The M4.11 `fields` array in the
+// click handler grows from four entries to five so the
+// details panel renders a new `Owner Name` row.
+//
+// Save format stays v12: `data-owner-name` is **derived**
+// from `state.countries` at render time, not a new field
+// on `ProvinceNode`.
+
+TEST_CASE("render_provinces: <circle> + <text> carry M4.13 data-owner-name with the owner's name") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Both <circle> and <text> carry the new attribute.
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = svg_text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences("data-owner-name=\"Germany\"") == 2u);
+}
+
+TEST_CASE("render_provinces: M4.13 data-owner-name appears inside the <text> opening tag") {
+    // Mirror the M4.8 "<text> carries the same four attrs"
+    // check — now five attrs.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    const auto text_open = svg_text.find("<text ");
+    const auto text_close_of_open = svg_text.find(">", text_open);
+    REQUIRE(text_open           != std::string::npos);
+    REQUIRE(text_close_of_open  != std::string::npos);
+    const std::string text_tag =
+        svg_text.substr(text_open, text_close_of_open - text_open + 1);
+
+    CHECK(text_tag.find("data-owner-name=\"Germany\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.13 data-owner-name is XML-attribute-escaped") {
+    // Country name with the five XML metacharacters. The
+    // M4.2 xml_attr_escape helper covers all of them.
+    GameState state;
+    state.countries.push_back(country(0, "X", "A&B<C>\"D'E"));
+    state.provinces.push_back(node("p", 0, 0.5, 0.5, "Node"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner-name=\"A&amp;B&lt;C&gt;&quot;D&apos;E\"")
+          != std::string::npos);
+    // Raw form must NOT appear as a data-owner-name attribute body.
+    CHECK(svg_text.find("data-owner-name=\"A&B<") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.13 invalid owner → empty data-owner-name (defensive)") {
+    // Same hand-built state shape as the M4.8 invalid-owner
+    // test. The attribute is still emitted (uniform identity
+    // surface) but with an empty value.
+    GameState state;
+    ProvinceNode p;
+    p.id_code = "ghost";
+    p.name    = "Ghost";
+    p.owner   = CountryId::invalid();  // -1
+    p.x       = 0.5;
+    p.y       = 0.5;
+    state.provinces.push_back(p);
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner-name=\"\"") != std::string::npos);
+    // And data-owner-code stays empty for the same reason
+    // (single bounds check covers both lookups).
+    CHECK(svg_text.find("data-owner-code=\"\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.13 out-of-range owner → empty data-owner-name (defensive)") {
+    // Owner index 5 with only 1 country loaded.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("orphan", 5, 0.5, 0.5, "Orphan"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner=\"5\"")          != std::string::npos);
+    CHECK(svg_text.find("data-owner-name=\"\"")      != std::string::npos);
+    CHECK(svg_text.find("data-owner-name=\"Germany\"") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.13 data-owner-name matches state.countries[owner].name across multiple countries") {
+    // Three nodes owned by three different countries. Each
+    // data-owner-name resolves to the right country's name,
+    // not its id_code.
+    GameState state;
+    state.countries.push_back(country(0, "AAA", "Alpha Land"));
+    state.countries.push_back(country(1, "BBB", "Bravo Land"));
+    state.countries.push_back(country(2, "CCC", "Charlie Land"));
+    state.provinces.push_back(node("p0", 0, 0.1, 0.1, "Node0"));
+    state.provinces.push_back(node("p1", 1, 0.2, 0.2, "Node1"));
+    state.provinces.push_back(node("p2", 2, 0.3, 0.3, "Node2"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find("data-owner-name=\"Alpha Land\"")   != std::string::npos);
+    CHECK(svg_text.find("data-owner-name=\"Bravo Land\"")   != std::string::npos);
+    CHECK(svg_text.find("data-owner-name=\"Charlie Land\"") != std::string::npos);
+    // Country id_code should NOT appear inside data-owner-name.
+    CHECK(svg_text.find("data-owner-name=\"AAA\"") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.13 details panel fields array carries the fifth Owner Name entry") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+    // The M4.11 fields array grows from 4 to 5 entries.
+    CHECK(html.find("\"data-owner-name\"") != std::string::npos);
+    CHECK(html.find("\"Owner Name\"")      != std::string::npos);
+    // The other four M4.11 labels are still present.
+    CHECK(html.find("\"Province ID\"")     != std::string::npos);
+    CHECK(html.find("\"Owner Index\"")     != std::string::npos);
+    CHECK(html.find("\"Owner Code\"")      != std::string::npos);
+    CHECK(html.find("\"Province Name\"")   != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.13 propagates data-owner-name through the inline SVG body") {
+    // map.html shares the same SVG body as provinces.svg, so
+    // the M4.13 attribute reaches the HTML wrapper for free.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+    CHECK(html.find("data-owner-name=\"Germany\"") != std::string::npos);
 }
