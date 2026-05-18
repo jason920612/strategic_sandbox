@@ -328,23 +328,35 @@ std::string render_map_html(const core::GameState& state) {
     // HTML cannot inject markup. The selector specifically
     // requires `[data-id]` so the legend's swatch <circle>
     // elements (which lack data-id) stay non-clickable.
+    //
+    // M4.11: the <dt> labels are decoupled from the raw
+    // data-* attribute names. `getAttribute` still queries
+    // the M4.8 DOM contract keys (`data-id` etc.) — those
+    // are NOT renamed — but the rendered <dt> body shows a
+    // fixed human-readable label so the panel reads as
+    // English-language UX instead of leaking the
+    // implementation key.
     out << "<script>\n";
     out << "(function() {\n";
     out << "  var details = document.getElementById(\"details\");\n";
     out << "  if (!details) { return; }\n";
-    out << "  var keys = [\"data-id\", \"data-owner\","
-           " \"data-owner-code\", \"data-name\"];\n";
+    out << "  var fields = [\n";
+    out << "    { attr: \"data-id\",         label: \"Province ID\"   },\n";
+    out << "    { attr: \"data-owner\",      label: \"Owner Index\"   },\n";
+    out << "    { attr: \"data-owner-code\", label: \"Owner Code\"    },\n";
+    out << "    { attr: \"data-name\",       label: \"Province Name\" }\n";
+    out << "  ];\n";
     out << "  function showDetails(el) {\n";
     out << "    while (details.firstChild) {\n";
     out << "      details.removeChild(details.firstChild);\n";
     out << "    }\n";
     out << "    var dl = document.createElement(\"dl\");\n";
-    out << "    for (var i = 0; i < keys.length; i++) {\n";
-    out << "      var k = keys[i];\n";
+    out << "    for (var i = 0; i < fields.length; i++) {\n";
+    out << "      var f = fields[i];\n";
     out << "      var dt = document.createElement(\"dt\");\n";
-    out << "      dt.textContent = k;\n";
+    out << "      dt.textContent = f.label;\n";
     out << "      var dd = document.createElement(\"dd\");\n";
-    out << "      dd.textContent = el.getAttribute(k) || \"\";\n";
+    out << "      dd.textContent = el.getAttribute(f.attr) || \"\";\n";
     out << "      dl.appendChild(dt);\n";
     out << "      dl.appendChild(dd);\n";
     out << "    }\n";
