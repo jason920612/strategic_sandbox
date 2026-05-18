@@ -8,35 +8,106 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  opened at M5.1. M5.1 ships the **EventDefinition
-  schema foundation** only — typed
-  `core::EventDefinition { id_code, name, description,
-  triggers, effects }` + `core::EventTrigger { target,
-  op, value }` (replacing the M0 stub
-  `EventDefinition { EventId id; std::string name; }`),
-  a new `scenario_loader::parse_event_file` per-file
-  parser with target/op allowlists, an optional
-  `events[]` array in the manifest mirroring M4.1's
-  `provinces[]` shape, save format bumped v12 → v13
-  (events array required at save layer with the same
-  allowlist re-checked on reload), `state.events`
-  walked by `diagnostics::compare_states`, and the
-  canonical two-event fixture
-  `data/events/1930_core_events.json` wired into both
-  1930 manifests. **No firing, no evaluator, no
-  effects application, no monthly integration, no new
-  runner CLI flag, no new artefact (still 10), no
-  `events.jsonl` semantic change, no new
-  `PlayerCommandKind`** — M5.1 is loader + validator +
-  store only. See
-  `docs/m5-1-event-definition-schema-foundation.md` for
-  the M5.1 design note, and `docs/milestone-4-result.md`
-  / `docs/milestone-3-result.md` /
-  `docs/milestone-2-result.md` / `docs/milestone-1-result.md`
-  for the M0–M4 exit reports. (`docs/milestone-5-checkpoint.md`
-  is deliberately deferred until M5 has shipped multiple
-  surfaces — premature at M5.1.)
-- Latest shipped sub-milestone: **M5.1 — EventDefinition
+  in progress (at M5.2). M5 has shipped two decoupled
+  surfaces so far: **M5.1** opened M5 with the
+  `EventDefinition` schema foundation (typed
+  `{ id_code, name, description, triggers, effects }` +
+  `EventTrigger { target, op, value }`; save v12 → v13;
+  scenario manifest gains optional `events[]`;
+  `diagnostics::compare_states` walks `state.events`;
+  canonical fixture wired into both 1930 manifests).
+  **M5.2** adds the **trigger evaluator skeleton** — a
+  small read-only API (`event_evaluator::trigger_matches`
+  / `evaluate` / `match_events`) that reads `state.events`
+  and reports which event definitions' triggers all match
+  the current state. AND across `def.triggers`,
+  ANY-entity-satisfies for country.* / interest_group.*
+  targets, supports the M5.1 op allowlist
+  (`lt` / `lte` / `gt` / `gte`). **Still no firing, no
+  history, no effects application, no runner / monthly
+  integration, no `events.jsonl` change, no save bump
+  (still v13), no new artefact (still 10), no new
+  `PlayerCommandKind`** — M5.2 is observation-only. See
+  `docs/m5-1-event-definition-schema-foundation.md` and
+  `docs/m5-2-trigger-evaluator-skeleton.md` for the M5
+  design notes, and `docs/milestone-4-result.md` /
+  `docs/milestone-3-result.md` /
+  `docs/milestone-2-result.md` /
+  `docs/milestone-1-result.md` for the M0–M4 exit
+  reports. (`docs/milestone-5-checkpoint.md` is still
+  deliberately deferred — premature at this stage; M3
+  and M4 opened their checkpoints mid-milestone at M3.7
+  / M4.9.)
+- Latest shipped sub-milestone: **M5.2 — trigger
+  evaluator skeleton.** Second M5 PR. New
+  `leviathan::systems::event_evaluator` module
+  (`include/leviathan/systems/event_evaluator.hpp` +
+  `src/leviathan/systems/event_evaluator.cpp`). Public
+  API: `struct TriggerMatch { std::size_t event_index;
+  std::string event_id_code; }`, `bool
+  trigger_matches(state, EventTrigger)`, `bool
+  evaluate(state, EventDefinition)`,
+  `std::vector<TriggerMatch> match_events(state)`. **All
+  three functions are pure reads** — no GameState
+  mutation, no logging, no event firing, no time / RNG
+  side effects. **Semantics**: per-op numeric compare
+  for the M5.1 allowlist (`lt` / `lte` / `gt` / `gte`);
+  per-target dispatch into the M5.1 allowlist
+  (`country.stability` / `country.legitimacy` /
+  `country.government_authority.bureaucratic_compliance`
+  → `state.countries`; `interest_group.radicalism` /
+  `interest_group.loyalty` → `state.interest_groups`);
+  **ANY-entity-satisfies aggregation** (a country-scoped
+  trigger matches when at least one country satisfies;
+  empty country list evaluates to false — existential
+  quantifier over empty); **AND across `def.triggers`**
+  (every trigger must match; empty triggers vector is
+  vacuously true — unreachable via the M5.1 loader but
+  pinned for hand-built defs). Unknown target / op,
+  non-finite trigger value, non-finite state value all
+  evaluate to **false** (defensive — the M5.1 loader is
+  the gate; the evaluator does not duplicate allowlist
+  messaging). `match_events` walks `state.events` in
+  vector order and returns matches in canonical order.
+  **28 new doctest cases (949 total, 61924 assertions;
+  verified via direct `leviathan_tests.exe` run** per
+  the `feedback_ctest_masks_doctest` rule): per-op on
+  every target; per-target dispatch; ANY-entity edge
+  cases (including empty entity list = false); AND
+  across cross-scope triggers; empty-triggers vacuous
+  truth; unknown target / op / non-finite handling;
+  canonical-event-shape vs canonical-state-shape =
+  zero matches regression (pins the M5.1 fixture
+  no-fire property at the evaluator level); no-mutate
+  regression on countries / IGs / events / logs /
+  applied_commands; evaluator-is-trigger-only (effects
+  vector contents NOT consulted; `match_events` never
+  appends to `state.logs` / `state.applied_commands`).
+  New `docs/m5-2-trigger-evaluator-skeleton.md` design
+  note. **No event firing, no log entry on match, no
+  `events.jsonl` change, no history append, no effects
+  application, no per-actor selection (which
+  country/IG triggered is NOT recorded — that lands
+  with effects-application), no runner integration /
+  monthly integration / auto-evaluation cadence, no
+  save format bump (still v13), no new artefact (still
+  10), no new `RunnerOptions` field / new CLI flag, no
+  new `PlayerCommandKind`, no new state field, no
+  broader trigger ops (`eq` / `ne` / `between` / `in`),
+  no broader trigger targets (factions, budget
+  categories, `active_policies`, `current_date`, RNG),
+  no trigger logical operators (`all_of` / `any_of` /
+  `not` / `for_country:GER` per trigger), no event
+  author tooling, no UI surface (events still absent
+  from `map.html` / `provinces.svg` / any CSV), no
+  balance pass, no changes to the M5.1 schema, no
+  changes to M1/M2/M3/M4 systems, no changes to
+  `scenario_loader` / `save_system` / `diagnostics`
+  (they still own `state.events`; M5.2 only reads it),
+  no `docs/milestone-5-checkpoint.md` (still deferred
+  — premature framing at M5.2).** M5 remains in
+  progress.
+- Previously shipped: **M5.1 — EventDefinition
   trigger/effect schema foundation.** First M5 PR.
   Upgrades the M0 `EventDefinition` stub in place to a
   typed `{ id_code, name, description, triggers[],
