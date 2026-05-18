@@ -1,6 +1,19 @@
 # Milestone 3 Result
 
-**Status: closed.**
+**Status: closed (as an implementation milestone).**
+
+> **Governance note.** This document is the implementation
+> close-out for the shipped M3 interest-group reaction-loop
+> milestone. It is not a claim that the original RFC-090 §M3
+> *multi-country simulation* acceptance scope is fully
+> complete. Original RFC-090 §M3 lists 20–30 country
+> fixtures + AI policy selection + relationship / threat /
+> military values + annual world statistics + a 1930–2000
+> automated test, none of which shipped in the M3.1–M3.9
+> implementation sequence below. Deferred original RFC-090
+> §M3 items are tracked in
+> [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md)
+> §6.1. Companion to issue #105.
 
 M3 set out to make political actors a first-class part of the
 simulation: a typed data layer for interest groups, a small

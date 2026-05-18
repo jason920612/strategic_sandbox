@@ -6,6 +6,24 @@
 
 ## Status
 
+> **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are
+> closed as **implementation milestones**, not as full
+> original RFC-090 / RFC-010 acceptance milestones. M3 and
+> M5 in particular drifted from their RFC-090 task lists:
+> M3 shipped an interest-group reaction loop rather than
+> the 20–30-country multi-country simulation listed in
+> RFC-090 §M3, and M5 shipped an event-engine skeleton
+> rather than the weighted-selection / options /
+> 10-events / followup-chains scope listed in RFC-090 §M5.
+> RFC-010 v0.1 acceptance floors (20 countries / 20
+> policies / 10 events / 6+ factions / AI auto-policy
+> selection / annual statistics CSV) also remain deferred.
+> The full deferred-scope backlog is tracked in
+> [`docs/rfc-090-010-compliance-audit.md`](docs/rfc-090-010-compliance-audit.md);
+> issue #105 is the corresponding audit ticket. Future
+> milestone close-out docs cross-link there rather than
+> re-litigating the gap.
+
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in

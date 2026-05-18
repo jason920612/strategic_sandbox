@@ -24,6 +24,45 @@
 - 主要開發者：你 + AI agents
 - 規格風格：RFC / GDD / TDD / Roadmap 混合
 
+## RFC compliance / milestone drift
+
+RFC-090 remains the roadmap reference, but **implementation
+milestone close-outs have diverged from some original RFC
+milestone scopes**. Closed implementation milestones are
+not automatically full original RFC acceptance.
+
+Specifically:
+
+- **M3 implementation close-out != full original RFC-090
+  M3 multi-country acceptance.** Closed M3 shipped an
+  interest-group reaction loop. RFC-090 §M3 asks for
+  20–30 countries + AI policy selection + relationship /
+  threat / military values + annual world statistics +
+  a full 1930–2000 automated test.
+- **M5 implementation close-out != full original RFC-090
+  M5 event-content / options / followup acceptance.**
+  Closed M5 shipped an event-engine skeleton (schema +
+  evaluator + firer + applicator + composition helper +
+  monthly wiring) with 2 canonical events deliberately
+  tuned not to fire. RFC-090 §M5 asks for weights +
+  options + 10 events + a 10-year event stress test +
+  event-chain followups.
+- **RFC-010 v0.1 acceptance floors remain deferred.**
+  Current main has 3 countries (floor: 20), 10 policies
+  (floor: 20), 2 events (floor: 10), 3 legacy factions
+  + 3 canonical Bureaucracy interest groups (floor: 6+
+  factions / actors across countries), no AI auto-policy
+  selection, no annual statistics CSV.
+
+The canonical reference for the deferred-scope backlog
+is [`../docs/rfc-090-010-compliance-audit.md`](../docs/rfc-090-010-compliance-audit.md).
+The corresponding audit ticket is issue #105.
+
+Going forward, milestone close-out docs must state whether
+they are *implementation milestone* close-outs or *full
+original RFC acceptance* close-outs, and link to the
+compliance-audit doc when the two diverge.
+
 ## 實作進度（與 RFC 對應）
 
 RFC 是設計意圖；實作版本由 milestone PR 推進。RFC 的部分內容已在

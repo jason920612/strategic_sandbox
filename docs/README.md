@@ -14,6 +14,12 @@ Per-milestone design notes and PR description drafts.
   drafts folder is git-ignored on purpose; it's a scratch space for
   composing the next PR body, not a deliverable.
 
+## Governance reference
+
+| File | Covers |
+|------|--------|
+| [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. RFC-010 v0.1 floors (20 countries / 20 policies / 10 events / 6+ factions / AI auto-policy / annual statistics CSV) deferred. **Read this before opening any new milestone work.** Companion to issue #105. |
+
 ## Index of design notes
 
 | File | Sub-milestone | Covers |
@@ -149,6 +155,19 @@ If you're new to the codebase:
    break.
 
 ## What's next
+
+> **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are closed
+> as **implementation milestones**, not as full original
+> RFC-090 / RFC-010 acceptance milestones. M3 and M5 in
+> particular diverged from RFC-090 §M3 / §M5 task lists
+> (multi-country simulation, event content / options /
+> followup chains); RFC-010 v0.1 floors (20 countries / 20
+> policies / 10 events / 6+ factions / AI auto-policy /
+> annual statistics CSV) remain deferred. The full
+> deferred-scope backlog is tracked in
+> [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md);
+> issue #105 is the corresponding audit ticket. New
+> milestone work should read the audit doc first.
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.
