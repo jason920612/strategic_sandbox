@@ -217,8 +217,66 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.15
-  （keyboard focus accessibility skeleton）** 是 M4 viewer
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.16
+  （focus-visible styling skeleton）** 讓 M4.15 的鍵盤
+  focus 看得見。**純 CSS** ── 沒有改 JavaScript，也沒有
+  改 markup 結構（只動 `<style>` block）。M4.6 `<style>`
+  block 多四條規則：
+  `svg circle:focus { outline: none; }`、
+  `svg circle:focus-visible { outline: none; stroke:
+  #1976d2; stroke-width: 4; }`、
+  `svg text:focus { outline: none; }`、
+  `svg text:focus-visible { outline: 2px solid #1976d2;
+  outline-offset: 2px; }`。兩條 bare `:focus { outline:
+  none; }` 是用來壓掉瀏覽器預設的 focus outline，讓
+  M4.16 的樣式能夠勝出；兩條 `:focus-visible` 才是真正
+  的視覺指示。**選 `:focus-visible` 而不是 bare
+  `:focus`** 是關鍵 ── `:focus-visible` 只在「瀏覽器
+  認為這個 focus 應該被視覺化」時觸發（典型情況：鍵盤
+  Tab）；滑鼠點擊獲得的 focus **不會** 觸發，所以
+  滑鼠點擊只會顯示 M4.12 的 `.selected` 黑色 stroke，
+  鍵盤 Tab 只會顯示 M4.16 的 `#1976d2` 藍色 ring，
+  鍵盤 Enter/Space 觸發 activate 則兩者同時顯示
+  （正確：「這個被選中了」+「這個目前還有 focus」）。
+  顏色 `#1976d2`（Material Blue 700）刻意挑來與 M4.3
+  owner palette 以及 M4.12 `.selected` 黑色 stroke
+  做區隔。circle 用 stroke 做 ring（沿形狀外緣）；
+  text 用 CSS `outline` + `outline-offset` 做矩形 ring。
+  M4.10 的 XSS-safe DOM API、no-network discipline、
+  「`map.html` 有且只有一段 inline `<script>`；
+  `provinces.svg` 完全沒有 script」這條非對稱 invariant、
+  M4.12 transient `.selected` 機制、M4.13 五個 data-*
+  DOM contract、M4.15 `tabindex` + keydown handler 全部
+  沿用，完全 additive。**仍然不做 ARIA 大改** ──
+  `role=` / `aria-label=` / `aria-selected=` /
+  `aria-current=` / `aria-pressed=` 全都不出現
+  （tests 釘住這點）。這留給未來專門的 A11Y
+  sub-milestone。**M4 仍在 in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.16 只是再多一個
+  skeleton sub-milestone，不是 exit。`provinces.svg`
+  bytes 與 M4.15 完全相同 ── focus CSS 只在 HTML
+  wrapper 裡；`map.html` bytes 有變（多了四條 CSS rule）。
+  **Artefact 數量不變（仍 10）；save 格式不變（仍 v12）**；
+  M1.17 / M2.22 / M3.7 byte-identical determinism contract
+  仍 by construction 通過。5 個新 doctest cases（共 871）。
+  **M4 in progress.**
+  **M4.16 不做** state mutation / commands / AI / events /
+  selection 持久化 / tooltip / hover / animation /
+  transition / `:focus-visible` polyfill / save schema
+  bump / 新 state field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / rename
+  M4.8 / M4.13 data-* key / 第二個 `<script>` /
+  `<script src=>` / `<script type=>` / `<link>` / 外部
+  CSS / font / `<iframe>` / `<img>` / `fetch` /
+  `XMLHttpRequest` / `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` / `navigator` /
+  `innerHTML` / `outerHTML` / `document.write` / `eval`
+  / `Function` / inline event attribute / per-element
+  inline `style="..."` / `<meta name="viewport">` / 鄰接
+  edge / terrain / overlay / runner CLI flag / 動
+  `provinces.svg` bytes / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.15（keyboard focus accessibility skeleton）** 是 M4 viewer
   的**第一個鍵盤輸入面**。`render_svg_root` 現在會在每個
   `<circle>` 與 `<text>` 上 emit `tabindex="0"`，所以
   province marker 進入正常 tab order，standalone

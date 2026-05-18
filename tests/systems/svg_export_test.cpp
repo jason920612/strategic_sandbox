@@ -1403,3 +1403,104 @@ TEST_CASE("render_provinces (standalone SVG) DOES carry tabindex (same SVG body 
     CHECK(svg_text.find("addEventListener") == std::string::npos);
     CHECK(svg_text.find("keydown")        == std::string::npos);
 }
+
+// =====================================================================
+// M4.16 — focus-visible styling skeleton
+// =====================================================================
+// M4.16 layers a focus-visible CSS ring on top of M4.15's
+// keyboard-focus surface so users can SEE which province
+// marker is currently focused. Two ring rules + two paired
+// bare-:focus rules that neutralise the browser's default
+// outline:
+//
+//   svg circle:focus { outline: none; }
+//   svg circle:focus-visible {
+//     outline: none; stroke: #1976d2; stroke-width: 4;
+//   }
+//   svg text:focus { outline: none; }
+//   svg text:focus-visible {
+//     outline: 2px solid #1976d2; outline-offset: 2px;
+//   }
+//
+// :focus-visible (not bare :focus) means the ring shows for
+// keyboard-triggered focus only, not for mouse clicks —
+// that keeps the M4.12 .selected highlight (set by the
+// click/activate handler) visually distinct from the M4.16
+// keyboard-focus indicator.
+
+TEST_CASE("render_map_html: M4.16 <style> block carries the four focus-related rules") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // The two bare-:focus suppressors (neutralise default ring).
+    CHECK(html.find("svg circle:focus { outline: none; }") != std::string::npos);
+    CHECK(html.find("svg text:focus { outline: none; }")   != std::string::npos);
+
+    // The two :focus-visible rings.
+    CHECK(html.find("svg circle:focus-visible") != std::string::npos);
+    CHECK(html.find("stroke: #1976d2; stroke-width: 4;") != std::string::npos);
+    CHECK(html.find("svg text:focus-visible") != std::string::npos);
+    CHECK(html.find("outline: 2px solid #1976d2;") != std::string::npos);
+    CHECK(html.find("outline-offset: 2px;") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.16 uses :focus-visible (NOT bare :focus) for the rings") {
+    // The behavioural distinction matters: bare :focus would
+    // make the ring appear after a mouse click too, which
+    // would collide with the M4.12 .selected stroke. The
+    // :focus-visible rules MUST be present; the bare :focus
+    // rules may only appear as the no-op `outline: none;`
+    // suppressors. Pin both directions.
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    CHECK(html.find(":focus-visible") != std::string::npos);
+    // The ring colour / weight literals must NOT also appear
+    // attached to a bare `:focus {` rule (which would mean
+    // the click-state-via-:focus regression).
+    CHECK(html.find("svg circle:focus { stroke") == std::string::npos);
+    CHECK(html.find("svg text:focus { outline: 2px") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.16 focus ring colour does NOT collide with M4.12 .selected stroke") {
+    // M4.12 .selected uses #000000; M4.16 focus uses #1976d2.
+    // The two states must remain visually separable so a
+    // user can tell "I clicked this" from "I tabbed here".
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // .selected stroke is still black (M4.12 contract intact).
+    CHECK(html.find("svg circle.selected { stroke: #000000;") != std::string::npos);
+    // Focus stroke is the M4.16 blue.
+    CHECK(html.find("stroke: #1976d2;") != std::string::npos);
+    // The two literals are distinct.
+    CHECK(std::string("#000000") != std::string("#1976d2"));
+}
+
+TEST_CASE("render_map_html: M4.16 carries NO ARIA polish (explicit non-goal of this skeleton)") {
+    // Same explicit non-goal as M4.15. The focus ring is
+    // pure CSS; no ARIA escape is allowed to creep in.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+
+    CHECK(html.find("role=")          == std::string::npos);
+    CHECK(html.find("aria-label=")    == std::string::npos);
+    CHECK(html.find("aria-selected=") == std::string::npos);
+    CHECK(html.find("aria-current=")  == std::string::npos);
+    CHECK(html.find("aria-pressed=")  == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.16 focus-visible rules") {
+    // The focus CSS lives in render_map_html only. The
+    // standalone SVG path carries none of it.
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    CHECK(svg_text.find(":focus-visible") == std::string::npos);
+    CHECK(svg_text.find(":focus")         == std::string::npos);
+    CHECK(svg_text.find("#1976d2")        == std::string::npos);
+    CHECK(svg_text.find("outline-offset") == std::string::npos);
+}

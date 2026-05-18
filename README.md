@@ -14,7 +14,68 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.15 — keyboard focus
+- Latest shipped sub-milestone: **M4.16 — focus-visible
+  styling skeleton.** Makes M4.15's keyboard focus
+  VISIBLE. Pure CSS — no JavaScript change, no markup
+  change beyond the `<style>` block. Four new CSS rules
+  in the M4.6 `<style>` block:
+  `svg circle:focus { outline: none; }` +
+  `svg circle:focus-visible { outline: none; stroke:
+  #1976d2; stroke-width: 4; }` +
+  `svg text:focus { outline: none; }` +
+  `svg text:focus-visible { outline: 2px solid #1976d2;
+  outline-offset: 2px; }`. The bare-`:focus` rules
+  suppress the browser's default focus outline so the
+  `:focus-visible` styling wins. Uses `:focus-visible`
+  (NOT bare `:focus`) so the ring appears for
+  keyboard-triggered focus only and NOT for mouse
+  clicks — that keeps the M4.12 `.selected` highlight
+  (set by click/activate, black stroke) visually
+  distinct from the M4.16 keyboard-focus indicator
+  (blue stroke / blue outline). Colour `#1976d2`
+  chosen to contrast with the M4.3 owner palette and
+  with the M4.12 `.selected` `#000000` stroke. Circle
+  uses stroke-based ring (matches the shape outline);
+  text uses CSS outline + outline-offset (rectangular
+  ring around the text bounding box). M4.10's XSS-safe
+  DOM API, no-network discipline, asymmetric
+  one-inline-script invariant, M4.12 `.selected`
+  surface, M4.13 five-attr DOM contract, M4.15
+  `tabindex="0"` + keydown handler all carry over
+  unchanged (additive only). **Explicit non-goal: still
+  NO ARIA polish** — no `role=`, `aria-label=`,
+  `aria-selected=`, etc. That lands in a future
+  dedicated A11Y sub-milestone. **M4 remains in
+  progress** — no `docs/milestone-4-result.md`; M4.16
+  is one more skeleton sub-milestone, not an exit.
+  Artefact set unchanged (still 10). Save format
+  unchanged (still v12). `provinces.svg` bytes
+  UNCHANGED from M4.15 — the focus CSS lives entirely
+  in the HTML wrapper's `<style>` block. `map.html`
+  bytes did change (four new CSS rules). 5 new doctest
+  cases (871 total). **No state mutation, no commands,
+  no AI, no events, no selection persistence, no
+  tooltip, no hover, no animation / transition on the
+  ring, no `:focus-visible` polyfill (modern browsers
+  only; old browsers fall back to no ring with no
+  regression), no save schema bump, no new state field
+  / artefact / fixture / `InterestGroupKind` /
+  `PlayerCommandKind`, no rename of the M4.8 / M4.13
+  data-* keys, no second `<script>`, no `<script
+  src=>`, no `<script type=>`, no `<link>`, no
+  external CSS / font / `<iframe>` / `<img>`, no
+  `fetch` / XHR / storage / history / navigation APIs,
+  no `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function`, no inline event attributes, no
+  per-element inline `style="..."`, no `<meta
+  name="viewport">`, no CSS animations / transitions
+  / media queries / `@import` / `@font-face`, no
+  neighbour / adjacency edges, no terrain / resources
+  / population overlays, no runner CLI flag, no change
+  to `provinces.svg` bytes, no M4 close-out, no
+  `docs/milestone-4-result.md`, no "M4 closed"
+  wording.**
+- Previously shipped: **M4.15 — keyboard focus
   accessibility skeleton.** First keyboard-input surface
   for the M4 viewer. Every `<circle>` and every `<text>`
   in the SVG body now carries `tabindex="0"` (rendered in
@@ -1018,7 +1079,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.15): **M4.16** — open.
+- Next sub-milestone candidate (post-M4.16): **M4.17** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1035,21 +1096,24 @@
   integration assertion; M4.15 added `tabindex="0"` on
   every `<circle>` + `<text>` and a keydown
   Enter/Space activation listener (keyboard-focus
-  skeleton; no ARIA polish). Natural next steps include
-  (a) hover state / tooltips reusing the same XSS-safe
-  DOM-API discipline, (b) full ARIA polish on the
-  clickable + focusable markers (role, aria-label,
-  aria-selected, focus-visible CSS), (c) `.selected`
-  persistence across reload (URL fragment read on load,
-  not write) without state mutation, (d) richer node
-  fields (neighbour adjacency, terrain, population) once
-  a renderer needs them, (e) `<meta name="viewport">` +
+  skeleton; no ARIA polish); M4.16 added the
+  `:focus-visible` CSS rings so M4.15's keyboard focus
+  is visible (blue ring distinct from M4.12 black
+  `.selected` stroke). Natural next steps include
+  (a) full ARIA polish on the clickable + focusable
+  markers (`role=`, `aria-label=`, `aria-selected=`),
+  (b) hover state / tooltips reusing the same XSS-safe
+  DOM-API discipline, (c) `.selected` persistence
+  across reload (URL fragment read on load, not write)
+  without state mutation, (d) richer node fields
+  (neighbour adjacency, terrain, population) once a
+  renderer needs them, (e) `<meta name="viewport">` +
   media queries for responsive sizing. None committed;
   reviewer chooses.
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1080,7 +1144,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 shipped. Sixty-two sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 shipped. Sixty-three sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1227,6 +1291,58 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.16 focus-visible styling skeleton — makes M4.15's
+keyboard focus VISIBLE. Pure CSS — no JavaScript change,
+no markup change beyond the `<style>` block. Four new CSS
+rules in the M4.6 `<style>` block:
+`svg circle:focus { outline: none; }` +
+`svg circle:focus-visible { outline: none; stroke:
+#1976d2; stroke-width: 4; }` +
+`svg text:focus { outline: none; }` +
+`svg text:focus-visible { outline: 2px solid #1976d2;
+outline-offset: 2px; }`. The bare-`:focus` rules
+suppress the browser's default focus outline; the
+`:focus-visible` rings provide the M4.16 keyboard-focus
+styling. Uses `:focus-visible` (NOT bare `:focus`) so
+the ring appears for keyboard-triggered focus only —
+mouse clicks paint only the M4.12 `.selected` black
+stroke, keyboard Tab paints only the M4.16 `#1976d2`
+ring, keyboard activate (Enter/Space) paints both
+(correct: "this is selected" + "this is still focused").
+Colour `#1976d2` chosen to contrast with the M4.3
+owner palette and the M4.12 `#000000` `.selected`
+stroke. Circle uses stroke-based ring (matches shape
+outline); text uses CSS outline + outline-offset
+(rectangular ring around bounding box). M4.10's
+XSS-safe DOM API, no-network discipline, asymmetric
+one-inline-script invariant, M4.12 `.selected`,
+M4.13 five-attr DOM contract, M4.15 `tabindex` +
+keydown handler all carry over unchanged. **Still NO
+ARIA polish** — that lands in a future dedicated A11Y
+sub-milestone. **M4 remains in progress.** **Artefact
+set unchanged (still 10); save format unchanged (still
+v12);** M1.17 / M2.22 / M3.7 byte-identical determinism
+contracts continue to pass. `provinces.svg` bytes
+UNCHANGED from M4.15 (focus CSS is HTML-only);
+`map.html` bytes did change (four new CSS rules). 5
+new doctest cases (871 total). **No state mutation, no
+commands, no AI, no events, no selection persistence,
+no tooltip, no hover, no animation / transition, no
+`:focus-visible` polyfill, no save schema bump, no new
+state field / artefact / fixture / `InterestGroupKind`
+/ `PlayerCommandKind`, no rename of the M4.8 / M4.13
+data-* keys, no second `<script>`, no `<script src=>`
+/ `<script type=>`, no `<link>`, no external CSS /
+font / `<iframe>` / `<img>`, no `fetch` / XHR /
+storage / history / navigation APIs, no `innerHTML` /
+`outerHTML` / `document.write` / `eval` / `Function`,
+no inline event attributes, no per-element inline
+`style="..."`, no `<meta name="viewport">`, no CSS
+animations / transitions / media queries / `@import`
+/ `@font-face`, no adjacency / terrain / overlays, no
+runner CLI flag, no change to `provinces.svg` bytes,
+no M4 close-out, no `docs/milestone-4-result.md`, no
+"M4 closed" wording.**;
 **M4.15 keyboard focus accessibility skeleton — first
 keyboard-input surface for the M4 viewer. Every `<circle>`
 and every `<text>` in the SVG body now carries

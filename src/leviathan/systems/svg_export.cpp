@@ -319,6 +319,25 @@ std::string render_map_html(const core::GameState& state) {
     out << "  svg circle.selected"
            " { stroke: #000000; stroke-width: 3; }\n";
     out << "  svg text.selected { font-weight: bold; }\n";
+    // M4.16: focus-visible ring so M4.15 keyboard users can
+    // see which province marker is currently focused. Uses
+    // `:focus-visible` (NOT `:focus`) so mouse-click focus
+    // does NOT trigger the ring — that keeps the M4.12
+    // .selected highlight visually distinct from the
+    // M4.16 keyboard-focus indicator. Blue chosen to
+    // contrast with the M4.12 black `.selected` stroke
+    // and the M4.3 owner palette (none of which use blue
+    // outside slot 0's steel blue, which is a different
+    // shade). Circle uses stroke-based ring; <text> uses
+    // CSS outline (SVG <text> nodes accept outline as a
+    // text-bounding-box ring in modern browsers).
+    out << "  svg circle:focus { outline: none; }\n";
+    out << "  svg circle:focus-visible"
+           " { outline: none; stroke: #1976d2; stroke-width: 4; }\n";
+    out << "  svg text:focus { outline: none; }\n";
+    out << "  svg text:focus-visible"
+           " { outline: 2px solid #1976d2;"
+           " outline-offset: 2px; }\n";
     out << "  </style>\n";
     out << "</head>\n";
     out << "<body>\n";

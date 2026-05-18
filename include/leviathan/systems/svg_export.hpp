@@ -74,14 +74,29 @@
 // selector keeps skipping them. NO ARIA polish (no
 // `role=` / `aria-label=` / `aria-selected=` /
 // `aria-current=`) — those are deferred to a future
-// dedicated A11Y sub-milestone. No new state field, no
-// new artefact, no save-schema bump. Future M4
+// dedicated A11Y sub-milestone. M4.16 (this revision)
+// makes M4.15's keyboard focus VISIBLE. Two new CSS
+// rules in the M4.6 `<style>` block use the
+// `:focus-visible` pseudo-class (NOT bare `:focus`) so
+// the highlight appears for keyboard-triggered focus
+// only and NOT for mouse clicks — that keeps the
+// M4.12 `.selected` highlight (set by activate())
+// visually distinct from the M4.16 keyboard-focus
+// ring. The circle uses a blue stroke ring; the text
+// uses a blue CSS `outline` with `outline-offset`. The
+// colour (#1976d2) is chosen to contrast with the M4.3
+// owner palette and with the M4.12 black `.selected`
+// stroke so the two states don't collide visually.
+// Two paired bare-`:focus` rules with `outline: none`
+// neutralise the browser's default focus outline so
+// the M4.16 styling wins. No state field, no new
+// artefact, no save-schema bump. Future M4
 // sub-milestones (hover state, tooltips, persistent
 // selection state, full ARIA polish, neighbour-
 // adjacency lines, terrain, etc.) will extend the
 // renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -226,6 +241,14 @@
 //         `svg circle.selected
 //            { stroke: #000000; stroke-width: 3; }`       (M4.12)
 //         `svg text.selected { font-weight: bold; }`      (M4.12)
+//         `svg circle:focus { outline: none; }`           (M4.16)
+//         `svg circle:focus-visible
+//            { outline: none; stroke: #1976d2;
+//              stroke-width: 4; }`                        (M4.16)
+//         `svg text:focus { outline: none; }`             (M4.16)
+//         `svg text:focus-visible
+//            { outline: 2px solid #1976d2;
+//              outline-offset: 2px; }`                    (M4.16)
 //       - `<body>` contains, in order:
 //           1. The **exact same** `<svg>...</svg>` body as
 //              `provinces.svg`, but WITHOUT the XML prolog
