@@ -251,9 +251,13 @@ struct PolicyData {
 // `op` is a comparison operator from the allowlist {lt, lte, gt,
 // gte}. `value` must be finite.
 //
-// M5.1 stores triggers as data only; no trigger evaluator exists
-// yet. Multiple triggers on the same definition mean AND in the
-// future evaluator; M5.1 only validates / stores them.
+// M5.1 introduced the trigger schema (data only). M5.2 added
+// the trigger evaluator with AND semantics across a definition's
+// triggers. M5.3 enriched matches with actor binding (which
+// country / interest group satisfied each trigger). M5.4 added
+// the event_history data layer for fired-event records. Auto-fire
+// / effects application / runner integration / events.jsonl
+// integration are still deferred to a future M5.x.
 struct EventTrigger {
     std::string target;
     std::string op;

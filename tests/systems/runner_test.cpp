@@ -816,7 +816,7 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v12 - M4.1 fleshed out root-level provinces.
+    // Save schema is now v14 - M5.4 added root-level event_history.
     CHECK(save.find("\"save_version\": 14") != std::string::npos);
 }
 
@@ -3340,7 +3340,9 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
     CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
     CHECK_FALSE(fs::exists(td.path / "event_log.csv"));
 
-    // save.json carries the v13 schema bump + 2 canonical events.
+    // save.json carries the current v14 schema, the 2 canonical
+    // event definitions, and an empty event_history in M5.4 (no
+    // auto-fire).
     const std::string save = read_file(td.path / "save.json");
     CHECK(save.find("\"save_version\": 14") != std::string::npos);
     CHECK(save.find("\"id_code\": \"low_stability_unrest\"")
