@@ -217,8 +217,74 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.12
-  （clickable UI selected-state CSS skeleton）** 在 M4.10
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.13
+  （details panel owner-name polish）** 把 M4.8 的 identity
+  surface 再加寬一個屬性，並把 M4.11 details panel 的
+  `fields` 陣列再加一列。`render_svg_root` emit 出來的每個
+  `<circle>` 與每個 `<text>` 現在都會多帶
+  `data-owner-name`，內容從
+  `state.countries[owner.value()].name` 解析；當 owner
+  index 無效或越界時 emit 空字串（沿用 M4.8
+  `data-owner-code` 的防禦性 fallback）。同一個 bounds
+  check 同時覆蓋 `data-owner-code` 與 `data-owner-name`
+  兩個查詢，這兩個值的「validity 認知」絕不會發散。新
+  attribute 值透過 M4.2 `xml_attr_escape` 走完整 XML
+  attribute escape（country name 含 `& < > " '` 時不會
+  破壞屬性語法）。M4.11 click handler 內的 `fields`
+  陣列從四列長到五列，新增
+  `{ attr: "data-owner-name", label: "Owner Name" }`，
+  details panel 因此 render 出 5 對 dt/dd（`Province
+  ID` / `Owner Index` / `Owner Code` / `Owner Name` /
+  `Province Name`）。**save 格式仍是 v12** ── 
+  `data-owner-name` 是 render 時從 `state.countries`
+  **衍生** 出來的，不是 `ProvinceNode` 上的新欄位，所以
+  save schema 完全不變。被拒絕的替代路徑是「click
+  handler DOM-walk 進 legend，從 `<li>` body 撈出
+  country name」── 那會：(1) 把 details panel 與
+  legend DOM 結構耦合在一起；(2) 需要解析 `"<id_code>
+  &mdash; <name>"` 字串。新增 `data-owner-name` 與
+  M4.8 同樣 additive，保證未來 hover / tooltip /
+  clickable-UI 子里程碑可以用一行
+  `getAttribute("data-owner-name")` 拿到國家名稱，
+  future DOM surface 保持一致。M4.10 的 XSS-safe DOM
+  API（`createElement` + `textContent` only；沒有
+  `innerHTML` / `outerHTML` / `document.write` /
+  `eval` / `Function`）、no-network discipline、「`map.html`
+  有且只有一段 inline `<script>`；`provinces.svg` 完全沒有
+  script」這條非對稱 invariant、以及 M4.12 的 transient
+  `.selected` 機制全部沿用；M4.8 既有的四個 data-* key
+  **沒有** rename（只 additive 加第五個）。**M4 仍在
+  in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.13 只是再多一個
+  additive 的 surface 擴張，不是 exit。`provinces.svg`
+  bytes 有變（每個 `<circle>` + `<text>` 多出一個屬性
+  ── additive only；沒有刪除舊屬性，也沒有像素位移）；
+  `map.html` bytes 有變（同一份 SVG body + 新的第五個
+  `fields` 條目）。**Artefact 數量不變（仍 10）；save
+  格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 仍 by construction
+  通過。8 個新 doctest cases（共 856）。
+  **M4 in progress.**
+  **M4.13 不做** 新增 `ProvinceNode` 欄位 / save schema
+  bump / 新 state field / 新 artefact / 新 fixture / 新
+  `InterestGroupKind` / `PlayerCommandKind` / rename
+  M4.8 的 data-* DOM contract key / state mutation /
+  commands / AI / 點擊 emit event / selection persistence
+  / 多選 / 右鍵 / hover / tooltip / keyboard navigation
+  / focus ring / `aria-*` polish / animation / 第二個
+  `<script>` / `<script src=>` / `<script type=>` /
+  `<link>` / 外部 CSS / font / `<iframe>` / `<img>` /
+  `fetch` / `XMLHttpRequest` / `localStorage` /
+  `sessionStorage` / `history.pushState` /
+  `window.location` / `navigator` / `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function` /
+  inline event attribute / per-element inline
+  `style="..."` / `<meta name="viewport">` / CSS
+  animation / transition / media query / `@import` /
+  `@font-face` / 鄰接 edge / terrain / overlay /
+  runner CLI flag / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.12（clickable UI selected-state CSS skeleton）** 在 M4.10
   click handler / M4.11 details labels 上再疊一層 transient
   selection highlight。M4.6 `<style>` block 新增兩條 CSS：
   `svg circle.selected { stroke: #000000; stroke-width:

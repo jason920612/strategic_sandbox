@@ -119,11 +119,22 @@ std::string render_svg_root(const core::GameState& state) {
         // entries at load time, so this only matters for
         // hand-built states. Mirrors the defensive fallback
         // strategy used by `color_for_owner`.
+        //
+        // M4.13: same lookup yields the owning country's
+        // human-readable name (`state.countries[owner].name`),
+        // emitted as the new `data-owner-name` attribute on
+        // both <circle> and <text>. Both M4.8 + M4.13 reads
+        // share the single bounds check so they cannot
+        // disagree about which entry is valid.
         std::string owner_code;
+        std::string owner_name;
         const auto owner_v = p.owner.value();
         if (owner_v >= 0 &&
             static_cast<std::size_t>(owner_v) < state.countries.size()) {
-            owner_code = state.countries[static_cast<std::size_t>(owner_v)].id_code;
+            const auto& owning =
+                state.countries[static_cast<std::size_t>(owner_v)];
+            owner_code = owning.id_code;
+            owner_name = owning.name;
         }
         const std::string id_attr =
             xml_attr_escape(p.id_code);
@@ -131,6 +142,8 @@ std::string render_svg_root(const core::GameState& state) {
             xml_attr_escape(p.name);
         const std::string owner_code_attr =
             xml_attr_escape(owner_code);
+        const std::string owner_name_attr =
+            xml_attr_escape(owner_name);
         const std::string owner_int_attr =
             std::to_string(owner_v);
 
@@ -142,6 +155,7 @@ std::string render_svg_root(const core::GameState& state) {
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
+               " data-owner-name=\"" << owner_name_attr << "\""
                " data-name=\"" << name_attr << "\""
                "/>\n";
         out << "  <text"
@@ -151,6 +165,7 @@ std::string render_svg_root(const core::GameState& state) {
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
+               " data-owner-name=\"" << owner_name_attr << "\""
                " data-name=\"" << name_attr << "\""
                ">" << xml_text_escape(p.name) << "</text>\n";
     }
@@ -365,6 +380,7 @@ std::string render_map_html(const core::GameState& state) {
     out << "    { attr: \"data-id\",         label: \"Province ID\"   },\n";
     out << "    { attr: \"data-owner\",      label: \"Owner Index\"   },\n";
     out << "    { attr: \"data-owner-code\", label: \"Owner Code\"    },\n";
+    out << "    { attr: \"data-owner-name\", label: \"Owner Name\"    },\n";
     out << "    { attr: \"data-name\",       label: \"Province Name\" }\n";
     out << "  ];\n";
     out << "  var nodes = document.querySelectorAll(\n";

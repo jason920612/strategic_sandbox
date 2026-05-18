@@ -3181,6 +3181,7 @@ TEST_CASE("run: canonical scenario carries M4.8 data-* attrs on both provinces.s
 
     // Canonical fixtures: berlin owned by GER (index 0),
     // paris owned by FRA (index 1), tokyo owned by JPN (index 2).
+    // M4.13 added data-owner-name (Germany / France / Japan).
     for (const std::string& body : {svg, html}) {
         CHECK(body.find("data-id=\"berlin\"")           != std::string::npos);
         CHECK(body.find("data-id=\"paris\"")            != std::string::npos);
@@ -3188,6 +3189,9 @@ TEST_CASE("run: canonical scenario carries M4.8 data-* attrs on both provinces.s
         CHECK(body.find("data-owner-code=\"GER\"")      != std::string::npos);
         CHECK(body.find("data-owner-code=\"FRA\"")      != std::string::npos);
         CHECK(body.find("data-owner-code=\"JPN\"")      != std::string::npos);
+        CHECK(body.find("data-owner-name=\"Germany\"")  != std::string::npos);
+        CHECK(body.find("data-owner-name=\"France\"")   != std::string::npos);
+        CHECK(body.find("data-owner-name=\"Japan\"")    != std::string::npos);
         CHECK(body.find("data-name=\"Berlin\"")         != std::string::npos);
         CHECK(body.find("data-name=\"Paris\"")          != std::string::npos);
         CHECK(body.find("data-name=\"Tokyo\"")          != std::string::npos);

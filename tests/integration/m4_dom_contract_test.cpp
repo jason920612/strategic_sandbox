@@ -22,10 +22,13 @@
 //
 //   A. Uniform identity surface across both artefacts.
 //      For every canonical province, both `<circle>` and
-//      `<text>` carry the same four `data-*` attributes
+//      `<text>` carry the same `data-*` attributes
 //      (`data-id`, `data-owner`, `data-owner-code`,
-//      `data-name`), and the same attribute values appear in
-//      `provinces.svg` and in `map.html`.
+//      `data-owner-name` (M4.13), `data-name`), and the
+//      same attribute values appear in `provinces.svg` and
+//      in `map.html`. The set was four at M4.8 and grew to
+//      five at M4.13 (`data-owner-name` derived from
+//      `state.countries[owner].name`).
 //
 //   B. Legend rows correspond 1:1 with `state.countries`.
 //      `map.html` carries exactly one `<li data-owner="N">`
@@ -102,18 +105,19 @@ const char* kCanonicalScenario =
 
 // Canonical fixture facts (pinned by the M3.8 fixture +
 // M4.1 fixture). Three nodes, three countries, owner index
-// matches country vector order.
+// matches country vector order. owner_name added in M4.13.
 struct CanonicalProvince {
-    const char* id;     // ProvinceNode::id_code
-    const char* name;   // ProvinceNode::name
-    int         owner;  // CountryId index
+    const char* id;          // ProvinceNode::id_code
+    const char* name;        // ProvinceNode::name
+    int         owner;       // CountryId index
     const char* owner_code;  // owning country's id_code
+    const char* owner_name;  // owning country's name (M4.13)
 };
 
 constexpr CanonicalProvince kCanonicalProvinces[] = {
-    {"berlin", "Berlin", 0, "GER"},
-    {"paris",  "Paris",  1, "FRA"},
-    {"tokyo",  "Tokyo",  2, "JPN"},
+    {"berlin", "Berlin", 0, "GER", "Germany"},
+    {"paris",  "Paris",  1, "FRA", "France"},
+    {"tokyo",  "Tokyo",  2, "JPN", "Japan"},
 };
 
 }  // namespace
@@ -123,7 +127,7 @@ constexpr CanonicalProvince kCanonicalProvinces[] = {
 // =====================================================================
 // A. Uniform identity surface across both artefacts
 // =====================================================================
-TEST_CASE("M4 DOM contract: every canonical province surfaces all four data-* attrs on <circle> AND <text> in both provinces.svg AND map.html") {
+TEST_CASE("M4 DOM contract: every canonical province surfaces all five data-* attrs on <circle> AND <text> in both provinces.svg AND map.html") {
     TempDir td("leviathan_m4_dom_identity");
     rn::RunnerOptions opts;
     opts.config_path   = kCanonicalConfig;
@@ -147,12 +151,15 @@ TEST_CASE("M4 DOM contract: every canonical province surfaces all four data-* at
                 std::to_string(p.owner) + "\"";
             const std::string owner_code_attr =
                 std::string("data-owner-code=\"") + p.owner_code + "\"";
+            const std::string owner_name_attr =
+                std::string("data-owner-name=\"") + p.owner_name + "\"";
             const std::string name_attr =
                 std::string("data-name=\"") + p.name + "\"";
 
-            // M4.8: each of the four data-* attribute substrings
-            // must appear at least twice — once on <circle>,
-            // once on <text>.
+            // M4.8 widened the identity surface to four data-*
+            // attributes; M4.13 widens it again to five. Each
+            // attribute substring must appear at least twice —
+            // once on <circle>, once on <text>.
             auto count = [&](const std::string& needle) {
                 std::size_t c = 0;
                 std::size_t pos = 0;
@@ -166,6 +173,7 @@ TEST_CASE("M4 DOM contract: every canonical province surfaces all four data-* at
             CHECK(count(id_attr)         >= 2u);
             CHECK(count(owner_attr)      >= 2u);
             CHECK(count(owner_code_attr) >= 2u);
+            CHECK(count(owner_name_attr) >= 2u);
             CHECK(count(name_attr)       >= 2u);
         }
     };

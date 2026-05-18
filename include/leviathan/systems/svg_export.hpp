@@ -47,13 +47,23 @@
 // data-id. Selection is **purely DOM-level**: never
 // written into `GameState`, never persisted across
 // reloads, no `localStorage` / `sessionStorage` / cookie /
-// URL fragment. No state mutation, no new artefact, no
+// URL fragment. M4.13 (this revision) widens the M4.8
+// identity surface by one attribute: every `<circle>`
+// and every `<text>` now also carries `data-owner-name`,
+// resolved from `state.countries[owner.value()].name`
+// (or `""` when the owner is invalid — same defensive
+// fallback as `data-owner-code`). The M4.11 details
+// panel's fields array grows from four entries to five
+// — the new row renders as `Owner Name`. No new field
+// on `ProvinceNode`; `data-owner-name` is derived from
+// `state.countries` at render time, so the save format
+// stays v12. No state mutation, no new artefact, no
 // save schema bump, no DOM-contract rename. Future M4
 // sub-milestones (hover state, tooltips, persistent
 // selection state, neighbour-adjacency lines, terrain,
 // etc.) will extend the renderer further.
 //
-// What M4.10 / M4.11 / M4.12 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -103,16 +113,16 @@
 //   * No new save-format field (the renderer reads existing
 //     `state.provinces` + `state.countries`; save format
 //     stays v12).
-//   * `provinces.svg` bytes DID change at M4.8 — the new
-//     `data-owner-code` / `data-name` attributes appear on
-//     every `<circle>` and the four data-* attributes appear
-//     on every `<text>`. This is the first M4.x sub-milestone
-//     since M4.4 that deliberately edits the standalone SVG
-//     body. The change is **additive only** (no removed
+//   * `provinces.svg` bytes DID change at M4.8 (added
+//     `data-owner-code` / `data-name` to every `<circle>`
+//     and the four data-* attributes to every `<text>`)
+//     and again at M4.13 (added `data-owner-name` to both).
+//     Each such change is **additive only** (no removed
 //     attributes, no rendered-pixel movement); SVG-to-PNG
 //     pipelines and vector tools see identical visuals.
-//     M4.5 / M4.6 / M4.7's "no change to provinces.svg"
-//     guarantee no longer applies; the byte-identical
+//     M4.5 / M4.6 / M4.7 / M4.10 / M4.11 / M4.12's "no
+//     change to provinces.svg" guarantee resumes between
+//     each additive widening; the byte-identical
 //     determinism contract (same state → same bytes) is
 //     unchanged.
 //   * No font-family / font-size / fill on `<text>` elements
@@ -128,27 +138,35 @@
 //       - For each ProvinceNode, two paired elements emitted
 //         in `state.provinces` order:
 //           1. `<circle cx=... cy=... r="8" fill=... data-id=...
-//              data-owner=... data-owner-code=... data-name=.../>`
-//              (M4.2 + M4.3 + M4.8 shape).
+//              data-owner=... data-owner-code=...
+//              data-owner-name=... data-name=.../>`
+//              (M4.2 + M4.3 + M4.8 + M4.13 shape).
 //           2. `<text x=... y=... text-anchor="middle"
 //              data-id=... data-owner=... data-owner-code=...
-//              data-name=...>NAME</text>` with x = cx, y =
+//              data-owner-name=... data-name=...
+//              >NAME</text>` with x = cx, y =
 //              cy + kLabelYOffset, and NAME the XML-text-
-//              escaped `ProvinceNode::name` (M4.4 + M4.8
-//              shape).
-//         M4.8 widens the identity surface uniformly: both
-//         `<circle>` and `<text>` carry the same four
+//              escaped `ProvinceNode::name` (M4.4 + M4.8 +
+//              M4.13 shape).
+//         M4.8 widened the identity surface uniformly so
+//         both `<circle>` and `<text>` carry the same
 //         `data-*` attributes (`data-id`, `data-owner`,
-//         `data-owner-code`, `data-name`) so a future
+//         `data-owner-code`, `data-name`) — a future
 //         clickable UI / DOM script can address either
-//         element without DOM-walking siblings.
-//         `data-owner-code` resolves to
-//         `state.countries[owner.value()].id_code` when the
-//         owner index is valid, or the empty string
-//         otherwise (defense-in-depth for hand-built states;
-//         save / scenario layers reject invalid owners at
-//         load time). All four data-* values are
-//         XML-attribute-escaped (M4.2 helper).
+//         element without DOM-walking siblings. **M4.13
+//         widens the surface by one more attribute**
+//         (`data-owner-name`), keeping the same parity
+//         between circle + text. `data-owner-code` and
+//         `data-owner-name` both resolve to the matching
+//         `state.countries[owner.value()]` field (`id_code`
+//         and `name` respectively) when the owner index is
+//         valid, or the empty string otherwise
+//         (defense-in-depth for hand-built states; save /
+//         scenario layers reject invalid owners at load
+//         time). The single bounds check covers both
+//         lookups so they cannot disagree about validity.
+//         All five data-* values are XML-attribute-escaped
+//         (M4.2 helper).
 //   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend;
 //     M4.10 adds clickable details panel + click handler):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
@@ -191,16 +209,18 @@
 //              `<p class="details-empty">` instructing the
 //              viewer to click a province. The M4.10 click
 //              handler replaces the div's contents with a
-//              `<dl>` whose four `<dd>` cells carry the
-//              clicked element's `data-id` / `data-owner` /
-//              `data-owner-code` / `data-name` values
-//              respectively, read via `getAttribute` and
-//              written via `createElement` + `textContent`
-//              (XSS-safe). M4.11: the four `<dt>` labels
-//              are decoupled from the raw attribute names
-//              and render the fixed human-readable strings
-//              `Province ID` / `Owner Index` / `Owner Code`
-//              / `Province Name`. `getAttribute` still uses
+//              `<dl>` whose `<dd>` cells carry the clicked
+//              element's `data-id` / `data-owner` /
+//              `data-owner-code` / (M4.13) `data-owner-name`
+//              / `data-name` values respectively, read via
+//              `getAttribute` and written via
+//              `createElement` + `textContent` (XSS-safe).
+//              M4.11: the `<dt>` labels are decoupled from
+//              the raw attribute names and render the fixed
+//              human-readable strings `Province ID` /
+//              `Owner Index` / `Owner Code` /
+//              `Owner Name` (M4.13) / `Province Name`.
+//              `getAttribute` still uses
 //              the raw data-* keys (the M4.8 DOM contract
 //              is unchanged); only the labels rendered into
 //              `<dt>` cells change.
