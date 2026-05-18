@@ -34,6 +34,7 @@ add_library(leviathan_systems STATIC
     diagnostics.cpp
     economy_system.cpp
     event_evaluator.cpp
+    event_firer.cpp
     internal/json_helpers.cpp
     logging_system.cpp
     faction_system.cpp

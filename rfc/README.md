@@ -217,7 +217,66 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.4
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.5
+  （event firer skeleton）** 是 M5 的第五個
+  sub-milestone。新增
+  `leviathan::systems::event_firer` module
+  （header `include/leviathan/systems/event_firer.hpp`
+  + impl `src/leviathan/systems/event_firer.cpp`）：
+  `EventMatch → EventInstance` 的轉換橋。Public API：
+  `struct FireOutcome { std::size_t recorded; }`、
+  `void record_match(state, EventMatch, fired_on)`、
+  `FireOutcome record_matches(state,
+  vector<EventMatch>, fired_on)`。把 M5.1 schema、
+  M5.2 evaluator、M5.3 actor binding、M5.4 data layer
+  串成一條完整 pipeline ── 差 runner integration 而已。
+  **Per-actor 轉換**：`Country` kind →
+  `EventInstanceActor { kind="country", id_code,
+  country_id_code=id_code, index }`（country 就是自己
+  的 owning country，免 lookup）；`InterestGroup`
+  kind → `EventInstanceActor { kind="interest_group",
+  id_code, country_id_code 用 CountryId linear scan
+  state.countries 取出, index }`。**`fired_on` 由
+  caller 傳入**，**不** 從 `state.current_date` 讀 ──
+  firing cadence 是 runner-policy 決定，硬編
+  state.current_date 會替 runner 做決定。**沒有
+  `Result<T, E>` 回傳**：firer 文件說明「總是成功」；
+  若 IG actor 的 owning-country lookup 失敗（state
+  內部不一致，例如手寫的 EventMatch 引用不存在的
+  CountryId），`country_id_code` 留空，M5.4 save 層
+  在下次 round-trip 時 reject（pin by test ── 下次
+  save 時大聲失敗，勝過默默 corrupt history）。
+  **不 dedup**：對同一 input 呼叫兩次就 append 兩次
+  ── cooldown / historical-once gating 是 caller 在
+  呼叫 firer 之前做的政策。**不 consult effects**：
+  match 到的 EventDefinition 的 `effects` vector 在
+  fire 時被忽略（用 hand-built bogus effects 的 test
+  釘住）。**13 個新 doctest case（996 total，62148
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：per-kind
+  轉換 / cross-scope / `fired_on` caller-supplied /
+  空 triggers vacuous / 壞 IG handle 留空
+  country_id_code + save reject / batch record_matches
+  （空 input no-op、保序、append 無 dedup）/
+  end-to-end composition with `event_evaluator::match_events`
+  / no side effects / effects vector 無關 / save v14
+  round-trip。新 `docs/m5-5-event-firer-skeleton.md`
+  design note。**沒有 effects application / log entry
+  on fire（不 append state.logs）/ state.applied_commands
+  append / events.jsonl 變動 / runner 或 monthly
+  整合 / auto-fire cadence / 新 artefact（仍 10）/
+  save format bump（仍 v14）/ 新 RunnerOptions field
+  / CLI flag / 新 `PlayerCommandKind` / 新 state
+  field / dedup / cooldown / historical-once gating /
+  chained events / choices / RNG outcomes /
+  selection-policy 變體 / 更廣 trigger op / target /
+  actor kind / balance pass / UI surface / 對
+  event_evaluator / scenario_loader / canonical
+  fixtures / M1/M2/M3/M4 system 的變動 /
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  與 runner-integration 一起寫比較有意義）**。
+  M5 remains in progress。
+- **M5（歷史進行中）** — **M5.4
   （EventInstance / event_history data skeleton）** 是
   M5 的第四個 sub-milestone。把 fired-event record 的
   data layer 建起來，這樣未來 M5.x firer 不必同時 ship

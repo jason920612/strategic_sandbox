@@ -8,7 +8,7 @@
 
 - Phase: **Milestone 5 — Event engine (IN PROGRESS,
   RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
-  in progress (at M5.4). M5 has shipped four decoupled
+  in progress (at M5.5). M5 has shipped five decoupled
   surfaces so far: **M5.1** opened M5 with the
   `EventDefinition` schema foundation (typed
   `{ id_code, name, description, triggers, effects }` +
@@ -32,33 +32,117 @@
   trigger; new `trigger_actor` / `evaluate_match` free
   functions return `std::optional<TriggerActor>` /
   `std::optional<EventMatch>` for the enrichment path.
-  **M5.4** adds the **EventInstance / event_history data
+  **M5.4** added the **EventInstance / event_history data
   skeleton** — typed `core::EventInstance { event_id_code,
   fired_on, actors[] }` + `core::EventInstanceActor {
   kind, id_code, country_id_code, index }`; new
   `GameState::event_history` append-only vector; save
   format bumped v13 → v14 with event_history required at
   the save layer; `diagnostics::compare_states` walks
-  `event_history`. **Still no system creates
-  EventInstance records (no auto-fire), no effects
-  application, no runner / monthly integration, no
-  `events.jsonl` change, no new artefact (still 10), no
-  new `PlayerCommandKind`** — M5.4 is the data layer for
-  the future M5.x firer; canonical scenarios at M5.4
-  still emit `"event_history": []`. See
+  `event_history`. **M5.5** adds the **event firer
+  skeleton** — a new `leviathan::systems::event_firer`
+  module with `record_match(state, EventMatch, fired_on)`
+  + `record_matches(state, vector<EventMatch>, fired_on)`
+  → `FireOutcome { recorded }` that converts the M5.3
+  `EventMatch` (with per-trigger actor binding) into an
+  M5.4 `EventInstance` and appends it to
+  `state.event_history`. The firer is the missing brick
+  that ties the M5.1 schema, M5.2 evaluator, M5.3 actor
+  binding, and M5.4 data layer into a usable pipeline —
+  minus the runner integration. **Still no effects
+  application, no log entry on fire (no `state.logs`
+  append), no `state.applied_commands` append, no
+  `events.jsonl` change, no runner / monthly integration,
+  no auto-fire cadence, no new artefact (still 10), no
+  save bump (still v14), no new `PlayerCommandKind`** —
+  M5.5 ships the conversion brick stand-alone; canonical
+  scenarios still emit `"event_history": []` because no
+  system invokes the firer yet. See
   `docs/m5-1-event-definition-schema-foundation.md`,
   `docs/m5-2-trigger-evaluator-skeleton.md`,
-  `docs/m5-3-event-match-actor-binding-skeleton.md`, and
-  `docs/m5-4-event-instance-history-data-skeleton.md` for
-  the M5 design notes, and `docs/milestone-4-result.md`
-  / `docs/milestone-3-result.md` /
+  `docs/m5-3-event-match-actor-binding-skeleton.md`,
+  `docs/m5-4-event-instance-history-data-skeleton.md`,
+  and `docs/m5-5-event-firer-skeleton.md` for the M5
+  design notes, and `docs/milestone-4-result.md` /
+  `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for the M0–M4 exit
   reports. (`docs/milestone-5-checkpoint.md` is still
-  deliberately deferred — premature at this stage; M3
-  and M4 opened their checkpoints mid-milestone at M3.7
-  / M4.9.)
-- Latest shipped sub-milestone: **M5.4 — EventInstance /
+  deliberately deferred — every M5 sub-milestone so far
+  has been a single decoupled surface, so the checkpoint
+  reads better alongside the runner-integration PR where
+  the composition becomes load-bearing for canonical
+  runs.)
+- Latest shipped sub-milestone: **M5.5 — event firer
+  skeleton.** Fifth M5 PR. Adds the `EventMatch →
+  EventInstance` conversion bridge. New
+  `leviathan::systems::event_firer` module
+  (`include/leviathan/systems/event_firer.hpp` +
+  `src/leviathan/systems/event_firer.cpp`). Public API:
+  `struct FireOutcome { std::size_t recorded; }`, `void
+  record_match(state, EventMatch, fired_on)`,
+  `FireOutcome record_matches(state, vector<EventMatch>,
+  fired_on)`. **Per-actor conversion**: `Country` kind →
+  `EventInstanceActor { kind="country", id_code,
+  country_id_code=id_code (a country IS its own owning
+  country), index }`; `InterestGroup` kind →
+  `EventInstanceActor { kind="interest_group", id_code,
+  country_id_code resolved via linear scan of
+  state.countries by CountryId, index }`. **`fired_on`
+  is caller-supplied**, NOT read from
+  `state.current_date` — firing cadence is a runner-
+  policy decision; hard-coding it here would make those
+  decisions for the runner. A test pins that the firer
+  doesn't consult `state.current_date` even when it
+  would be an obvious default. **No `Result<T, E>`
+  return**: the firer is documented as *always
+  succeeds*; if an IG actor's owning-country lookup
+  fails (state internally inconsistent, e.g. a hand-
+  built match references a nonexistent `CountryId`), the
+  EventInstanceActor's `country_id_code` is left empty
+  and the M5.4 save-layer validation catches it on the
+  next round-trip (pinned by a test — loud failure on
+  next save beats silent corruption). **No dedup**:
+  calling `record_matches` twice with the same input
+  appends twice — cooldown / historical-once gating are
+  caller policies that gate BEFORE the firer. **No
+  effects consultation**: the matched EventDefinition's
+  `effects` vector is NOT consulted (pinned by a test
+  with hand-built bogus effects). **13 new doctest cases
+  (996 total, 62148 assertions; verified via direct
+  `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule): per-kind
+  conversion (country / IG / cross-scope); `fired_on`
+  caller-supplied not state-derived; empty-triggers
+  vacuous case; broken IG handle leaves
+  `country_id_code` empty + save rejects; batch
+  record_matches (empty input no-op, preserves order,
+  appends with no dedup); end-to-end composition with
+  `event_evaluator::match_events`; no side effects on
+  countries / IGs / events / logs / applied_commands /
+  current_date; effects vector irrelevant; save v14
+  round-trip of a recorded entry. New
+  `docs/m5-5-event-firer-skeleton.md` design note.
+  **No effects application, no log entry on fire (no
+  state.logs append), no state.applied_commands append,
+  no events.jsonl change, no runner / monthly
+  integration, no auto-fire cadence, no new artefact
+  (still 10), no save format bump (still v14), no new
+  RunnerOptions field / CLI flag, no new
+  `PlayerCommandKind`, no new state field, no dedup /
+  cooldown / historical-once gating, no chained events
+  / choices / RNG outcomes, no selection-policy
+  variants, no broader trigger ops / targets / actor
+  kinds (faction etc.), no balance pass, no event
+  author tooling, no UI surface, no changes to
+  event_evaluator (M5.3 evaluator stays read-only), no
+  changes to scenario_loader, no changes to canonical
+  fixtures (firer is opt-in by caller; no system
+  invokes it yet), no changes to M1/M2/M3/M4 systems,
+  no `docs/milestone-5-checkpoint.md` (still deferred —
+  reads better alongside runner-integration).** M5
+  remains in progress.
+- Previously shipped: **M5.4 — EventInstance /
   event_history data skeleton.** Fourth M5 PR. Adds the
   data layer for fired-event records: new
   `core::EventInstanceActor { std::string kind; std::string
