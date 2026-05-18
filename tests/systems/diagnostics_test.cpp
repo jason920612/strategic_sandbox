@@ -802,6 +802,102 @@ TEST_CASE("compare_states: M4.1 provinces per-field differences are reported per
 }
 
 // ---------------------------------------------------------------------
+// M5.1 - EventDefinition compare_states walk
+// ---------------------------------------------------------------------
+
+namespace {
+
+leviathan::core::EventDefinition m51_event(
+        const std::string& id_code,
+        const std::string& name,
+        const std::string& description,
+        const std::string& trig_target = "country.stability",
+        const std::string& trig_op     = "lt",
+        double             trig_value  = 0.30,
+        const std::string& eff_target  = "country.stability",
+        const std::string& eff_op      = "add",
+        double             eff_value   = -0.02) {
+    leviathan::core::EventDefinition ev;
+    ev.id_code     = id_code;
+    ev.name        = name;
+    ev.description = description;
+    leviathan::core::EventTrigger t;
+    t.target = trig_target;
+    t.op     = trig_op;
+    t.value  = trig_value;
+    ev.triggers.push_back(t);
+    leviathan::core::PolicyEffect e;
+    e.target = eff_target;
+    e.op     = eff_op;
+    e.value  = eff_value;
+    ev.effects.push_back(e);
+    return ev;
+}
+
+}  // namespace
+
+TEST_CASE("compare_states: M5.1 identical events produce no mismatch") {
+    GameState a;
+    GameState b;
+    a.events.push_back(m51_event("x", "X", "desc"));
+    b.events.push_back(m51_event("x", "X", "desc"));
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+TEST_CASE("compare_states: M5.1 events size mismatch reported") {
+    GameState a;
+    GameState b;
+    a.events.push_back(m51_event("x", "X", ""));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "events.size()");
+}
+
+TEST_CASE("compare_states: M5.1 events per-field differences reported per path") {
+    GameState a;
+    GameState b;
+    a.events.push_back(m51_event("x", "X", "desc-A"));
+    leviathan::core::EventDefinition eb = m51_event("x", "X-renamed", "desc-B");
+    eb.triggers[0].target = "country.legitimacy";
+    eb.triggers[0].op     = "gt";
+    eb.triggers[0].value  = 0.50;
+    eb.effects[0].target  = "country.legitimacy";
+    eb.effects[0].op      = "set";
+    eb.effects[0].value   = 0.10;
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    // Expect: name, description, triggers[0].target, .op, .value,
+    // effects[0].target, .op, .value
+    REQUIRE(m.size() == 8u);
+    CHECK(m[0].field_path == "events[0].name");
+    CHECK(m[1].field_path == "events[0].description");
+    CHECK(m[2].field_path == "events[0].triggers[0].target");
+    CHECK(m[3].field_path == "events[0].triggers[0].op");
+    CHECK(m[4].field_path == "events[0].triggers[0].value");
+    CHECK(m[5].field_path == "events[0].effects[0].target");
+    CHECK(m[6].field_path == "events[0].effects[0].op");
+    CHECK(m[7].field_path == "events[0].effects[0].value");
+}
+
+TEST_CASE("compare_states: M5.1 events triggers.size mismatch reported (skips per-trigger walk)") {
+    GameState a;
+    GameState b;
+    a.events.push_back(m51_event("x", "X", "d"));
+    auto eb = m51_event("x", "X", "d");
+    // Append a second trigger to b.
+    leviathan::core::EventTrigger t2;
+    t2.target = "interest_group.loyalty";
+    t2.op     = "gte";
+    t2.value  = 0.20;
+    eb.triggers.push_back(t2);
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "events[0].triggers.size()");
+}
+
+// ---------------------------------------------------------------------
 // M3.5 - per-interest-group snapshot + CSV + csv_escape
 // ---------------------------------------------------------------------
 

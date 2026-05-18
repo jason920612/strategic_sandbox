@@ -777,7 +777,40 @@ std::string serialize(const core::GameState& state) {
     }
     root["policies"] = std::move(policies);
 
-    root["events"]    = json::array();
+    // M5.1 events block (save v13). The M0 reserved-empty stub is
+    // gone — each entry is now a typed EventDefinition serialised
+    // with id_code / name / description / triggers[] / effects[].
+    // Triggers carry the M5.1 schema (target / op / value); effects
+    // mirror PolicyEffect's serialised shape (same JSON keys), so
+    // a future M5.x effect applicator can reuse policy effect
+    // serialization helpers.
+    json events_arr = json::array();
+    for (const auto& ev : state.events) {
+        json entry = json::object();
+        entry["id_code"]     = ev.id_code;
+        entry["name"]        = ev.name;
+        entry["description"] = ev.description;
+        json triggers_arr = json::array();
+        for (const auto& t : ev.triggers) {
+            json tj = json::object();
+            tj["target"] = t.target;
+            tj["op"]     = t.op;
+            tj["value"]  = t.value;
+            triggers_arr.push_back(std::move(tj));
+        }
+        entry["triggers"] = std::move(triggers_arr);
+        json effects_arr = json::array();
+        for (const auto& f : ev.effects) {
+            json fj = json::object();
+            fj["target"] = f.target;
+            fj["op"]     = f.op;
+            fj["value"]  = f.value;
+            effects_arr.push_back(std::move(fj));
+        }
+        entry["effects"] = std::move(effects_arr);
+        events_arr.push_back(std::move(entry));
+    }
+    root["events"] = std::move(events_arr);
 
     json logs = json::array();
     for (const auto& e : state.logs) {
@@ -1330,8 +1363,197 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         state.provinces.push_back(std::move(p));
     }
 
-    // policies, events: keys reserved, contents not yet
-    // schema-pinned. Tolerate present-but-empty arrays.
+    // M5.1 events block. Required as of save format v13. Empty
+    // array is valid; missing key is rejected so a v12 save's
+    // reserved-empty `events` stub fails loudly under the strict
+    // version gate (which already rejects v12 saves above) AND
+    // any future hand-crafted v13 save that simply omits the
+    // field also fails loudly rather than silently dropping the
+    // user-authored event definitions. Each entry is fully
+    // validated: id_code + name non-empty strings, description a
+    // string (may be empty), triggers a non-empty array (each
+    // with allowlisted target / op + finite value), effects an
+    // array (may be empty; each entry matches PolicyEffect
+    // load-time rules — required target/op strings, finite
+    // value, no target/op allowlist at load). Cross-save
+    // duplicate id_code rejected.
+    static const std::vector<std::string> kTriggerTargetsSave = {
+        "country.stability",
+        "country.legitimacy",
+        "country.government_authority.bureaucratic_compliance",
+        "interest_group.radicalism",
+        "interest_group.loyalty",
+    };
+    static const std::vector<std::string> kTriggerOpsSave = {
+        "lt", "lte", "gt", "gte",
+    };
+    auto is_allowed_save = [](const std::vector<std::string>& list,
+                              const std::string& v) {
+        for (const auto& s : list) {
+            if (s == v) { return true; }
+        }
+        return false;
+    };
+    if (!root.contains("events")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'events'"));
+    }
+    const auto& ev_arr = root.at("events");
+    if (!ev_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'events' has wrong type (expected JSON array)"));
+    }
+    state.events.reserve(ev_arr.size());
+    for (std::size_t i = 0; i < ev_arr.size(); ++i) {
+        const std::string ev_ctx =
+            std::string(source_label) + ": events[" +
+            std::to_string(i) + "]";
+        const auto& entry = ev_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": expected JSON object");
+        }
+        auto id_code_r = require_string(entry, "id_code", ev_ctx);
+        if (!id_code_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(id_code_r.error()));
+        }
+        if (id_code_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'id_code' must be non-empty");
+        }
+        auto name_r = require_string(entry, "name", ev_ctx);
+        if (!name_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(name_r.error()));
+        }
+        if (name_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'name' must be non-empty");
+        }
+        // description: required string but may be empty.
+        if (!entry.contains("description")
+            || !entry.at("description").is_string()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'description' missing or not a string");
+        }
+        const std::string desc =
+            entry.at("description").get<std::string>();
+
+        // triggers: required, non-empty array.
+        if (!entry.contains("triggers")
+            || !entry.at("triggers").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'triggers' missing or not an array");
+        }
+        const auto& trig_arr = entry.at("triggers");
+        if (trig_arr.empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'triggers' must be non-empty");
+        }
+        std::vector<core::EventTrigger> triggers;
+        triggers.reserve(trig_arr.size());
+        for (std::size_t ti = 0; ti < trig_arr.size(); ++ti) {
+            const std::string tctx =
+                ev_ctx + ": triggers[" + std::to_string(ti) + "]";
+            const auto& t = trig_arr[ti];
+            if (!t.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    tctx + ": expected JSON object");
+            }
+            auto target_r = require_string(t, "target", tctx);
+            if (!target_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(target_r.error()));
+            }
+            if (!is_allowed_save(kTriggerTargetsSave, target_r.value())) {
+                return core::Result<core::GameState>::failure(
+                    tctx + ": 'target' '" + target_r.value() +
+                    "' is not in the M5.1 allowlist");
+            }
+            auto op_r = require_string(t, "op", tctx);
+            if (!op_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(op_r.error()));
+            }
+            if (!is_allowed_save(kTriggerOpsSave, op_r.value())) {
+                return core::Result<core::GameState>::failure(
+                    tctx + ": 'op' '" + op_r.value() +
+                    "' is not in the M5.1 allowlist"
+                    " (lt, lte, gt, gte)");
+            }
+            auto value_r = require_number(t, "value", tctx);
+            if (!value_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(value_r.error()));
+            }
+            core::EventTrigger trig;
+            trig.target = std::move(target_r).value();
+            trig.op     = std::move(op_r).value();
+            trig.value  = value_r.value();
+            triggers.push_back(std::move(trig));
+        }
+
+        // effects: required array, may be empty.
+        if (!entry.contains("effects")
+            || !entry.at("effects").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'effects' missing or not an array");
+        }
+        const auto& eff_arr = entry.at("effects");
+        std::vector<core::PolicyEffect> effects;
+        effects.reserve(eff_arr.size());
+        for (std::size_t ei = 0; ei < eff_arr.size(); ++ei) {
+            const std::string ectx =
+                ev_ctx + ": effects[" + std::to_string(ei) + "]";
+            const auto& f = eff_arr[ei];
+            if (!f.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    ectx + ": expected JSON object");
+            }
+            auto target_r = require_string(f, "target", ectx);
+            if (!target_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(target_r.error()));
+            }
+            auto op_r = require_string(f, "op", ectx);
+            if (!op_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(op_r.error()));
+            }
+            auto value_r = require_number(f, "value", ectx);
+            if (!value_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(value_r.error()));
+            }
+            core::PolicyEffect eff;
+            eff.target = std::move(target_r).value();
+            eff.op     = std::move(op_r).value();
+            eff.value  = value_r.value();
+            effects.push_back(std::move(eff));
+        }
+
+        // Duplicate id_code rejected at the save layer — mirrors
+        // the M3.1 interest_groups + M4.1 provinces rule.
+        for (const auto& existing : state.events) {
+            if (existing.id_code == id_code_r.value()) {
+                return core::Result<core::GameState>::failure(
+                    ev_ctx + ": duplicate 'id_code' '" +
+                    id_code_r.value() + "'");
+            }
+        }
+
+        core::EventDefinition ev;
+        ev.id_code     = std::move(id_code_r).value();
+        ev.name        = std::move(name_r).value();
+        ev.description = desc;
+        ev.triggers    = std::move(triggers);
+        ev.effects     = std::move(effects);
+        state.events.push_back(std::move(ev));
+    }
+
     return core::Result<core::GameState>::success(std::move(state));
 }
 

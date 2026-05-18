@@ -2,9 +2,11 @@
 //
 // M0 introduced these as ID-only stubs; M1.1 fleshed out CountryState;
 // M1.2 fleshed out FactionState; M1.3 added BudgetState (embedded in
-// CountryState); M1.4 fleshes out PolicyData with its effects vector.
-// ProvinceState and EventDefinition remain ID-only stubs and will grow
-// in subsequent sub-milestones.
+// CountryState); M1.4 fleshed out PolicyData with its effects vector;
+// M4.1 fleshed out the province map-node data layer as ProvinceNode
+// (replacing the M0 ProvinceState stub); M5.1 fleshed out
+// EventDefinition with the trigger/effect schema (replacing the M0
+// stub). Remaining entity growth is additive and milestone-scoped.
 //
 // Naming convention for CountryState numeric fields:
 //   * gdp / tax_revenue / budget_balance      - absolute amounts
@@ -237,9 +239,43 @@ struct PolicyData {
     std::vector<PolicyEffect> effects;
 };
 
+// One comparison clause for an event firing precondition.
+//
+// `target` is a free-form path string against a small allowlist
+// enforced at LOAD time (M5.1 schema):
+//   country.stability
+//   country.legitimacy
+//   country.government_authority.bureaucratic_compliance
+//   interest_group.radicalism
+//   interest_group.loyalty
+// `op` is a comparison operator from the allowlist {lt, lte, gt,
+// gte}. `value` must be finite.
+//
+// M5.1 stores triggers as data only; no trigger evaluator exists
+// yet. Multiple triggers on the same definition mean AND in the
+// future evaluator; M5.1 only validates / stores them.
+struct EventTrigger {
+    std::string target;
+    std::string op;
+    double      value = 0.0;
+};
+
+// One event definition loaded from a scenario fixture and stored
+// in `GameState::events`. M5.1 ships the schema only — no firing,
+// no effects application, no event history. Effects reuse the
+// existing `PolicyEffect` shape so a future M5.x can extract a
+// shared effect applicator.
+//
+// M0 had an `{ EventId id; std::string name; }` stub here; M5.1
+// upgrades it in place. `id_code` is the natural string identifier
+// (matches `ProvinceNode::id_code` / `InterestGroupState::id_code`
+// style — no separate numeric `EventId` until a system needs one).
 struct EventDefinition {
-    EventId     id;
-    std::string name;
+    std::string               id_code;
+    std::string               name;
+    std::string               description;
+    std::vector<EventTrigger> triggers;   // non-empty at load
+    std::vector<PolicyEffect> effects;    // may be empty (warning-only)
 };
 
 // Coarse-grained category for an interest group / political actor

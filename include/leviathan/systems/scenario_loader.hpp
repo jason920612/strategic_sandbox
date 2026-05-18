@@ -122,6 +122,37 @@ struct ManifestProvince {
     double y = 0.0;             // normalised map y in [0, 1]
 };
 
+// One event-definition entry parsed from an event file (M5.1).
+// Each event file at `<base>/events/<name>.json` carries an
+// `events` array of objects shaped like:
+//   {
+//     "id":          "low_stability_unrest",
+//     "name":        "Low Stability Unrest",
+//     "description": "...",
+//     "triggers": [
+//       { "target": "country.stability", "op": "lt", "value": 0.30 }
+//     ],
+//     "effects": [
+//       { "target": "country.stability", "op": "add", "value": -0.02 }
+//     ]
+//   }
+// `triggers` is required, non-empty; `effects` is required, may
+// be empty (warning-only events). Trigger ops are allowlisted
+// at load time {lt, lte, gt, gte}; trigger targets are allowlisted
+// against a small set tied to existing M1–M3 state. Effects
+// reuse `core::PolicyEffect` shape — the load-time validation
+// mirrors `data_loader::parse_policy` (required string `target`,
+// string `op`, finite `value`; no target/op allowlist at load).
+// Cross-file uniqueness of event `id_code` is enforced inside
+// `load_into_state`.
+struct ManifestEvent {
+    std::string                      id_code;
+    std::string                      name;
+    std::string                      description;
+    std::vector<core::EventTrigger>  triggers;
+    std::vector<core::PolicyEffect>  effects;
+};
+
 // Parsed manifest. Paths are stored verbatim from JSON; resolving
 // them against a base directory is the caller's job (or use
 // `load_into_state`, which does it).
@@ -143,6 +174,14 @@ struct ScenarioManifest {
     // key in JSON => empty vector (older manifests stay valid).
     // Present-but-malformed at any layer is rejected loudly.
     std::vector<std::filesystem::path> provinces;
+    // M5.1: optional. Array of relative file paths, each pointing
+    // to an event file with the shape
+    // `{ "events": [ {id, name, description, triggers, effects}, ... ] }`.
+    // Missing key in JSON => empty vector (older manifests stay
+    // valid). Present-but-malformed at any layer is rejected
+    // loudly. Cross-file uniqueness of event id_code is enforced
+    // inside `load_into_state`.
+    std::vector<std::filesystem::path> events;
 };
 
 // Summary returned from a successful `load_into_state`.
@@ -158,6 +197,13 @@ struct ScenarioLoadOutcome {
     // the manifest. Zero when the manifest's `provinces` block is
     // absent or every referenced file holds an empty array.
     int provinces_loaded         = 0;
+    // M5.1: count of `EventDefinition` entries appended to
+    // `state.events` across every event file referenced by the
+    // manifest. Zero when the manifest's `events` block is absent
+    // or every referenced file holds an empty array. M5.1 only
+    // loads / validates / stores event definitions; no firing,
+    // no evaluator, no effects application yet.
+    int events_loaded            = 0;
 };
 
 // Parse a scenario manifest from raw JSON text.
