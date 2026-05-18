@@ -787,10 +787,11 @@ std::string serialize(const core::GameState& state) {
     json events_arr = json::array();
     for (const auto& ev : state.events) {
         json entry = json::object();
-        entry["id_code"]     = ev.id_code;
-        entry["name"]        = ev.name;
-        entry["description"] = ev.description;
-        entry["true_cause"]  = ev.true_cause;   // M6.1 (RFC-090 §6.1)
+        entry["id_code"]        = ev.id_code;
+        entry["name"]           = ev.name;
+        entry["description"]    = ev.description;
+        entry["visible_report"] = ev.visible_report;   // M6.2 (RFC-090 §6.2)
+        entry["true_cause"]     = ev.true_cause;       // M6.1 (RFC-090 §6.1)
         json triggers_arr = json::array();
         for (const auto& t : ev.triggers) {
             json tj = json::object();
@@ -1469,6 +1470,25 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         const std::string desc =
             entry.at("description").get<std::string>();
 
+        // M6.2 (RFC-090 §6.2): visible_report is required
+        // non-empty. A v15 save's events[] entries lacked
+        // visible_report; the M6.2 save bump (v15 -> v16) makes
+        // this field required. Silently defaulting to an empty
+        // string on reload would erase author intent (the
+        // public-facing fired-report description). Same
+        // rejection style as M6.1 true_cause.
+        if (!entry.contains("visible_report")
+            || !entry.at("visible_report").is_string()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'visible_report' missing or not a string");
+        }
+        const std::string visible_report =
+            entry.at("visible_report").get<std::string>();
+        if (visible_report.empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'visible_report' must be non-empty");
+        }
+
         // M6.1 (RFC-090 §6.1): true_cause is required non-empty.
         // A v14 save's events[] entries lacked true_cause; the
         // M6.1 save bump (v14 -> v15) makes this field required.
@@ -1591,12 +1611,13 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         }
 
         core::EventDefinition ev;
-        ev.id_code     = std::move(id_code_r).value();
-        ev.name        = std::move(name_r).value();
-        ev.description = desc;
-        ev.true_cause  = true_cause;   // M6.1
-        ev.triggers    = std::move(triggers);
-        ev.effects     = std::move(effects);
+        ev.id_code        = std::move(id_code_r).value();
+        ev.name           = std::move(name_r).value();
+        ev.description    = desc;
+        ev.visible_report = visible_report;   // M6.2
+        ev.true_cause     = true_cause;       // M6.1
+        ev.triggers       = std::move(triggers);
+        ev.effects        = std::move(effects);
         state.events.push_back(std::move(ev));
     }
 

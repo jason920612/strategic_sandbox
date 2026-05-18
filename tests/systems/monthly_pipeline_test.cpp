@@ -746,9 +746,10 @@ leviathan::core::EventDefinition m58_event(
         const std::string& eff_op,
         double             eff_value) {
     leviathan::core::EventDefinition d;
-    d.id_code    = id_code;
-    d.name       = id_code;
-    d.true_cause = "test cause";   // M6.1: required non-empty
+    d.id_code        = id_code;
+    d.name           = id_code;
+    d.visible_report = "test report";   // M6.2: required non-empty
+    d.true_cause     = "test cause";    // M6.1: required non-empty
     leviathan::core::EventTrigger t;
     t.target = trig_target;
     t.op     = trig_op;

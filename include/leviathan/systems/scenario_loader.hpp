@@ -123,14 +123,15 @@ struct ManifestProvince {
 };
 
 // One event-definition entry parsed from an event file (M5.1
-// shape; M6.1 adds `true_cause`). Each event file at
-// `<base>/events/<name>.json` carries an `events` array of
-// objects shaped like:
+// shape; M6.1 added `true_cause`; M6.2 adds `visible_report`).
+// Each event file at `<base>/events/<name>.json` carries an
+// `events` array of objects shaped like:
 //   {
-//     "id":          "low_stability_unrest",
-//     "name":        "Low Stability Unrest",
-//     "description": "...",
-//     "true_cause":  "...",                     // M6.1 (RFC-090 §6.1)
+//     "id":             "low_stability_unrest",
+//     "name":           "Low Stability Unrest",
+//     "description":    "...",
+//     "visible_report": "...",                  // M6.2 (RFC-090 §6.2)
+//     "true_cause":     "...",                  // M6.1 (RFC-090 §6.1)
 //     "triggers": [
 //       { "target": "country.stability", "op": "lt", "value": 0.30 }
 //     ],
@@ -148,16 +149,19 @@ struct ManifestProvince {
 // Cross-file uniqueness of event `id_code` is enforced inside
 // `load_into_state`.
 //
-// M6.1 adds `true_cause` (RFC-090 §6.1) as a required non-empty
-// string. It is the author-written truth narrative; M6.1 stores
-// and round-trips it but no system consumes it yet (later M6
-// sub-milestones 6.2 visible_report, 6.3 information_accuracy
-// will read it).
+// M6.1 added `true_cause` (RFC-090 §6.1) as a required non-empty
+// string. M6.2 adds `visible_report` (RFC-090 §6.2) as the
+// author-written public-facing fired-report description, also
+// required non-empty. Both are stored and round-tripped but
+// neither is consumed by any system yet (later M6 sub-milestones
+// 6.3 information_accuracy, 6.4 reported value, 6.5 bias/noise
+// etc. will read them).
 struct ManifestEvent {
     std::string                      id_code;
     std::string                      name;
     std::string                      description;
-    std::string                      true_cause;   // M6.1
+    std::string                      visible_report;   // M6.2
+    std::string                      true_cause;       // M6.1
     std::vector<core::EventTrigger>  triggers;
     std::vector<core::PolicyEffect>  effects;
 };

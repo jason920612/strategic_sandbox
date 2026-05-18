@@ -4,6 +4,7 @@
       "id": "low_stability_unrest",
       "name": "Low Stability Unrest",
       "description": "Low stability creates unrest pressure.",
+      "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
       "true_cause": "The country's actual stability has fallen below the unrest threshold.",
       "triggers": [
         {
@@ -24,6 +25,7 @@
       "id": "radical_interest_group_warning",
       "name": "Radical Interest Group Warning",
       "description": "A highly radical interest group signals political risk.",
+      "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
       "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
       "triggers": [
         {
