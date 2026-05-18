@@ -57,13 +57,31 @@
 // — the new row renders as `Owner Name`. No new field
 // on `ProvinceNode`; `data-owner-name` is derived from
 // `state.countries` at render time, so the save format
-// stays v12. No state mutation, no new artefact, no
-// save schema bump, no DOM-contract rename. Future M4
+// stays v12. M4.15 (this revision) makes the province
+// markers reachable from the keyboard. Every `<circle>`
+// and every `<text>` now carries `tabindex="0"` (emitted
+// in `render_svg_root`, so the standalone provinces.svg
+// picks it up too); the inline `<script>` registers a
+// `keydown` listener alongside the existing `click`
+// listener so pressing Enter or Space while focused on a
+// province marker fires the same `selectProvince +
+// showDetails` pair the click would. The keydown handler
+// calls `event.preventDefault()` for Space to suppress
+// the default page-scroll. M4.7 legend swatch `<circle>`
+// elements are emitted separately (inside
+// render_map_html, not render_svg_root) and lack
+// `data-id`, so they stay non-focusable and the
+// selector keeps skipping them. NO ARIA polish (no
+// `role=` / `aria-label=` / `aria-selected=` /
+// `aria-current=`) — those are deferred to a future
+// dedicated A11Y sub-milestone. No new state field, no
+// new artefact, no save-schema bump. Future M4
 // sub-milestones (hover state, tooltips, persistent
-// selection state, neighbour-adjacency lines, terrain,
-// etc.) will extend the renderer further.
+// selection state, full ARIA polish, neighbour-
+// adjacency lines, terrain, etc.) will extend the
+// renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -137,17 +155,18 @@
 //       - SVG 1.1 root with viewBox `0 0 1000 1000`.
 //       - For each ProvinceNode, two paired elements emitted
 //         in `state.provinces` order:
-//           1. `<circle cx=... cy=... r="8" fill=... data-id=...
-//              data-owner=... data-owner-code=...
-//              data-owner-name=... data-name=.../>`
-//              (M4.2 + M4.3 + M4.8 + M4.13 shape).
+//           1. `<circle cx=... cy=... r="8" fill=...
+//              tabindex="0" data-id=... data-owner=...
+//              data-owner-code=... data-owner-name=...
+//              data-name=.../>`
+//              (M4.2 + M4.3 + M4.8 + M4.13 + M4.15 shape).
 //           2. `<text x=... y=... text-anchor="middle"
-//              data-id=... data-owner=... data-owner-code=...
-//              data-owner-name=... data-name=...
-//              >NAME</text>` with x = cx, y =
+//              tabindex="0" data-id=... data-owner=...
+//              data-owner-code=... data-owner-name=...
+//              data-name=...>NAME</text>` with x = cx, y =
 //              cy + kLabelYOffset, and NAME the XML-text-
 //              escaped `ProvinceNode::name` (M4.4 + M4.8 +
-//              M4.13 shape).
+//              M4.13 + M4.15 shape).
 //         M4.8 widened the identity surface uniformly so
 //         both `<circle>` and `<text>` carry the same
 //         `data-*` attributes (`data-id`, `data-owner`,
@@ -166,7 +185,14 @@
 //         time). The single bounds check covers both
 //         lookups so they cannot disagree about validity.
 //         All five data-* values are XML-attribute-escaped
-//         (M4.2 helper).
+//         (M4.2 helper). **M4.15** adds `tabindex="0"` to
+//         both `<circle>` and `<text>` so keyboard users
+//         can Tab through the province markers; the
+//         attribute is a fixed literal, not an
+//         attribute-escape site. Legend swatch `<circle>`
+//         elements in `map.html` are emitted separately
+//         (inside `render_map_html`) and lack `tabindex`,
+//         so they stay out of the tab order.
 //   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend;
 //     M4.10 adds clickable details panel + click handler):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
@@ -262,7 +288,16 @@
 //              highlights the whole province pair). The
 //              initial render carries NO `class="selected"`
 //              anywhere; selection is purely DOM-level and
-//              lost on reload.
+//              lost on reload. **M4.15**: the same per-node
+//              loop now also registers a `keydown` listener.
+//              When `event.key === "Enter"` or
+//              `event.key === " "`, it calls
+//              `event.preventDefault()` (suppresses Space-
+//              scroll) and runs the same `selectProvince +
+//              showDetails` pair the `click` listener runs.
+//              The two listeners share a per-element
+//              `activate()` closure so the effect cannot
+//              drift between input modalities.
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human

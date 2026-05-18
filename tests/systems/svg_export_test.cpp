@@ -1250,3 +1250,156 @@ TEST_CASE("render_map_html: M4.13 propagates data-owner-name through the inline 
     const std::string html = svg::render_map_html(state);
     CHECK(html.find("data-owner-name=\"Germany\"") != std::string::npos);
 }
+
+// =====================================================================
+// M4.15 — keyboard focus accessibility skeleton
+// =====================================================================
+// M4.15 makes the province markers reachable from the
+// keyboard. Two surfaces:
+//   * SVG body: every <circle> and every <text> in
+//     `render_svg_root` carries `tabindex="0"` so the markers
+//     enter the tab order. Legend swatch <circle> elements
+//     (emitted in `render_map_html` separately) lack
+//     `tabindex` and stay out of the tab order.
+//   * inline <script>: alongside the existing `click`
+//     listener, every focusable node also gets a `keydown`
+//     listener. Enter or Space fires the same
+//     `selectProvince + showDetails` pair the click runs;
+//     Space additionally `preventDefault()`s to suppress
+//     page-scroll. The two listeners share a per-element
+//     `activate()` closure so the effect cannot drift
+//     between input modalities.
+//
+// Out of scope (deliberate non-goals):
+//   * No ARIA polish (no role= / aria-label= / aria-selected=
+//     / aria-current=). Save that for a dedicated A11Y PR.
+//   * No persistent focus state across reload.
+//   * No tooltip / hover / mouseover.
+
+TEST_CASE("render_provinces: M4.15 every <circle> + <text> carries tabindex=\"0\"") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Both elements carry the same tabindex form.
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = svg_text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences("tabindex=\"0\"") == 2u);
+}
+
+TEST_CASE("render_provinces: M4.15 tabindex appears inside the <circle> AND <text> opening tags") {
+    // Locate each opening tag and assert tabindex appears
+    // inside it (not, say, accidentally hoisted into the
+    // <svg> root or appended outside the element).
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    const auto circle_open = svg_text.find("<circle ");
+    const auto circle_close = svg_text.find("/>", circle_open);
+    REQUIRE(circle_open  != std::string::npos);
+    REQUIRE(circle_close != std::string::npos);
+    const std::string circle_tag =
+        svg_text.substr(circle_open, circle_close - circle_open + 2);
+    CHECK(circle_tag.find("tabindex=\"0\"") != std::string::npos);
+
+    const auto text_open = svg_text.find("<text ");
+    const auto text_close = svg_text.find(">", text_open);
+    REQUIRE(text_open  != std::string::npos);
+    REQUIRE(text_close != std::string::npos);
+    const std::string text_tag =
+        svg_text.substr(text_open, text_close - text_open + 1);
+    CHECK(text_tag.find("tabindex=\"0\"") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.15 legend swatch <circle> elements do NOT carry tabindex") {
+    // Legend swatches are emitted in render_map_html (NOT
+    // render_svg_root) and have no data-id; the M4.15 spec
+    // explicitly keeps them out of the tab order. Build a
+    // state with one province + one country so we have both
+    // a province circle (tabindex="0", inside the inline SVG
+    // body) and a legend swatch circle (no tabindex, inside
+    // the <li>).
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+
+    // Locate the legend swatch's <svg class="swatch"> ...
+    // </svg> block and assert tabindex is absent inside it.
+    const auto swatch_open = html.find("<svg class=\"swatch\"");
+    const auto swatch_close = html.find("</svg>", swatch_open);
+    REQUIRE(swatch_open  != std::string::npos);
+    REQUIRE(swatch_close != std::string::npos);
+    const std::string swatch =
+        html.substr(swatch_open, swatch_close - swatch_open + 6);
+    CHECK(swatch.find("tabindex") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.15 inline <script> wires a keydown listener with Enter + Space + preventDefault") {
+    GameState state;
+    const std::string html = svg::render_map_html(state);
+
+    // Both listener types are now present.
+    CHECK(html.find("addEventListener(\"click\"")    != std::string::npos);
+    CHECK(html.find("addEventListener(\"keydown\"")  != std::string::npos);
+    // The key check covers Enter + Space (the literal " "
+    // form, not the Space-key alias).
+    CHECK(html.find("\"Enter\"") != std::string::npos);
+    CHECK(html.find("\" \"")     != std::string::npos);
+    // Space-scroll suppression.
+    CHECK(html.find("preventDefault") != std::string::npos);
+    // Shared activation helper between click + keydown so
+    // the effect cannot drift between modalities.
+    CHECK(html.find("function activate()") != std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.15 carries NO ARIA polish (explicit non-goal of this skeleton)") {
+    // Deferred — explicitly verify the surface stays free
+    // of role=, aria-label=, aria-selected=, aria-current=,
+    // aria-pressed=, and tabindex values other than "0".
+    // A future ARIA-focused PR will reverse these explicitly.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+
+    CHECK(html.find("role=")           == std::string::npos);
+    CHECK(html.find("aria-label=")     == std::string::npos);
+    CHECK(html.find("aria-selected=")  == std::string::npos);
+    CHECK(html.find("aria-current=")   == std::string::npos);
+    CHECK(html.find("aria-pressed=")   == std::string::npos);
+    // No tabindex="-1" or other non-zero forms — only
+    // tabindex="0" (the "include in default tab order" form).
+    CHECK(html.find("tabindex=\"-1\"") == std::string::npos);
+    CHECK(html.find("tabindex=\"1\"")  == std::string::npos);
+}
+
+TEST_CASE("render_provinces (standalone SVG) DOES carry tabindex (same SVG body as map.html)") {
+    // The M4.15 tabindex lives in render_svg_root, so the
+    // standalone SVG path picks it up automatically. This
+    // is the intended scope: a standalone SVG opened by
+    // itself can still be keyboard-navigated where the
+    // viewer supports it (some browsers; vector tools may
+    // ignore tabindex on SVG content — that's the consumer's
+    // call, not the renderer's).
+    GameState state;
+    state.provinces.push_back(node("a", 0, 0.5, 0.5, "Alpha"));
+    const std::string svg_text = svg::render_provinces(state);
+    CHECK(svg_text.find("tabindex=\"0\"") != std::string::npos);
+    // But the standalone SVG STILL has no script / no
+    // keydown wiring — the listener lives in the HTML
+    // wrapper only.
+    CHECK(svg_text.find("<script")        == std::string::npos);
+    CHECK(svg_text.find("addEventListener") == std::string::npos);
+    CHECK(svg_text.find("keydown")        == std::string::npos);
+}
