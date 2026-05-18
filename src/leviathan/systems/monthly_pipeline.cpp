@@ -100,6 +100,23 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.interest_group_authority_countries_updated =
         ap.value().countries_updated;
 
+    // ---- 7. M5.8: event_engine::tick_events --------------------------
+    // Final global step: evaluate every state.events trigger
+    // against the post-M3.4 state snapshot, fire every matching
+    // event, and apply each fired event's effects. Runs LAST so
+    // events about "low stability / high radicalism" check the
+    // values as they stand at month-end, not pre-month. M5.7's
+    // tick_events ships the snapshot-evaluation contract
+    // (evaluator runs once at the top; cascade events wait for
+    // the next monthly tick).
+    auto ev = event_engine::tick_events(state);
+    if (!ev.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: event_engine::"
+            "tick_events failed: " + ev.error());
+    }
+    out.event_tick = ev.value();
+
     return core::Result<MonthlyOutcome>::success(std::move(out));
 }
 

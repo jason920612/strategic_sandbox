@@ -730,3 +730,177 @@ TEST_CASE("tick_all_countries leaves trace vectors empty when no interest groups
     CHECK(r.value().interest_group_countries_updated           == 0);
     CHECK(r.value().interest_group_authority_countries_updated == 0);
 }
+
+// ---------------------------------------------------------------------
+// M5.8 - event_engine::tick_events wired as step 7 of tick_all_countries
+// ---------------------------------------------------------------------
+
+namespace {
+
+leviathan::core::EventDefinition m58_event(
+        const std::string& id_code,
+        const std::string& trig_target,
+        const std::string& trig_op,
+        double             trig_value,
+        const std::string& eff_target,
+        const std::string& eff_op,
+        double             eff_value) {
+    leviathan::core::EventDefinition d;
+    d.id_code = id_code;
+    d.name    = id_code;
+    leviathan::core::EventTrigger t;
+    t.target = trig_target;
+    t.op     = trig_op;
+    t.value  = trig_value;
+    d.triggers.push_back(t);
+    leviathan::core::PolicyEffect e;
+    e.target = eff_target;
+    e.op     = eff_op;
+    e.value  = eff_value;
+    d.effects.push_back(e);
+    return d;
+}
+
+}  // namespace
+
+TEST_CASE("M5.8 tick_all_countries: no state.events -> event_tick is zero (and event_history stays empty)") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().event_tick.events_matched        == 0);
+    CHECK(r.value().event_tick.events_recorded       == 0);
+    CHECK(r.value().event_tick.events_applied        == 0);
+    CHECK(r.value().event_tick.total_effects_applied == 0);
+    CHECK(state.event_history.empty());
+}
+
+TEST_CASE("M5.8 tick_all_countries: events that don't match the post-M3.4 snapshot leave event_history empty") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));   // stability 0.55
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+    // Event whose threshold is below the post-tick stability.
+    state.events.push_back(m58_event(
+        "unreached_unrest",
+        "country.stability", "lt", 0.30,
+        "country.stability", "add", -0.02));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().event_tick.events_matched  == 0);
+    CHECK(state.event_history.empty());
+}
+
+TEST_CASE("M5.8 tick_all_countries: matching event fires; event_history grows; counters reflect fire") {
+    GameState state;
+    state.countries.push_back(germany_baseline(0));   // stability 0.55
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+    // Threshold above current stability so it matches.
+    state.events.push_back(m58_event(
+        "matched_event",
+        "country.stability", "lt", 0.99,
+        "country.legitimacy", "add", -0.05));
+
+    const auto stab_before  = state.countries[0].stability;
+    const auto legit_before = state.countries[0].legitimacy;
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+
+    CHECK(r.value().event_tick.events_matched         == 1);
+    CHECK(r.value().event_tick.events_recorded        == 1);
+    CHECK(r.value().event_tick.events_applied         == 1);
+    CHECK(r.value().event_tick.total_effects_applied  == 1);
+
+    REQUIRE(state.event_history.size() == 1u);
+    CHECK(state.event_history[0].event_id_code == "matched_event");
+    // legitimacy was mutated by the event effect AFTER the M3.3
+    // country_feedback step ran on it. Pin that the legitimacy
+    // dropped by 0.05 from its pre-month value (faction/stability/
+    // economy/IG steps don't touch legitimacy in this fixture).
+    CHECK(state.countries[0].legitimacy ==
+          doctest::Approx(legit_before - 0.05));
+    // stability still touched by the other monthly systems; we
+    // just pin the direction (not byte-exact) so the test stays
+    // robust to M1.7/M1.12 rebalances.
+    CHECK(state.countries[0].stability != stab_before);
+}
+
+TEST_CASE("M5.8 tick_all_countries: tick_events evaluates the post-step-6 snapshot, not pre-month") {
+    // Pin the M5.8 ordering claim indirectly: in a single-country
+    // state where stability drifts during the month, the event
+    // trigger must see the drifted (post-step-6) value, not the
+    // original. Threshold tuned so the pre-tick stability does
+    // NOT satisfy the trigger but the post-tick stability DOES,
+    // proving the evaluator sees the post-monthly-drift snapshot.
+    GameState state;
+    CountryState ger = germany_baseline(0);
+    ger.stability = 0.55;
+    state.countries.push_back(ger);
+    state.factions.push_back(make_faction(0, 0, /*support*/0.30,
+                                          /*loyalty*/0.50,
+                                          /*radicalism*/0.50));
+    // Don't pre-commit to a specific threshold — read the post-tick
+    // stability from a dry-run on a side state, then build the
+    // event against THAT, then run the real tick.
+    GameState dry = state;
+    REQUIRE(monthly::tick_all_countries(dry).ok());
+    const double post_stab = dry.countries[0].stability;
+    // The monthly pipeline mutated stability away from 0.55 (drift
+    // toward a lower target). Choose threshold midway between the
+    // pre and post values: pre (0.55) is above; post is below.
+    REQUIRE(post_stab < 0.55);
+    const double threshold = (0.55 + post_stab) / 2.0;
+    state.events.push_back(m58_event(
+        "post_m34_only",
+        "country.stability", "lt", threshold,
+        "country.legitimacy", "add", -0.01));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.ok());
+    CHECK(r.value().event_tick.events_matched == 1);
+    REQUIRE(state.event_history.size() == 1u);
+    CHECK(state.event_history[0].event_id_code == "post_m34_only");
+}
+
+TEST_CASE("M5.8 tick_all_countries: event_tick failure bubbles up with monthly-pipeline prefix; partial state pinned") {
+    // The wiring's failure-propagation contract: when
+    // event_engine::tick_events returns Result::failure, the
+    // monthly pipeline must surface that as its own failure
+    // (prefix-tagged so the caller can locate the failing
+    // step in a multi-step pipeline).
+    //
+    // We force the failure via a bad effect target — pre-flight
+    // rejection happens INSIDE apply_event_effects, which is
+    // inside tick_events, which is inside tick_all_countries.
+    // The country and IG are otherwise valid (so steps 1-6 all
+    // succeed and we reach step 7 cleanly).
+    GameState state;
+    state.countries.push_back(germany_baseline(0));
+    state.factions.push_back(make_faction(0, 0, 0.3, 0.3));
+    leviathan::core::InterestGroupState ig;
+    ig.id_code    = "ger_bureau";
+    ig.name       = "Bureaucracy";
+    ig.kind       = leviathan::core::InterestGroupKind::Bureaucracy;
+    ig.country    = CountryId{0};            // valid
+    ig.radicalism = 0.85;                    // crosses trigger
+    ig.loyalty    = 0.50;
+    ig.influence  = 0.50;
+    state.interest_groups.push_back(ig);
+    // Trigger matches; effect target is unknown -> M1.5
+    // pre-flight reject inside apply_event_effects.
+    state.events.push_back(m58_event(
+        "bad_effect_event",
+        "interest_group.radicalism",  "gt",  0.75,
+        "country.no_such_field",      "add", 0.10));
+
+    const auto r = monthly::tick_all_countries(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("event_engine") != std::string::npos);
+    CHECK(r.error().find("tick_events failed") != std::string::npos);
+    // The match was RECORDED before apply failed (M5.7
+    // failure-mode contract — record happens before apply).
+    REQUIRE(state.event_history.size() == 1u);
+    CHECK(state.event_history[0].event_id_code == "bad_effect_event");
+}
