@@ -217,8 +217,89 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.16
-  （focus-visible styling skeleton）** 讓 M4.15 的鍵盤
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.17
+  （ARIA labels skeleton）** 讓 M4.15-focusable /
+  M4.10-clickable 的 province markers **可以被 screen
+  reader 讀出來**。`render_svg_root` 現在會在每個
+  `<circle>` 與每個 `<text>` 上 emit 兩個新屬性：
+  `role="button"`（告訴 assistive tech「這是一個可
+  互動的 button」── 與 click + Enter/Space 的觸發模型
+  一致）+ `aria-label="<name>, <owner_name>"`（給沒有
+  文字內容的 `<circle>` 一個可讀名稱；給 `<text>` 一個
+  一致名稱，所以兩個 sibling 不管哪一個 focus 都會聽到
+  同樣的播報）。aria-label 在 render time 組合：
+  owner 解析得到時用 `<name>, <owner_name>`、owner
+  無效時 fallback 成 `<name>`（不加尾逗號 ── 避免螢幕
+  閱讀器讀成「Ghost, 逗號」）；組合後的整個字串以單一
+  值走 M4.2 `xml_attr_escape`，所以名稱裡有
+  `& < > " '` 不會破壞屬性語法。fallback 的判定與
+  `data-owner-code` / `data-owner-name` 共用同一個
+  bounds check，三者不可能對「owner index 是否有效」
+  產生不一致的看法。兩個屬性都同時掛在 circle 與 text
+  上，沿用 M4.8 / M4.13 uniform identity surface 模式。
+  屬性都在 `render_svg_root` 裡 emit，所以 standalone
+  `provinces.svg` 也會帶；`map.html` 裡 legend swatch
+  `<circle>` 元素是另外 emit 的（在 `render_map_html`
+  裡），**刻意** 不帶 `role` 也不帶 `aria-label`，
+  維持單純裝飾元素的角色。**M4.17 narrowly REVERSES
+  了 M4.15/M4.16 的「no ARIA」非目標** ── 只動
+  `role="button"` 與 `aria-label`；更廣的 ARIA surface
+  （`aria-selected` / `aria-current` / `aria-pressed`
+  / `aria-live` / `aria-describedby` /
+  `aria-labelledby`）仍然 deferred，留給未來專門的
+  A11Y sub-milestone。為配合這個變化，M4.15/M4.16 的
+  「NO ARIA polish」單元測試 retune ── 原本廣域的
+  `role=` / `aria-label=` 缺席斷言改成只斷言上面那組
+  更窄的「仍然 deferred」ARIA 屬性缺席。`role="button"`
+  的選擇有特定推理：`role="link"` 拒絕（handler 不
+  navigate）；`role="option"` 拒絕（會需要 `role=
+  "listbox"` 加 arrow-key 導覽加 `aria-activedescendant`，
+  超出 scope）；不加 role 拒絕（focus 時會被讀成
+  純圖形）。aria-label 的值與 M4.10/M4.11 details
+  panel 裡 `Province Name` / `Owner Name` 兩列渲染的
+  內容一致，所以看得見的使用者與聽得見的使用者
+  獲得同一個節點 identity。M4.10 的 XSS-safe DOM API、
+  no-network discipline、「`map.html` 有且只有一段
+  inline `<script>`；`provinces.svg` 完全沒有 script」
+  這條非對稱 invariant、M4.12 transient `.selected`
+  機制、M4.13 五個 data-* DOM contract、M4.15
+  `tabindex` + keydown handler、M4.16 `:focus-visible`
+  rings 全部沿用，完全 additive。**M4 仍在 in
+  progress** ── 沒有寫 `docs/milestone-4-result.md`，
+  M4.17 只是再多一個 skeleton sub-milestone，不是
+  exit。**save 格式仍 v12** ── aria-label 從既有的
+  `ProvinceNode` 與 `state.countries` 欄位 derive，
+  不是新的 persistent state field。`provinces.svg`
+  bytes 有變（每個 `<circle>` + `<text>` 多兩個屬性
+  ── additive only）；`map.html` bytes 有變（同一份
+  SVG body）。**Artefact 數量不變（仍 10）；save
+  格式不變（仍 v12）**；M1.17 / M2.22 / M3.7
+  byte-identical determinism contract 仍 by construction
+  通過。7 個新 doctest cases（共 878）。
+  **M4 in progress.**
+  **M4.17 不做** `aria-selected` / `aria-current` /
+  `aria-pressed` / `aria-live` / `aria-describedby` /
+  `aria-labelledby` / 任何其他 role 值（只允許
+  `"button"`）/ `<title>` / `<desc>` 子元素 / state
+  mutation / commands / AI / events / selection
+  持久化 / tooltip / hover / animation / panel 快捷鍵
+  / save schema bump / 新 state field / 新 artefact /
+  新 fixture / 新 `InterestGroupKind` /
+  `PlayerCommandKind` / rename M4.8 / M4.13 data-* key
+  / 第二個 `<script>` / `<script src=>` /
+  `<script type=>` / `<link>` / 外部 CSS / font /
+  `<iframe>` / `<img>` / `fetch` / `XMLHttpRequest` /
+  `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` /
+  `navigator` / `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function` / inline
+  event attribute / per-element inline `style="..."` /
+  `<meta name="viewport">` / CSS animation /
+  transition / media query / `@import` / `@font-face`
+  / 鄰接 edge / terrain / overlay / runner CLI flag /
+  M4 close-out / `docs/milestone-4-result.md` /
+  「M4 closed」字樣。
+  **M4.16（focus-visible styling skeleton）** 讓 M4.15 的鍵盤
   focus 看得見。**純 CSS** ── 沒有改 JavaScript，也沒有
   改 markup 結構（只動 `<style>` block）。M4.6 `<style>`
   block 多四條規則：

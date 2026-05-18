@@ -1363,21 +1363,25 @@ TEST_CASE("render_map_html: M4.15 inline <script> wires a keydown listener with 
     CHECK(html.find("function activate()") != std::string::npos);
 }
 
-TEST_CASE("render_map_html: M4.15 carries NO ARIA polish (explicit non-goal of this skeleton)") {
-    // Deferred — explicitly verify the surface stays free
-    // of role=, aria-label=, aria-selected=, aria-current=,
-    // aria-pressed=, and tabindex values other than "0".
-    // A future ARIA-focused PR will reverse these explicitly.
+TEST_CASE("render_map_html: M4.15 still-deferred ARIA non-goals (M4.17 added role=button + aria-label only)") {
+    // M4.17 reversed two non-goals of this skeleton:
+    // role=button and aria-label now legitimately appear on
+    // every <circle> + <text>. The narrower ARIA surface
+    // still NOT shipped:
+    //   aria-selected / aria-current / aria-pressed /
+    //   aria-live / aria-describedby / aria-labelledby
+    // and tabindex stays at "0" only.
     GameState state;
     state.countries.push_back(country(0, "GER", "Germany"));
     state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
     const std::string html = svg::render_map_html(state);
 
-    CHECK(html.find("role=")           == std::string::npos);
-    CHECK(html.find("aria-label=")     == std::string::npos);
-    CHECK(html.find("aria-selected=")  == std::string::npos);
-    CHECK(html.find("aria-current=")   == std::string::npos);
-    CHECK(html.find("aria-pressed=")   == std::string::npos);
+    CHECK(html.find("aria-selected=")     == std::string::npos);
+    CHECK(html.find("aria-current=")      == std::string::npos);
+    CHECK(html.find("aria-pressed=")      == std::string::npos);
+    CHECK(html.find("aria-live=")         == std::string::npos);
+    CHECK(html.find("aria-describedby=")  == std::string::npos);
+    CHECK(html.find("aria-labelledby=")   == std::string::npos);
     // No tabindex="-1" or other non-zero forms — only
     // tabindex="0" (the "include in default tab order" form).
     CHECK(html.find("tabindex=\"-1\"") == std::string::npos);
@@ -1477,19 +1481,22 @@ TEST_CASE("render_map_html: M4.16 focus ring colour does NOT collide with M4.12 
     CHECK(std::string("#000000") != std::string("#1976d2"));
 }
 
-TEST_CASE("render_map_html: M4.16 carries NO ARIA polish (explicit non-goal of this skeleton)") {
-    // Same explicit non-goal as M4.15. The focus ring is
-    // pure CSS; no ARIA escape is allowed to creep in.
+TEST_CASE("render_map_html: M4.16 still-deferred ARIA non-goals (after M4.17, role=button + aria-label legitimately appear)") {
+    // M4.17 reversed two non-goals of this CSS skeleton:
+    // role=button and aria-label now legitimately appear on
+    // every <circle> + <text>. The still-deferred narrower
+    // ARIA surface stays absent.
     GameState state;
     state.countries.push_back(country(0, "GER", "Germany"));
     state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
     const std::string html = svg::render_map_html(state);
 
-    CHECK(html.find("role=")          == std::string::npos);
-    CHECK(html.find("aria-label=")    == std::string::npos);
-    CHECK(html.find("aria-selected=") == std::string::npos);
-    CHECK(html.find("aria-current=")  == std::string::npos);
-    CHECK(html.find("aria-pressed=")  == std::string::npos);
+    CHECK(html.find("aria-selected=")    == std::string::npos);
+    CHECK(html.find("aria-current=")     == std::string::npos);
+    CHECK(html.find("aria-pressed=")     == std::string::npos);
+    CHECK(html.find("aria-live=")        == std::string::npos);
+    CHECK(html.find("aria-describedby=") == std::string::npos);
+    CHECK(html.find("aria-labelledby=")  == std::string::npos);
 }
 
 TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.16 focus-visible rules") {
@@ -1503,4 +1510,146 @@ TEST_CASE("render_provinces (standalone SVG) does NOT include the M4.16 focus-vi
     CHECK(svg_text.find(":focus")         == std::string::npos);
     CHECK(svg_text.find("#1976d2")        == std::string::npos);
     CHECK(svg_text.find("outline-offset") == std::string::npos);
+}
+
+// =====================================================================
+// M4.17 — ARIA labels skeleton (minimal screen-reader surface)
+// =====================================================================
+// M4.17 reverses the explicit M4.15/M4.16 "no ARIA" non-
+// goal: every <circle> and every <text> now carries
+// `role="button"` (matches the M4.10 click + M4.15
+// keyboard activation) and `aria-label="..."` (the
+// otherwise-nameless <circle> gets a readable name; <text>
+// gets a consistent name so screen-reader announcements
+// don't differ by which sibling has focus). Composed at
+// render time: `<name>, <owner_name>` when the owner
+// resolves; `<name>` alone when the owner is invalid.
+// Both attributes go on both circle and text — same
+// pattern as the M4.8 + M4.13 data-* widenings. The
+// values are XML-attribute-escaped via the M4.2 helper.
+//
+// Still deferred (narrower ARIA surface): aria-selected,
+// aria-current, aria-pressed, aria-live, aria-describedby,
+// aria-labelledby. Those land in a future A11Y PR.
+
+TEST_CASE("render_provinces: M4.17 <circle> + <text> carry role=\"button\"") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Both elements carry the same role.
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = svg_text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences("role=\"button\"") == 2u);
+}
+
+TEST_CASE("render_provinces: M4.17 aria-label is composed as \"<name>, <owner_name>\" for valid owner") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    auto count_occurrences = [&](std::string_view needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = svg_text.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Both circle + text get the same label.
+    CHECK(count_occurrences("aria-label=\"Berlin, Germany\"") == 2u);
+}
+
+TEST_CASE("render_provinces: M4.17 aria-label inside the <text> opening tag (uniform identity)") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    const auto text_open = svg_text.find("<text ");
+    const auto text_close = svg_text.find(">", text_open);
+    REQUIRE(text_open  != std::string::npos);
+    REQUIRE(text_close != std::string::npos);
+    const std::string text_tag =
+        svg_text.substr(text_open, text_close - text_open + 1);
+    CHECK(text_tag.find("role=\"button\"")               != std::string::npos);
+    CHECK(text_tag.find("aria-label=\"Berlin, Germany\"") != std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.17 aria-label falls back to <name> alone when owner is invalid") {
+    // Hand-built state with CountryId::invalid() (default -1).
+    // Save/scenario layers reject this in production but the
+    // renderer stays total.
+    GameState state;
+    ProvinceNode p;
+    p.id_code = "ghost";
+    p.name    = "Ghost";
+    p.owner   = CountryId::invalid();  // -1
+    p.x       = 0.5;
+    p.y       = 0.5;
+    state.provinces.push_back(p);
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Label is the name alone (no comma + owner suffix).
+    CHECK(svg_text.find("aria-label=\"Ghost\"") != std::string::npos);
+    // The composed form must NOT appear.
+    CHECK(svg_text.find("aria-label=\"Ghost, ") == std::string::npos);
+}
+
+TEST_CASE("render_provinces: M4.17 aria-label is XML-attribute-escaped") {
+    // Province name + country name with the five XML
+    // metacharacters. The composed label "<name>, <owner>"
+    // is escaped as a single value.
+    GameState state;
+    state.countries.push_back(country(0, "X", "X&Y\"Z"));
+    state.provinces.push_back(node("p", 0, 0.5, 0.5, "A&B<C>"));
+    const std::string svg_text = svg::render_provinces(state);
+
+    // Pre-escape form is `A&B<C>, X&Y"Z`; expected post-escape:
+    // `A&amp;B&lt;C&gt;, X&amp;Y&quot;Z`.
+    CHECK(svg_text.find(
+        "aria-label=\"A&amp;B&lt;C&gt;, X&amp;Y&quot;Z\"")
+        != std::string::npos);
+    // The raw form must NOT appear as an aria-label body.
+    CHECK(svg_text.find("aria-label=\"A&B<")  == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.17 legend swatch <circle> elements do NOT carry role or aria-label") {
+    // Legend swatches are decorative and emitted in
+    // render_map_html separately. They don't take focus, they
+    // don't activate anything, and they don't get an ARIA name.
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+
+    // Locate the legend swatch block and assert role / aria-label absent inside it.
+    const auto swatch_open = html.find("<svg class=\"swatch\"");
+    const auto swatch_close = html.find("</svg>", swatch_open);
+    REQUIRE(swatch_open  != std::string::npos);
+    REQUIRE(swatch_close != std::string::npos);
+    const std::string swatch =
+        html.substr(swatch_open, swatch_close - swatch_open + 6);
+    CHECK(swatch.find("role=")       == std::string::npos);
+    CHECK(swatch.find("aria-label=") == std::string::npos);
+}
+
+TEST_CASE("render_map_html: M4.17 propagates role + aria-label through the inline SVG body") {
+    GameState state;
+    state.countries.push_back(country(0, "GER", "Germany"));
+    state.provinces.push_back(node("berlin", 0, 0.5, 0.5, "Berlin"));
+    const std::string html = svg::render_map_html(state);
+    // Same shared SVG body — both attrs reach map.html.
+    CHECK(html.find("role=\"button\"")                   != std::string::npos);
+    CHECK(html.find("aria-label=\"Berlin, Germany\"")    != std::string::npos);
 }

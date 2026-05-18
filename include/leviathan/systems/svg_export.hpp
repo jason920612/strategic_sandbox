@@ -89,14 +89,29 @@
 // stroke so the two states don't collide visually.
 // Two paired bare-`:focus` rules with `outline: none`
 // neutralise the browser's default focus outline so
-// the M4.16 styling wins. No state field, no new
+// the M4.16 styling wins. M4.17 (this revision) makes
+// the province markers screen-reader-readable. Every
+// `<circle>` and every `<text>` now carries
+// `role="button"` + `aria-label="<name>, <owner-name>"`
+// (composed before XML-escape, so a single
+// `xml_attr_escape` call covers it). When the owner
+// index is invalid the label falls back to `<name>`
+// alone. The label values match what the M4.10/M4.11
+// details panel renders, so a screen-reader user hears
+// "Berlin, Germany — button" on focus and gets the
+// same node identity sighted users see in the panel.
+// This intentionally REVERSES the M4.15/M4.16 "no
+// ARIA" non-goal; the still-deferred surface is
+// narrower (no `aria-selected` / `aria-current` /
+// `aria-pressed` / `aria-live` / `aria-describedby`
+// / `aria-labelledby`). No state field, no new
 // artefact, no save-schema bump. Future M4
 // sub-milestones (hover state, tooltips, persistent
-// selection state, full ARIA polish, neighbour-
-// adjacency lines, terrain, etc.) will extend the
-// renderer further.
+// selection state, live-region announcements,
+// neighbour-adjacency lines, terrain, etc.) will
+// extend the renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -171,17 +186,19 @@
 //       - For each ProvinceNode, two paired elements emitted
 //         in `state.provinces` order:
 //           1. `<circle cx=... cy=... r="8" fill=...
-//              tabindex="0" data-id=... data-owner=...
-//              data-owner-code=... data-owner-name=...
-//              data-name=.../>`
-//              (M4.2 + M4.3 + M4.8 + M4.13 + M4.15 shape).
+//              tabindex="0" role="button" aria-label=...
+//              data-id=... data-owner=... data-owner-code=...
+//              data-owner-name=... data-name=.../>`
+//              (M4.2 + M4.3 + M4.8 + M4.13 + M4.15 + M4.17
+//              shape).
 //           2. `<text x=... y=... text-anchor="middle"
-//              tabindex="0" data-id=... data-owner=...
-//              data-owner-code=... data-owner-name=...
-//              data-name=...>NAME</text>` with x = cx, y =
+//              tabindex="0" role="button" aria-label=...
+//              data-id=... data-owner=... data-owner-code=...
+//              data-owner-name=... data-name=...
+//              >NAME</text>` with x = cx, y =
 //              cy + kLabelYOffset, and NAME the XML-text-
 //              escaped `ProvinceNode::name` (M4.4 + M4.8 +
-//              M4.13 + M4.15 shape).
+//              M4.13 + M4.15 + M4.17 shape).
 //         M4.8 widened the identity surface uniformly so
 //         both `<circle>` and `<text>` carry the same
 //         `data-*` attributes (`data-id`, `data-owner`,
@@ -208,6 +225,16 @@
 //         elements in `map.html` are emitted separately
 //         (inside `render_map_html`) and lack `tabindex`,
 //         so they stay out of the tab order.
+//         **M4.17** adds `role="button"` + `aria-label`
+//         to both `<circle>` and `<text>`. `role="button"`
+//         is a fixed literal; `aria-label` is composed at
+//         render time as `<name>` (when owner is invalid)
+//         or `<name>, <owner-name>` (when owner resolves),
+//         then XML-attribute-escaped as a single value via
+//         the M4.2 helper so a name containing `& < > " '`
+//         cannot break the attribute syntax. Legend swatch
+//         `<circle>` elements do NOT carry `role` /
+//         `aria-label` — they stay decorative.
 //   * `map.html` (M4.5 new; M4.6 adds CSS; M4.7 adds legend;
 //     M4.10 adds clickable details panel + click handler):
 //       - `<!DOCTYPE html>` + `<html lang="en">` + minimal
