@@ -217,7 +217,78 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.5
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.6
+  （event effects applicator skeleton）** 是 M5 的
+  第六個 sub-milestone。把 M5 pipeline 的內迴圈封口：
+  新增 `EventInstance + EventDefinition → state mutation`
+  brick，透過既有 M1.5 policy machinery 套用事件 effects。
+  新增 `leviathan::systems::event_effects` module
+  （header `include/leviathan/systems/event_effects.hpp`
+  + impl `src/leviathan/systems/event_effects.cpp`）。
+  Public API：`struct ApplyOutcome { int effects_applied;
+  int faction_targets_updated; }`、
+  `core::Result<ApplyOutcome> apply_event_effects(state,
+  instance, definition)`。**Reuse-via-extract refactor**：
+  把 `policy::apply_policy_effects` 裡的
+  actor-validate + pre-flight + apply 核心抽出成新的
+  public `policy::apply_effects_to_actor(state, actor,
+  vector<PolicyEffect>)` helper。
+  `apply_policy_effects`（既有，M1.5）和
+  `event_effects::apply_event_effects`（新，M5.6）
+  都呼叫它。helper **不** append
+  `country.active_policies` ── 那是 policy-specific 簿記，
+  `apply_policy_effects` 在呼叫 helper 之後才做。
+  Events 繼承 M1.5 的 target/op grammar
+  （`country.<field>` / `country.budget.<cat>` /
+  `faction:<type>.<field>` + `add` / `set` + ratio
+  clamp + faction broadcast 空 match no-op）和
+  pre-flight atomicity（任一 effect 失敗則 state 完全
+  不變），但**不**繼承 M1.15 的 `ActivePolicy`
+  lifecycle。**Actor-selection policy**：所有
+  `definition.effects` 都套到 **一個** country ──
+  從 `instance.actors.front().country_id_code` 用
+  linear scan `state.countries` 解析出。多 actor
+  cross-product / per-effect selection / weighted /
+  random 都 deferred 到專屬 selection-policy
+  sub-milestone（per PR #92 review）。空
+  `instance.actors` → success with `effects_applied=0`
+  （vacuous case）。`country_id_code` 解不出 →
+  `Result::failure` 並把違規 id_code 寫進訊息。
+  失敗時 state 完全不變（繼承 M1.5 atomicity）。
+  M1.5 `apply_policy_effects` refactor 後外部行為
+  一致。**20 個新 doctest case（1016 total，62209
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：每個
+  target shape 的 happy path（country.* / IG-owning-
+  country.* / 多 effect / budget category / ratio
+  clamp）/ pre-flight atomicity（非有限值 / 未知
+  target / 未知 op）/ 邊界（空 actors no-op / 空
+  或未解析 country_id_code 拒 / 空 effects no-op）/
+  first-actor-wins 用 two-actor instance 釘住 /
+  event_history / logs / applied_commands /
+  active_policies 都不動 / M5.2 → M5.5 → M5.6
+  end-to-end composition / M1.5 兩條 regression
+  test / `apply_effects_to_actor` 兩條直接測試。
+  新 `docs/m5-6-event-effects-applicator-skeleton.md`
+  design note。**沒有 runner 或 monthly 整合 /
+  events.jsonl 變動 / log entry on apply（不 append
+  state.logs）/ state.applied_commands append /
+  state.event_history 變動 / 從 event 路徑 append
+  country.active_policies / auto-fire cadence / 新
+  artefact（仍 10）/ save format bump（仍 v14）/
+  新 `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / 新 state field / per-effect
+  actor selection / multi-actor cross-product /
+  weighted / random selection / event_history-driven
+  gating / chained events / choices / RNG outcomes /
+  更廣 trigger op / target / actor kind / balance
+  pass / UI surface / 對 event_evaluator /
+  event_firer / scenario_loader / canonical fixtures
+  / M1/M2/M3/M4 system 外部行為的變動 /
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  與 runner-integration 一起寫比較有意義）**。
+  M5 remains in progress。
+- **M5（歷史進行中）** — **M5.5
   （event firer skeleton）** 是 M5 的第五個
   sub-milestone。新增
   `leviathan::systems::event_firer` module

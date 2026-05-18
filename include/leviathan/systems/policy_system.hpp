@@ -88,6 +88,36 @@ core::Result<ApplyOutcome> apply_policy_effects(
     core::CountryId         actor,
     const core::PolicyData& policy);
 
+// M5.6: lower-level effect-application primitive extracted from
+// apply_policy_effects so the event-effects applicator
+// (`leviathan::systems::event_effects`) can reuse the exact
+// target/op resolution + pre-flight atomicity without dragging
+// in the M1.15 active_policies bookkeeping (events aren't
+// policies; they should not appear in a country's active_policies
+// list).
+//
+// Same target / op / failure semantics as apply_policy_effects:
+//   - validates actor is a valid index into state.countries
+//   - rejects non-finite effect values at pre-flight
+//   - rejects unknown op (only "add" / "set" recognised)
+//   - rejects unknown target / field
+//   - pre-flight atomicity: any failure leaves state untouched
+//   - ratio clamping post-op
+//   - faction:<type>.<field> with zero matches is a silent no-op
+//
+// Does NOT:
+//   - record an ActivePolicy entry (that's policy-specific;
+//     apply_policy_effects appends after calling this helper)
+//   - apply a duration cap (no duration concept here)
+//
+// Used by:
+//   - apply_policy_effects (above, this module)
+//   - event_effects::apply_event_effects (M5.6 new module)
+core::Result<ApplyOutcome> apply_effects_to_actor(
+    core::GameState&                       state,
+    core::CountryId                        actor,
+    const std::vector<core::PolicyEffect>& effects);
+
 }  // namespace leviathan::systems::policy
 
 #endif  // LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP

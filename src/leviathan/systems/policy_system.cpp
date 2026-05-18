@@ -201,50 +201,32 @@ void apply_op(double* dst, std::string_view op, double value, bool is_ratio) {
 
 }  // namespace
 
-core::Result<ApplyOutcome> apply_policy_effects(
-        core::GameState& state,
-        core::CountryId  actor,
-        const core::PolicyData& policy) {
+core::Result<ApplyOutcome> apply_effects_to_actor(
+        core::GameState&                       state,
+        core::CountryId                        actor,
+        const std::vector<core::PolicyEffect>& effects) {
     // Validate the actor first - this is a precondition that doesn't
     // depend on any effect content.
     if (!actor.valid() ||
         actor.value() < 0 ||
         static_cast<std::size_t>(actor.value()) >= state.countries.size()) {
         return core::Result<ApplyOutcome>::failure(
-            "apply_policy_effects: actor CountryId " +
+            "apply_effects_to_actor: actor CountryId " +
             std::to_string(actor.value()) +
             " is not a valid index into state.countries");
     }
 
-    // M1.15: bound-check duration_days BEFORE any pre-flight or apply.
-    // GameDate::advance_days is a per-day loop, so an unbounded
-    // duration would stall the call. DataLoader admits anything up to
-    // INT_MAX (it can't depend on this module without inverting the
-    // layering), so PolicySystem is the last line of defense.
-    if (policy.duration_days < 0) {
-        return core::Result<ApplyOutcome>::failure(
-            "apply_policy_effects: policy.duration_days must be >= 0 (got " +
-            std::to_string(policy.duration_days) + ")");
-    }
-    if (policy.duration_days > kMaxTrackedPolicyDurationDays) {
-        return core::Result<ApplyOutcome>::failure(
-            "apply_policy_effects: policy.duration_days " +
-            std::to_string(policy.duration_days) +
-            " exceeds kMaxTrackedPolicyDurationDays (" +
-            std::to_string(kMaxTrackedPolicyDurationDays) + ")");
-    }
-
     // ---- Pre-flight: resolve every effect's target / op ----------
     std::vector<ResolvedTarget> resolved;
-    resolved.reserve(policy.effects.size());
+    resolved.reserve(effects.size());
 
-    for (std::size_t i = 0; i < policy.effects.size(); ++i) {
-        const auto& e = policy.effects[i];
+    for (std::size_t i = 0; i < effects.size(); ++i) {
+        const auto& e = effects[i];
 
         // PR #16 review: reject NaN / Inf at pre-flight so a manually
-        // constructed PolicyData can't slip a non-finite value past
-        // the DataLoader (which already rejects them) and corrupt
-        // state at apply time.
+        // constructed PolicyData / synthesised effect list can't slip
+        // a non-finite value past the DataLoader (which already
+        // rejects them) and corrupt state at apply time.
         if (!std::isfinite(e.value)) {
             return core::Result<ApplyOutcome>::failure(
                 "effects[" + std::to_string(i) +
@@ -267,8 +249,8 @@ core::Result<ApplyOutcome> apply_policy_effects(
 
     // ---- Apply ---------------------------------------------------
     ApplyOutcome outcome;
-    for (std::size_t i = 0; i < policy.effects.size(); ++i) {
-        const auto& e  = policy.effects[i];
+    for (std::size_t i = 0; i < effects.size(); ++i) {
+        const auto& e  = effects[i];
         auto& rt       = resolved[i];
 
         if (rt.country_field != nullptr) {
@@ -282,6 +264,42 @@ core::Result<ApplyOutcome> apply_policy_effects(
                 static_cast<int>(rt.faction_fields.size());
         }
         ++outcome.effects_applied;
+    }
+
+    return core::Result<ApplyOutcome>::success(std::move(outcome));
+}
+
+core::Result<ApplyOutcome> apply_policy_effects(
+        core::GameState& state,
+        core::CountryId  actor,
+        const core::PolicyData& policy) {
+    // M1.15: bound-check duration_days BEFORE any pre-flight or apply.
+    // GameDate::advance_days is a per-day loop, so an unbounded
+    // duration would stall the call. DataLoader admits anything up to
+    // INT_MAX (it can't depend on this module without inverting the
+    // layering), so PolicySystem is the last line of defense.
+    //
+    // Duration validation happens BEFORE delegating to
+    // apply_effects_to_actor so a bad duration_days does not even
+    // run pre-flight against effects (mirrors the M1.15 contract
+    // that state stays untouched on duration failure).
+    if (policy.duration_days < 0) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_policy_effects: policy.duration_days must be >= 0 (got " +
+            std::to_string(policy.duration_days) + ")");
+    }
+    if (policy.duration_days > kMaxTrackedPolicyDurationDays) {
+        return core::Result<ApplyOutcome>::failure(
+            "apply_policy_effects: policy.duration_days " +
+            std::to_string(policy.duration_days) +
+            " exceeds kMaxTrackedPolicyDurationDays (" +
+            std::to_string(kMaxTrackedPolicyDurationDays) + ")");
+    }
+
+    // ---- Delegate effect-application to the M5.6-extracted helper.
+    auto apply_r = apply_effects_to_actor(state, actor, policy.effects);
+    if (!apply_r) {
+        return core::Result<ApplyOutcome>::failure(std::move(apply_r.error()));
     }
 
     // ---- M1.15: record this enactment as an active policy --------
@@ -298,7 +316,7 @@ core::Result<ApplyOutcome> apply_policy_effects(
     country_ref.active_policies.push_back(
         core::ActivePolicy{policy.id_code, expires_on});
 
-    return core::Result<ApplyOutcome>::success(std::move(outcome));
+    return core::Result<ApplyOutcome>::success(std::move(apply_r).value());
 }
 
 }  // namespace leviathan::systems::policy
