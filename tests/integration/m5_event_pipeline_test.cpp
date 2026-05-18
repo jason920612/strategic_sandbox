@@ -131,9 +131,10 @@ EventDefinition make_event(const std::string& id_code,
                            std::vector<EventTrigger> triggers,
                            std::vector<PolicyEffect> effects) {
     EventDefinition d;
-    d.id_code  = id_code;
-    d.name     = id_code;
-    d.triggers = std::move(triggers);
+    d.id_code    = id_code;
+    d.name       = id_code;
+    d.true_cause = "test true cause";   // M6.1: required non-empty
+    d.triggers   = std::move(triggers);
     d.effects  = std::move(effects);
     return d;
 }
@@ -207,7 +208,7 @@ TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty,
     // month boundary, but the canonical events at M5.1 are
     // deliberately tuned so neither fires on the canonical
     // 1930 scenario.
-    CHECK(save.find("\"save_version\": 14")    != std::string::npos);
+    CHECK(save.find("\"save_version\": 15")    != std::string::npos);
     CHECK(save.find("\"event_history\": []")   != std::string::npos);
 
     // events.jsonl is the M0.6 lifecycle log; M5.8 did NOT
@@ -237,7 +238,7 @@ TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty,
 // =====================================================================
 // B. hand-built event that fires through runner::run_state
 // =====================================================================
-TEST_CASE("M5 integration: a firing event lands its effect and round-trips through save v14") {
+TEST_CASE("M5 integration: a firing event lands its effect and round-trips through save (current v15)") {
     TempDir td("leviathan_m5_firing_event_apply");
 
     GameState state = make_m5_firing_state();
@@ -253,7 +254,7 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
 
     // The event recorded one EventInstance + applied its effect
     // to GER (the first / only actor).
-    CHECK(save.find("\"save_version\": 14")                       != std::string::npos);
+    CHECK(save.find("\"save_version\": 15")                       != std::string::npos);
     CHECK(save.find("\"low_stability_unrest_firing\"")            != std::string::npos);
     // Legitimacy dropped by 0.05 from 0.50 -> 0.45 (rounded text
     // varies; pin the field name + the dropped digit).

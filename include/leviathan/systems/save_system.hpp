@@ -171,7 +171,29 @@ namespace leviathan::systems::save_system {
 //                auto-fire, no effects application, no runner
 //                or monthly integration, no events.jsonl change,
 //                no new artefact — still 10).
-inline constexpr std::uint32_t kSaveFormatVersion   = 14;
+//   v15 (M6.1) - opens RFC-090 M6 (hidden truth / information
+//                distortion). Adds a required `true_cause`
+//                string field on every `events[]` entry per
+//                RFC-090 §6.1. `true_cause` is the author-
+//                written truth narrative; M6.1 stores and
+//                round-trips it but no system consumes it yet
+//                (later M6 sub-milestones — 6.2 visible_report,
+//                6.3 information_accuracy, etc. — will read it).
+//                We bump strictly under the M0.8 rule: a v14
+//                save's `events[]` entries lacked `true_cause`;
+//                silently defaulting to an empty string on
+//                reload would erase author intent. At the
+//                save-file level `true_cause` is REQUIRED non-
+//                empty for every event entry; missing /
+//                wrong-type / empty all rejected loudly.
+//                `event_history` schema is unchanged in M6.1.
+//                The wider M6 surface (visible_report,
+//                information_accuracy, reported value,
+//                bias/noise, intelligence budget, corruption,
+//                debug mode) does NOT ship in M6.1 — they
+//                land in 6.2–6.9 in their own sub-milestone
+//                PRs.
+inline constexpr std::uint32_t kSaveFormatVersion   = 15;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always
