@@ -28,13 +28,14 @@
   runner CLI flag, no new artefact (still 10), no
   `events.jsonl` semantic change, no new
   `PlayerCommandKind`** — M5.1 is loader + validator +
-  store only. See `docs/milestone-5-checkpoint.md` for
-  the in-progress M5 snapshot,
+  store only. See
   `docs/m5-1-event-definition-schema-foundation.md` for
   the M5.1 design note, and `docs/milestone-4-result.md`
   / `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` / `docs/milestone-1-result.md`
-  for the M0–M4 exit reports.
+  for the M0–M4 exit reports. (`docs/milestone-5-checkpoint.md`
+  is deliberately deferred until M5 has shipped multiple
+  surfaces — premature at M5.1.)
 - Latest shipped sub-milestone: **M5.1 — EventDefinition
   trigger/effect schema foundation.** First M5 PR.
   Upgrades the M0 `EventDefinition` stub in place to a
@@ -89,10 +90,11 @@
   regression; **921 total, 61862 assertions; verified
   via direct `leviathan_tests.exe` run** per the
   `feedback_ctest_masks_doctest` rule). New
-  `docs/milestone-5-checkpoint.md` opens the M5
-  in-progress snapshot per `feedback_checkpoint_drift`;
-  new `docs/m5-1-event-definition-schema-foundation.md`
-  design note. **No trigger evaluator, no event firing,
+  `docs/m5-1-event-definition-schema-foundation.md`
+  design note. (No `docs/milestone-5-checkpoint.md` — that
+  doc is deferred until M5 has shipped multiple surfaces;
+  starting one at M5.1 would be premature milestone
+  framing.) **No trigger evaluator, no event firing,
   no effects application, no monthly integration, no
   `events.jsonl` semantic change, no runner CLI flag,
   no new artefact (still 10), no new `PlayerCommandKind`,

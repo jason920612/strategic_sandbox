@@ -1060,7 +1060,7 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v12 (M4.1 bumped from v11 for provinces)") {
+TEST_CASE("run: save schema is now v13 (M5.1 bumped from v12 for event definitions)") {
     TempDir td("leviathan_runner_m31_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -1068,7 +1068,7 @@ TEST_CASE("run: save schema is now v12 (M4.1 bumped from v11 for provinces)") {
     opts.output_dir  = td.path;
     REQUIRE(rn::run(opts).ok());
     const std::string save = read_file(td.path / "save.json");
-    // Pin the unchanged version: M0.8 documented strict equality.
+    // Pin the current version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
     CHECK(save.find("\"save_version\": 13") != std::string::npos);
 }

@@ -266,10 +266,12 @@ M0 / M1 中落地，部分仍是未來工作：
   runner regression；**921 total，61862 assertions；
   per `feedback_ctest_masks_doctest` 規則，直接跑
   `leviathan_tests.exe` 驗證**）。新
-  `docs/milestone-5-checkpoint.md` 依
-  `feedback_checkpoint_drift` 規則開啟 M5 in-progress
-  snapshot；新 `docs/m5-1-event-definition-schema-foundation.md`
-  design note。**沒有 trigger evaluator / 事件 firing /
+  `docs/m5-1-event-definition-schema-foundation.md`
+  design note。**沒有 `docs/milestone-5-checkpoint.md`** ──
+  該 checkpoint 故意延後到 M5 多個 surface 落地後再開
+  （M3 / M4 各自在 M3.7 / M4.9 才開 checkpoint，
+  並非 .1）；在 M5.1 開 checkpoint 會是 premature
+  milestone framing。**沒有 trigger evaluator / 事件 firing /
   effects 套用 / monthly 整合 / `events.jsonl` 語意變更 /
   runner CLI flag / 新 artefact（仍 10）/ 新
   `PlayerCommandKind` / cooldown / weight / exclusivity /

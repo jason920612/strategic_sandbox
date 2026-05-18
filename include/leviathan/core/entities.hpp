@@ -2,9 +2,11 @@
 //
 // M0 introduced these as ID-only stubs; M1.1 fleshed out CountryState;
 // M1.2 fleshed out FactionState; M1.3 added BudgetState (embedded in
-// CountryState); M1.4 fleshes out PolicyData with its effects vector.
-// ProvinceState and EventDefinition remain ID-only stubs and will grow
-// in subsequent sub-milestones.
+// CountryState); M1.4 fleshed out PolicyData with its effects vector;
+// M4.1 fleshed out the province map-node data layer as ProvinceNode
+// (replacing the M0 ProvinceState stub); M5.1 fleshed out
+// EventDefinition with the trigger/effect schema (replacing the M0
+// stub). Remaining entity growth is additive and milestone-scoped.
 //
 // Naming convention for CountryState numeric fields:
 //   * gdp / tax_revenue / budget_balance      - absolute amounts
