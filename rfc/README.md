@@ -218,7 +218,68 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.2
+  information distortion）** — **M6.3
+  （information_accuracy helper skeleton）** 是 M6
+  的第三個 sub-milestone。完全照 RFC-090 §6.3
+  （`6.3 實作 information_accuracy`）實作：新增
+  `leviathan::systems::information_accuracy` module
+  （header + impl），公開
+  `inline constexpr double
+  kPlaceholderInformationAccuracy = 1.0` 與
+  `core::Result<double> compute_for_country(const
+  GameState& state, CountryId country)`。**M6.3
+  只 ship 出 helper SHAPE**：函式 body 是
+  placeholder，對任何合法 country 一律回傳 1.0
+  （= no-distortion ceiling）。M6.6 會把 body 換成
+  以 intelligence budget 加權的公式；M6.7 會以
+  corruption 加權；M6.4 / M6.5 / M6.8 / M6.9
+  則消費 accuracy 來算 reported value / 加 bias-
+  noise / debug 模式 bypass / 非 debug 模式隱藏。
+  **M6.3 故意不 bump save schema**（per PR #101
+  reviewer 的建議：*「M6.3 要做 information_accuracy
+  時，建議不要再 bump save schema，除非真的新增
+  persistent field。先做 pure helper / system surface
+  比較乾淨。」*）── helper 是 pure read，沒有新的
+  persistent state；save format 保持 **v16**。
+  **驗證**：不合法的 `CountryId` → `Result::failure`
+  並把違規數值寫進訊息，形狀與 M1.5 / M5.6
+  `policy::apply_effects_to_actor` 一致。**Pure /
+  read-only / deterministic**：用 save 層
+  serialize state 在多次呼叫前後比 bytes 釘住。
+  **9 個新 doctest case（1074 total，62459
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：
+  合法 country 回傳 placeholder / 結果在 `[0,1]` /
+  body 還沒讀 country field（兩個只差 corruption
+  的 state 結果相同 ── 等 M6.7 落地時這個 test
+  會被改寫）/ 超界 `CountryId` 拒 /
+  `CountryId::invalid()` 拒 / 空 `state.countries`
+  拒 / 不動 GameState（用 save round-trip 釘）/
+  deterministic / 公開常數穩定。所有 1065 個
+  M6.2-era 測試仍 byte-identical 通過。新
+  `docs/m6-3-information-accuracy-helper-skeleton.md`
+  design note。**沒有 save format bump（仍 v16）/
+  新 state field / 新 artefact（仍 10）/ 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / scenario_loader 變動 /
+  event-module / monthly_pipeline / runner 程式
+  變動 / canonical fixture 變動 / 任何系統消費此
+  helper（helper 可呼叫但目前沒人呼叫；M6.4 才會
+  開始用）/ per-event 變體（`compute_for_event`
+  是 M6.4 的事）/ reported value（M6.4）/
+  bias / noise（M6.5）/ intelligence-budget 公式
+  （M6.6）/ corruption 公式（M6.7）/ debug 模式
+  （M6.8）/ 非 debug 隱藏（M6.9）/ EventReport
+  類型或 artefact / events.jsonl 語意變動 / UI /
+  map 整合 / balance pass / RNG draw（M6.3 是
+  deterministic；M6.5 才會引入 RNG）/ 對 M1.17 /
+  M2 / M3 / M4 / M5 byte-identical determinism
+  baseline 的變動（沒有消費者 = 沒有 determinism
+  drift）/ M6.4 工作 /
+  `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」字樣**。
+  M6 remains in progress。
+- **M6（歷史進行中）** — **M6.2
   （EventDefinition visible_report schema）** 是 M6
   的第二個 sub-milestone。完全照 RFC-090 §6.2
   （`6.2 加入 visible_report`）實作：在

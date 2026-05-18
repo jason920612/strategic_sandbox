@@ -9,7 +9,7 @@
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at M6.2. M6 follows RFC-090 §M6 (隱藏真相
+  progress at M6.3. M6 follows RFC-090 §M6 (隱藏真相
   與資訊失真): the player will not always see the
   truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
   `visible_report`; 6.3 `information_accuracy`; 6.4
@@ -19,25 +19,33 @@
   opened M6 with the schema foundation — added a
   required non-empty `true_cause` string field on
   `core::EventDefinition`; save v14 → v15. **M6.2**
-  adds the **`visible_report` field** (RFC-090 §6.2)
-  — author-written public-facing fired-report
-  description between `description` (public, M5.1)
-  and `true_cause` (truth, M6.1). Save format v15 →
-  v16. **Both M6.1 and M6.2 are schema-only**:
-  fields stored, round-tripped, walked by
-  diagnostics, but **no system consumes them**.
-  Future M6 sub-milestones — 6.3
-  `information_accuracy`, 6.4 reported value, 6.5
-  bias/noise, 6.6 intel budget, 6.7 corruption, 6.8
-  debug-mode, 6.9 non-debug hiding — will distort /
-  blur / hide / selectively leak `visible_report`
-  toward the truth in `true_cause`. **Canonical
-  events still deliberately don't fire** on the
-  canonical scenario; M6.1 + M6.2 add zero
-  behavioural drift to M1.17 / M2 / M3 / M4 / M5
-  byte-identical determinism baselines.
-  See `docs/m6-1-event-definition-true-cause-schema.md`
-  and `docs/m6-2-event-definition-visible-report-schema.md`
+  added the **`visible_report` field** between
+  `description` and `true_cause`; save v15 → v16.
+  **M6.3** adds the **`information_accuracy` helper
+  skeleton** — a new
+  `leviathan::systems::information_accuracy` module
+  with `compute_for_country(state, country) →
+  Result<double>` and a public constant
+  `kPlaceholderInformationAccuracy = 1.0`. **M6.3
+  does NOT bump the save schema** per the PR #101
+  reviewer note (helper is pure read; no persistent
+  state) — save stays at v16. **M6.1, M6.2, and
+  M6.3 are all schema/helper-only**: fields and
+  function exist, but **no system consumes them**.
+  Future M6 sub-milestones — 6.4 reported value,
+  6.5 bias/noise, 6.6 intel budget, 6.7 corruption,
+  6.8 debug-mode, 6.9 non-debug hiding — will use
+  the helper + distort / blur / hide / selectively
+  leak `visible_report` toward the truth in
+  `true_cause`. **Canonical events still
+  deliberately don't fire** on the canonical
+  scenario; M6.1 + M6.2 + M6.3 add zero behavioural
+  drift to M1.17 / M2 / M3 / M4 / M5 byte-identical
+  determinism baselines.
+  See `docs/m6-1-event-definition-true-cause-schema.md`,
+  `docs/m6-2-event-definition-visible-report-schema.md`,
+  and
+  `docs/m6-3-information-accuracy-helper-skeleton.md`
   for the M6 design notes, and
   `docs/milestone-5-result.md` for the M5 exit
   report (canonical M5 record going forward),
@@ -45,7 +53,88 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.2 — EventDefinition
+- Latest shipped sub-milestone: **M6.3 —
+  information_accuracy helper skeleton.** Third M6
+  PR. Implements only RFC-090 §6.3 (`6.3 實作
+  information_accuracy`). New
+  `leviathan::systems::information_accuracy` module
+  (`include/leviathan/systems/information_accuracy.hpp`
+  + `src/leviathan/systems/information_accuracy.cpp`).
+  Public API: `inline constexpr double
+  kPlaceholderInformationAccuracy = 1.0`,
+  `core::Result<double> compute_for_country(const
+  GameState& state, CountryId country)`.
+  **M6.3 ships the helper SHAPE only**: the body is
+  a placeholder that returns 1.0 unconditionally for
+  any valid country. M6.6 will replace this body
+  with a formula that weights accuracy DOWN by the
+  country's intelligence budget; M6.7 will weight it
+  DOWN by corruption; M6.4 / M6.5 / M6.8 / M6.9 will
+  consume the resulting accuracy to produce reported
+  values, apply bias/noise, bypass for debug mode,
+  and hide for non-debug mode respectively.
+  **M6.3 does NOT bump the save schema** per the PR
+  #101 reviewer note: *"M6.3 要做 information_accuracy
+  時，建議不要再 bump save schema，除非真的新增
+  persistent field"*. The helper is pure read; no
+  new persistent state on `GameState` / `CountryState`
+  / `EventDefinition` / `EventInstance` /
+  `EventInstanceActor`. Save format stays at **v16**.
+  **Why placeholder = 1.0**: honest about "no
+  distortion wired yet"; M6.6 / M6.7 reduce the
+  value below 1.0 as their inputs (intelligence,
+  corruption) get worse. The constant
+  `kPlaceholderInformationAccuracy` becomes the
+  "no-distortion ceiling" once the formula lands.
+  **Validation**: invalid `CountryId` →
+  `Result::failure` with the offending value in the
+  message, matching the M1.5 / M5.6
+  `policy::apply_effects_to_actor` validation style.
+  **Pure / read-only / deterministic**: pinned by
+  tests that serialize state via the save layer
+  before + after multiple calls and CHECK the bytes
+  match; repeated calls return the same value. **9
+  new doctest cases (1074 total, 62459 assertions;
+  verified via direct `leviathan_tests.exe` run**
+  per the `feedback_ctest_masks_doctest` rule):
+  valid country returns `kPlaceholderInformationAccuracy`
+  / placeholder is in `[0, 1]` / body does NOT
+  consult country fields yet (two states with
+  different corruption → same result; this test
+  will be REWRITTEN at M6.7 to pin the expected
+  difference) / out-of-range `CountryId` rejected /
+  `CountryId::invalid()` rejected / empty
+  `state.countries` rejected / helper does NOT
+  mutate GameState (full save round-trip serialize
+  comparison before / after) / deterministic
+  (repeated identical-input calls return identical
+  values) / `kPlaceholderInformationAccuracy == 1.0`
+  is stable. All 1065 M6.2-era tests still pass
+  byte-identically. New
+  `docs/m6-3-information-accuracy-helper-skeleton.md`
+  design note. **No save format bump (still v16),
+  no new state field, no new artefact (still 10),
+  no new RunnerOptions field / CLI flag, no new
+  PlayerCommandKind, no scenario_loader change, no
+  event-module / monthly_pipeline / runner code
+  change, no canonical fixture change, no consumer
+  in any current system (the helper is callable but
+  no one calls it yet; M6.4 will), no per-event
+  variant (`compute_for_event` is M6.4 scope), no
+  reported value (M6.4), no bias / noise (M6.5),
+  no intelligence-budget formula (M6.6), no
+  corruption formula (M6.7), no debug mode (M6.8),
+  no non-debug hiding (M6.9), no EventReport type
+  / artefact, no events.jsonl semantic change, no
+  UI / map integration, no balance pass, no RNG
+  draws (helper is deterministic; M6.5 introduces
+  RNG when it lands), no rebake of M1.17 / M2 / M3
+  / M4 / M5 byte-identical determinism baselines
+  (no consumer = no determinism drift), no M6.4
+  work, no `docs/milestone-6-checkpoint.md`, no
+  `docs/milestone-6-result.md`, no "M6 closed"
+  wording.** M6 remains in progress.
+- Previously shipped: **M6.2 — EventDefinition
   visible_report schema.** Second M6 PR. Implements
   only RFC-090 §6.2 (`6.2 加入 visible_report`).
   Adds a required non-empty `std::string
