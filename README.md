@@ -6,42 +6,107 @@
 
 ## Status
 
-- Phase: **Milestone 4 — SVG map + UI (CLOSED, RFC-090
-  §M4).** M0 / M1 / M2 / M3 / M4 all closed. M4 delivered
-  in 23 sub-milestones (M4.1–M4.23) a deterministic
-  10-artefact viewer stack consisting of: typed
-  `ProvinceNode` data layer (save v11→v12 at M4.1); SVG
-  renderer + `provinces.svg` as 9th artefact (M4.2); HTML
-  viewer wrapper + `map.html` as 10th artefact (M4.5); a
-  shared `render_svg_root` helper between the two; a
-  five-attribute DOM identity surface on every `<circle>`
-  + `<text>` (M4.8 + M4.13); a single-inline-`<script>`
-  interactivity layer with click + Enter/Space + hover
-  listeners (M4.10/M4.15/M4.20); a `<div id="details">`
-  panel + `<p id="hover-status">` text bar; a transient
-  `.selected` highlight (M4.12); CSS `:focus-visible` +
-  `:hover` rings (M4.16/M4.19); a `tabindex="0"` +
-  `role="button"` + composed `aria-label` accessibility
-  surface (M4.15/M4.17); a `<meta name="viewport">` + one
-  responsive `@media (max-width: 1040px)` rule (M4.21).
-  Asymmetric JS boundary established at M4.10 holds end
-  to end: `provinces.svg` stays fully inert (no
-  `<script>` / `<style>` / `font-family`); `map.html`
-  carries EXACTLY ONE inline `<script>` (no `src=`, no
-  `type=`). The XSS-safe DOM API contract holds:
-  `getAttribute` to read, `createElement` + `textContent`
-  + `classList` to write; never `innerHTML` / `eval` /
-  `fetch` / storage / navigation. Selection / hover /
-  focus are purely DOM-level (lost on reload). See
-  `docs/milestone-4-result.md` for the **M4 exit report**
-  (full ledger, dataflow, contract, invariants,
-  deferred items, neutral next-milestone candidates),
-  `docs/milestone-3-result.md` / `docs/milestone-2-result.md`
-  / `docs/milestone-1-result.md` for prior exit reports,
-  and `docs/milestone-4-checkpoint.md` (now annotated
-  as historical) for the in-progress snapshots that
-  preceded the close-out.
-- Latest shipped sub-milestone: **M4.23 — M4 exit /
+- Phase: **Milestone 5 — Event engine (IN PROGRESS,
+  RFC-090 §M5).** M0 / M1 / M2 / M3 / M4 all closed; M5
+  opened at M5.1. M5.1 ships the **EventDefinition
+  schema foundation** only — typed
+  `core::EventDefinition { id_code, name, description,
+  triggers, effects }` + `core::EventTrigger { target,
+  op, value }` (replacing the M0 stub
+  `EventDefinition { EventId id; std::string name; }`),
+  a new `scenario_loader::parse_event_file` per-file
+  parser with target/op allowlists, an optional
+  `events[]` array in the manifest mirroring M4.1's
+  `provinces[]` shape, save format bumped v12 → v13
+  (events array required at save layer with the same
+  allowlist re-checked on reload), `state.events`
+  walked by `diagnostics::compare_states`, and the
+  canonical two-event fixture
+  `data/events/1930_core_events.json` wired into both
+  1930 manifests. **No firing, no evaluator, no
+  effects application, no monthly integration, no new
+  runner CLI flag, no new artefact (still 10), no
+  `events.jsonl` semantic change, no new
+  `PlayerCommandKind`** — M5.1 is loader + validator +
+  store only. See `docs/milestone-5-checkpoint.md` for
+  the in-progress M5 snapshot,
+  `docs/m5-1-event-definition-schema-foundation.md` for
+  the M5.1 design note, and `docs/milestone-4-result.md`
+  / `docs/milestone-3-result.md` /
+  `docs/milestone-2-result.md` / `docs/milestone-1-result.md`
+  for the M0–M4 exit reports.
+- Latest shipped sub-milestone: **M5.1 — EventDefinition
+  trigger/effect schema foundation.** First M5 PR.
+  Upgrades the M0 `EventDefinition` stub in place to a
+  typed `{ id_code, name, description, triggers[],
+  effects[] }` shape; introduces
+  `core::EventTrigger { target, op, value }`. Reuses
+  `core::PolicyEffect` (M1.4) for
+  `EventDefinition::effects` so a future M5.x evaluator
+  can dispatch through the existing
+  `policy::apply_policy_effects` machinery without
+  inventing a parallel effect path. Trigger `op`
+  allowlist: `lt` / `lte` / `gt` / `gte`. Trigger
+  `target` allowlist: `country.stability`,
+  `country.legitimacy`,
+  `country.government_authority.bureaucratic_compliance`,
+  `interest_group.radicalism`,
+  `interest_group.loyalty`. Trigger `value` must be a
+  finite double. Effect target/op are required
+  non-empty strings + finite value at load (mirrors
+  `data_loader::parse_policy`'s no-allowlist-at-load
+  rule; the target/op allowlist for effects lives in
+  M1.5 and a future M5.x evaluator inherits it for
+  free). `triggers` must be non-empty; `effects` may
+  be empty (the "warning-only event" class). New
+  `scenario_loader::parse_event_file` per-file parser;
+  `ScenarioManifest` gains an optional `events[]`
+  array of file paths mirroring M4.1's `provinces[]`
+  shape; `ScenarioLoadOutcome` gains `events_loaded`.
+  Cross-file uniqueness of event `id_code` enforced at
+  load and re-enforced at the save layer. **Save
+  format bumped v12 → v13**: events array required
+  with id_code/name/description/triggers/effects
+  validated per entry; v12 saves rejected loudly with
+  `supports 13` in the message. `diagnostics::compare_states`
+  walks `state.events` after `state.provinces` with
+  field paths `events[N].id_code` /
+  `events[N].triggers[M].target` etc. New canonical
+  fixture `data/events/1930_core_events.json` ships
+  two events — `low_stability_unrest` (trigger
+  `country.stability lt 0.30`, effect
+  `country.stability add -0.02`) and
+  `radical_interest_group_warning` (trigger
+  `interest_group.radicalism gt 0.75`, effect
+  `country.legitimacy add -0.01`); values chosen so
+  **neither fires on the canonical scenario** (GER
+  stability is 0.55 > 0.30; canonical interest-group
+  radicalism is 0.10 < 0.75). Both canonical
+  manifests (`1930_minimal.json` +
+  `1930_with_start_policies.json`) reference the file.
+  ~25 new doctest cases (8 save_system + 13
+  scenario_loader + 4 diagnostics + 2 runner
+  regression; **921 total, 61862 assertions; verified
+  via direct `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule). New
+  `docs/milestone-5-checkpoint.md` opens the M5
+  in-progress snapshot per `feedback_checkpoint_drift`;
+  new `docs/m5-1-event-definition-schema-foundation.md`
+  design note. **No trigger evaluator, no event firing,
+  no effects application, no monthly integration, no
+  `events.jsonl` semantic change, no runner CLI flag,
+  no new artefact (still 10), no new `PlayerCommandKind`,
+  no cooldown / weight / exclusivity / chained events
+  / choices / RNG-driven outcome branches /
+  historical-once gating / log-on-fire / broader
+  trigger ops (`eq` / `ne` / `between` / `in`) /
+  broader trigger targets / per-effect actor /
+  per-effect duration / event categories / event
+  ordering / save-schema migration shim / UI surface
+  / balance pass / any change to M1/M2/M3/M4 systems
+  / any change to `PolicyEffect` shape.** M5 remains
+  in progress.
+- Previously shipped: **M4.23 — M4 exit /
   close-out.** Docs-only PR mirroring M1.17 / M2.22 /
   M3.9 in shape. Publishes
   `docs/milestone-4-result.md` (the M4 exit report —
@@ -56,10 +121,7 @@
   closed". No code, no formula, no fixture, no test
   change (892 doctest cases / 61742 assertions identical
   with M4.22). `provinces.svg` + `map.html` bytes
-  byte-identical with M4.22. **M4 closes here.** **No
-  M5 in progress** — M5 starts in its own deliberate
-  first sub-milestone PR when the reviewer decides;
-  M4.23 makes no claim about which milestone is next.
+  byte-identical with M4.22. **M4 closes here.**
 - Previously shipped: **M4.22 — close-out
   readiness checkpoint.** Mirrors M3.7's role for the M3
   reaction loop: docs + 1 integration test, no renderer
@@ -3329,6 +3391,8 @@ No save format change.**
 │                         countries/{germany,france,japan}.json (M0.7-M1.3),
 │                         factions/ger_*.json (M1.2),
 │                         policies/*.json (M1.4),
+│                         provinces/1930_core_nodes.json (M4.1),
+│                         events/1930_core_events.json (M5.1),
 │                         scenarios/1930_minimal.json (M1.11),
 │                         scenarios/1930_with_start_policies.json (M1.13)
 ├── tools/                Dev / debug tools, currently empty

@@ -25,6 +25,9 @@
     "provinces": [
       "provinces/1930_core_nodes.json"
     ],
+    "events": [
+      "events/1930_core_events.json"
+    ],
     "interest_groups": [
       {
         "id_code":    "ger_bureaucracy",

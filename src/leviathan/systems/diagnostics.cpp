@@ -586,6 +586,66 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
         }
     }
 
+    // ---- events (M5.1) ---------------------------------------------
+    // Walks state.events (typed EventDefinition since M5.1; was the
+    // M0 stub before). Per-entry: id_code, name, description,
+    // triggers[].(target/op/value), effects[].(target/op/value).
+    // Mirrors the M3.1 interest_groups / M4.1 provinces shape.
+    if (a.events.size() != b.events.size()) {
+        push_mismatch(out, "events.size()",
+                      std::to_string(a.events.size()) + " != " +
+                      std::to_string(b.events.size()));
+    } else {
+        for (std::size_t i = 0; i < a.events.size(); ++i) {
+            const auto& ea = a.events[i];
+            const auto& eb = b.events[i];
+            const std::string prefix =
+                "events[" + std::to_string(i) + "]";
+
+            check_string(out, prefix + ".id_code",
+                         ea.id_code, eb.id_code);
+            check_string(out, prefix + ".name", ea.name, eb.name);
+            check_string(out, prefix + ".description",
+                         ea.description, eb.description);
+
+            if (ea.triggers.size() != eb.triggers.size()) {
+                push_mismatch(out, prefix + ".triggers.size()",
+                              std::to_string(ea.triggers.size()) + " != " +
+                              std::to_string(eb.triggers.size()));
+            } else {
+                for (std::size_t ti = 0; ti < ea.triggers.size(); ++ti) {
+                    const auto& ta = ea.triggers[ti];
+                    const auto& tb = eb.triggers[ti];
+                    const std::string tprefix =
+                        prefix + ".triggers[" + std::to_string(ti) + "]";
+                    check_string(out, tprefix + ".target",
+                                 ta.target, tb.target);
+                    check_string(out, tprefix + ".op", ta.op, tb.op);
+                    check_double(out, tprefix + ".value",
+                                 ta.value, tb.value, tol);
+                }
+            }
+
+            if (ea.effects.size() != eb.effects.size()) {
+                push_mismatch(out, prefix + ".effects.size()",
+                              std::to_string(ea.effects.size()) + " != " +
+                              std::to_string(eb.effects.size()));
+            } else {
+                for (std::size_t ei = 0; ei < ea.effects.size(); ++ei) {
+                    const auto& fa = ea.effects[ei];
+                    const auto& fb = eb.effects[ei];
+                    const std::string eprefix =
+                        prefix + ".effects[" + std::to_string(ei) + "]";
+                    check_string(out, eprefix + ".target",
+                                 fa.target, fb.target);
+                    check_string(out, eprefix + ".op", fa.op, fb.op);
+                    check_double(out, eprefix + ".value",
+                                 fa.value, fb.value, tol);
+                }
+            }
+        }
+    }
+
     return out;
 }
 

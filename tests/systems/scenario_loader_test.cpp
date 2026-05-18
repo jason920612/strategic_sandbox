@@ -970,3 +970,386 @@ TEST_CASE("load_into_state: province file missing provinces array rejected") {
     REQUIRE(r.failed());
     CHECK(r.error().find("provinces") != std::string::npos);
 }
+
+// =====================================================================
+// M5.1 - EventDefinition trigger/effect schema foundation
+// =====================================================================
+// Schema-only milestone: events are loaded, validated, stored.
+// No trigger evaluator, no firing, no effects application, no
+// monthly integration, no events.jsonl changes. Tests pin the
+// loader contract end-to-end via temp-dir scenarios.
+
+namespace {
+
+std::string make_two_country_manifest_with_events(
+        const std::string& events_relpath) {
+    return R"({
+  "scenario": {
+    "countries": [ "countries/a.json", "countries/b.json" ],
+    "factions":  [],
+    "policies":  [],
+    "events":    [ ")" + events_relpath + R"(" ]
+  }
+})";
+}
+
+std::string canonical_two_event_file() {
+    return R"({
+  "events": [
+    {
+      "id": "low_stability_unrest",
+      "name": "Low Stability Unrest",
+      "description": "Low stability creates unrest pressure.",
+      "triggers": [
+        { "target": "country.stability", "op": "lt", "value": 0.30 }
+      ],
+      "effects": [
+        { "target": "country.stability", "op": "add", "value": -0.02 }
+      ]
+    },
+    {
+      "id": "radical_interest_group_warning",
+      "name": "Radical Interest Group Warning",
+      "description": "A highly radical interest group signals political risk.",
+      "triggers": [
+        { "target": "interest_group.radicalism", "op": "gt", "value": 0.75 }
+      ],
+      "effects": [
+        { "target": "country.legitimacy", "op": "add", "value": -0.01 }
+      ]
+    }
+  ]
+})";
+}
+
+}  // namespace
+
+TEST_CASE("M5.1 parse_manifest: missing 'events' key is allowed (pre-M5 manifests stay valid)") {
+    const std::string text = R"({
+  "scenario": {
+    "countries": ["countries/a.json"],
+    "factions":  [],
+    "policies":  []
+  }
+})";
+    const auto r = sl::parse_manifest(text);
+    REQUIRE(r);
+    CHECK(r.value().events.empty());
+}
+
+TEST_CASE("M5.1 parse_manifest: 'events' wrong type is rejected") {
+    const std::string text = R"({
+  "scenario": {
+    "countries": [], "factions": [], "policies": [],
+    "events": "not an array"
+  }
+})";
+    const auto r = sl::parse_manifest(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'scenario.events' is not an array")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 parse_manifest: 'events' non-string element rejected") {
+    const std::string text = R"({
+  "scenario": {
+    "countries": [], "factions": [], "policies": [],
+    "events": [ 42 ]
+  }
+})";
+    const auto r = sl::parse_manifest(text);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'scenario.events[0]' is not a string")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: canonical-style scenario loads exactly 2 event definitions") {
+    TempDir td("leviathan_m5_load_canonical_events");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "core.json", canonical_two_event_file());
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/core.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r);
+    CHECK(r.value().events_loaded == 2);
+    REQUIRE(state.events.size() == 2);
+
+    {
+        const auto& ev = state.events[0];
+        CHECK(ev.id_code == "low_stability_unrest");
+        CHECK(ev.name    == "Low Stability Unrest");
+        CHECK(ev.description ==
+              "Low stability creates unrest pressure.");
+        REQUIRE(ev.triggers.size() == 1u);
+        CHECK(ev.triggers[0].target == "country.stability");
+        CHECK(ev.triggers[0].op     == "lt");
+        CHECK(ev.triggers[0].value  == doctest::Approx(0.30));
+        REQUIRE(ev.effects.size() == 1u);
+        CHECK(ev.effects[0].target == "country.stability");
+        CHECK(ev.effects[0].op     == "add");
+        CHECK(ev.effects[0].value  == doctest::Approx(-0.02));
+    }
+    {
+        const auto& ev = state.events[1];
+        CHECK(ev.id_code == "radical_interest_group_warning");
+        CHECK(ev.name    == "Radical Interest Group Warning");
+        REQUIRE(ev.triggers.size() == 1u);
+        CHECK(ev.triggers[0].target == "interest_group.radicalism");
+        CHECK(ev.triggers[0].op     == "gt");
+        CHECK(ev.triggers[0].value  == doctest::Approx(0.75));
+        REQUIRE(ev.effects.size() == 1u);
+        CHECK(ev.effects[0].target == "country.legitimacy");
+        CHECK(ev.effects[0].op     == "add");
+        CHECK(ev.effects[0].value  == doctest::Approx(-0.01));
+    }
+}
+
+TEST_CASE("M5.1 load_into_state: event file missing 'events' array rejected") {
+    TempDir td("leviathan_m5_event_file_no_array");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({"not_events": []})");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'events' missing or not an array")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: event entry missing 'id' rejected") {
+    TempDir td("leviathan_m5_event_missing_id");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "name": "X", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'events[0]'.id missing")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: empty 'triggers' rejected") {
+    TempDir td("leviathan_m5_event_empty_triggers");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "triggers": [],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("triggers must be non-empty")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: trigger target not in allowlist rejected") {
+    TempDir td("leviathan_m5_bad_trigger_target");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "triggers": [
+              { "target": "country.gdp", "op": "lt", "value": 100.0 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'country.gdp' is not in the M5.1 allowlist")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: trigger op not in allowlist rejected") {
+    TempDir td("leviathan_m5_bad_trigger_op");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "eq", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'eq' is not in the M5.1 allowlist")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: trigger value wrong-type rejected") {
+    TempDir td("leviathan_m5_bad_trigger_value");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "lt",
+                "value": "not a number" }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find(".value missing or not a number")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: effect missing 'op' rejected (matches policy-effect style)") {
+    TempDir td("leviathan_m5_bad_effect_op");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [
+              { "target": "country.stability", "value": 0.1 }
+            ] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find(".op missing or not a string")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 load_into_state: empty 'effects' is allowed (warning-only events)") {
+    TempDir td("leviathan_m5_empty_effects_ok");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "warning.json", R"({
+        "events": [
+          { "id": "warn", "name": "Warning Event", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.20 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/warning.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r);
+    REQUIRE(state.events.size() == 1u);
+    CHECK(state.events[0].id_code == "warn");
+    CHECK(state.events[0].effects.empty());
+}
+
+TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
+    TempDir td("leviathan_m5_dup_event_id");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "one.json", R"({
+        "events": [
+          { "id": "shared", "name": "First", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    write_file(td.path / "data" / "events" / "two.json", R"({
+        "events": [
+          { "id": "shared", "name": "Second", "description": "",
+            "triggers": [
+              { "target": "country.stability", "op": "gt", "value": 0.8 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path, R"({
+  "scenario": {
+    "countries": [ "countries/a.json", "countries/b.json" ],
+    "factions":  [],
+    "policies":  [],
+    "events":    [ "events/one.json", "events/two.json" ]
+  }
+})");
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("'shared' is a duplicate")
+          != std::string::npos);
+}
+
+TEST_CASE("M5.1 regression: loading events does NOT mutate countries or interest_groups") {
+    TempDir td("leviathan_m5_no_mutate");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA", "Alpha"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB", "Bravo"));
+    write_file(td.path / "data" / "events" / "core.json", canonical_two_event_file());
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/core.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r);
+    REQUIRE(state.countries.size() == 2u);
+    CHECK(state.countries[0].id_code   == "AAA");
+    CHECK(state.countries[0].stability == doctest::Approx(0.5));
+    CHECK(state.countries[0].legitimacy == doctest::Approx(0.5));
+    CHECK(state.countries[1].id_code   == "BBB");
+    CHECK(state.countries[1].stability == doctest::Approx(0.5));
+    CHECK(state.interest_groups.empty());
+}

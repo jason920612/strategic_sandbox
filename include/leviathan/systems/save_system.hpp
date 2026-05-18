@@ -120,7 +120,33 @@ namespace leviathan::systems::save_system {
 //                Duplicate id_code rejected. scenario_loader still
 //                treats the manifest's `provinces` block as
 //                optional in raw scenario JSON.
-inline constexpr std::uint32_t kSaveFormatVersion   = 12;
+//   v13 (M5.1) - `GameState::events` flipped from the M0 stub
+//                (`EventDefinition{EventId id; std::string name;}`,
+//                emitted as an empty array regardless of state)
+//                to the M5.1 schema-foundation shape
+//                (`EventDefinition{id_code, name, description,
+//                triggers, effects}` mirroring `PolicyData`).
+//                A v12 save's `events` array was always empty;
+//                silently treating it as "no event definitions"
+//                on reload would drop whatever event-definition
+//                set the user authored under M5.1. We bump
+//                strictly. At the save-file level the `events`
+//                array is REQUIRED (empty array allowed); every
+//                entry is validated: non-empty id_code + name,
+//                string description (may be empty), non-empty
+//                triggers array (each with allowlisted target,
+//                allowlisted op, finite value), effects array
+//                (may be empty; each entry has required target,
+//                op, finite value — matching `PolicyEffect`
+//                load-time rules, no target/op allowlist at load
+//                because the future effects applicator will gate
+//                that the same way `policy_system` does). Cross-
+//                save duplicate event id_code rejected.
+//                scenario_loader treats the manifest's `events`
+//                block as optional in raw scenario JSON; M5.1
+//                does not yet evaluate triggers / fire events /
+//                apply effects / emit any new artefact.
+inline constexpr std::uint32_t kSaveFormatVersion   = 13;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

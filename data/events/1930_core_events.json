@@ -1,0 +1,42 @@
+{
+  "events": [
+    {
+      "id": "low_stability_unrest",
+      "name": "Low Stability Unrest",
+      "description": "Low stability creates unrest pressure.",
+      "triggers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.30
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.stability",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
+      "id": "radical_interest_group_warning",
+      "name": "Radical Interest Group Warning",
+      "description": "A highly radical interest group signals political risk.",
+      "triggers": [
+        {
+          "target": "interest_group.radicalism",
+          "op": "gt",
+          "value": 0.75
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    }
+  ]
+}

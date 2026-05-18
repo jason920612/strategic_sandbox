@@ -1,5 +1,6 @@
 #include "leviathan/systems/scenario_loader.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <fstream>
 #include <sstream>
@@ -134,6 +135,246 @@ parse_province_file(std::string_view json_text,
         out.push_back(std::move(p));
     }
     return core::Result<std::vector<ManifestProvince>>::success(std::move(out));
+}
+
+// M5.1: parse one event file. Each file is a JSON object with
+// a top-level `events` array of event-definition records:
+//   {
+//     "id":          "<id_code>",   // required non-empty string
+//     "name":        "<title>",      // required non-empty string
+//     "description": "...",          // required string (may be empty)
+//     "triggers":    [ {target, op, value}, ... ],  // required non-empty
+//     "effects":     [ {target, op, value}, ... ]   // required, may be empty
+//   }
+// Trigger ops are allowlisted at load time {lt, lte, gt, gte};
+// trigger targets are allowlisted against a small set tied to
+// existing M1–M3 state. Effects validation mirrors the
+// `data_loader::parse_policy` pattern — required target/op
+// strings + finite value, no target/op allowlist at load (the
+// existing PolicySystem applies that gate at apply time; M5
+// will follow the same pattern in a future sub-milestone).
+//
+// Cross-file uniqueness of event id_code is enforced inside
+// `load_into_state`. M5.1 only loads + validates + stores; no
+// firing, no evaluator, no effects application yet.
+core::Result<std::vector<ManifestEvent>>
+parse_event_file(std::string_view json_text,
+                 std::string_view source_label) {
+    json root = json::parse(json_text, /*cb=*/nullptr,
+                            /*allow_exceptions=*/false,
+                            /*ignore_comments=*/false);
+    if (root.is_discarded()) {
+        return core::Result<std::vector<ManifestEvent>>::failure(
+            fmt_err(source_label,
+                    "JSON parse error (malformed document)"));
+    }
+    if (!root.is_object()) {
+        return core::Result<std::vector<ManifestEvent>>::failure(
+            fmt_err(source_label,
+                    "top-level JSON value is not an object"));
+    }
+    if (!root.contains("events") || !root.at("events").is_array()) {
+        return core::Result<std::vector<ManifestEvent>>::failure(
+            fmt_err(source_label,
+                    "'events' missing or not an array"));
+    }
+
+    // M5.1 allowlists.
+    static const std::vector<std::string> kTriggerTargets = {
+        "country.stability",
+        "country.legitimacy",
+        "country.government_authority.bureaucratic_compliance",
+        "interest_group.radicalism",
+        "interest_group.loyalty",
+    };
+    static const std::vector<std::string> kTriggerOps = {
+        "lt", "lte", "gt", "gte",
+    };
+    auto is_allowed = [](const std::vector<std::string>& list,
+                         const std::string& v) {
+        for (const auto& s : list) {
+            if (s == v) { return true; }
+        }
+        return false;
+    };
+
+    const json& arr = root.at("events");
+    std::vector<ManifestEvent> out;
+    out.reserve(arr.size());
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        const std::string ctx =
+            "'events[" + std::to_string(i) + "]'";
+        if (!arr[i].is_object()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label, ctx + " is not an object"));
+        }
+        const json& e = arr[i];
+
+        auto need_string_nonempty = [&](const char* key,
+                                        std::string& dst)
+                -> core::Result<bool> {
+            if (!e.contains(key) || !e.at(key).is_string()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key +
+                            " missing or not a string"));
+            }
+            dst = e.at(key).get<std::string>();
+            if (dst.empty()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key + " must be non-empty"));
+            }
+            return core::Result<bool>::success(true);
+        };
+        // description: required string but may be empty.
+        auto need_string_maybe_empty = [&](const char* key,
+                                           std::string& dst)
+                -> core::Result<bool> {
+            if (!e.contains(key) || !e.at(key).is_string()) {
+                return core::Result<bool>::failure(
+                    fmt_err(source_label,
+                            ctx + "." + key +
+                            " missing or not a string"));
+            }
+            dst = e.at(key).get<std::string>();
+            return core::Result<bool>::success(true);
+        };
+
+        ManifestEvent ev;
+        if (auto r = need_string_nonempty("id", ev.id_code); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_string_nonempty("name", ev.name); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+        if (auto r = need_string_maybe_empty("description",
+                                             ev.description); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+
+        // triggers: required, non-empty array.
+        if (!e.contains("triggers") || !e.at("triggers").is_array()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".triggers missing or not an array"));
+        }
+        const json& trig_arr = e.at("triggers");
+        if (trig_arr.empty()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".triggers must be non-empty"));
+        }
+        ev.triggers.reserve(trig_arr.size());
+        for (std::size_t ti = 0; ti < trig_arr.size(); ++ti) {
+            const std::string tctx =
+                ctx + ".triggers[" + std::to_string(ti) + "]";
+            if (!trig_arr[ti].is_object()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label, tctx + " is not an object"));
+            }
+            const json& t = trig_arr[ti];
+            core::EventTrigger trig;
+            // target: required string, allowlisted.
+            if (!t.contains("target") || !t.at("target").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".target missing or not a string"));
+            }
+            trig.target = t.at("target").get<std::string>();
+            if (!is_allowed(kTriggerTargets, trig.target)) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".target '" + trig.target +
+                            "' is not in the M5.1 allowlist"
+                            " (country.stability, country.legitimacy,"
+                            " country.government_authority"
+                            ".bureaucratic_compliance,"
+                            " interest_group.radicalism,"
+                            " interest_group.loyalty)"));
+            }
+            // op: required string, allowlisted.
+            if (!t.contains("op") || !t.at("op").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".op missing or not a string"));
+            }
+            trig.op = t.at("op").get<std::string>();
+            if (!is_allowed(kTriggerOps, trig.op)) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".op '" + trig.op +
+                            "' is not in the M5.1 allowlist"
+                            " (lt, lte, gt, gte)"));
+            }
+            // value: required, finite number.
+            if (!t.contains("value") || !t.at("value").is_number()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".value missing or not a number"));
+            }
+            trig.value = t.at("value").get<double>();
+            if (!std::isfinite(trig.value)) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            tctx + ".value must be finite"));
+            }
+            ev.triggers.push_back(std::move(trig));
+        }
+
+        // effects: required array, MAY be empty (warning-only events).
+        if (!e.contains("effects") || !e.at("effects").is_array()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".effects missing or not an array"));
+        }
+        const json& eff_arr = e.at("effects");
+        ev.effects.reserve(eff_arr.size());
+        for (std::size_t ei = 0; ei < eff_arr.size(); ++ei) {
+            const std::string ectx =
+                ctx + ".effects[" + std::to_string(ei) + "]";
+            if (!eff_arr[ei].is_object()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label, ectx + " is not an object"));
+            }
+            const json& f = eff_arr[ei];
+            // Mirror data_loader::parse_policy effect validation:
+            // require target/op strings + finite value; no
+            // allowlist at load (PolicySystem applies that at
+            // apply time; future M5.x effect applicator will too).
+            core::PolicyEffect eff;
+            if (!f.contains("target") || !f.at("target").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ectx + ".target missing or not a string"));
+            }
+            eff.target = f.at("target").get<std::string>();
+            if (!f.contains("op") || !f.at("op").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ectx + ".op missing or not a string"));
+            }
+            eff.op = f.at("op").get<std::string>();
+            if (!f.contains("value") || !f.at("value").is_number()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ectx + ".value missing or not a number"));
+            }
+            eff.value = f.at("value").get<double>();
+            if (!std::isfinite(eff.value)) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ectx + ".value must be finite"));
+            }
+            ev.effects.push_back(std::move(eff));
+        }
+
+        out.push_back(std::move(ev));
+    }
+    return core::Result<std::vector<ManifestEvent>>::success(std::move(out));
 }
 
 core::Result<std::vector<std::filesystem::path>>
@@ -359,6 +600,30 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
                             "]' is not a string"));
             }
             m.provinces.emplace_back(arr[i].get<std::string>());
+        }
+    }
+
+    // ---- M5.1: optional events array (of file paths) --------------
+    // Missing key allowed (every pre-M5 manifest stays valid).
+    // Present-but-wrong-type rejected. Each entry must be a string
+    // path; the actual event file is loaded later by
+    // `load_into_state`. Mirror M4.1 provinces parsing shape.
+    if (s.contains("events")) {
+        const json& arr = s.at("events");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.events' is not an array"));
+        }
+        m.events.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            if (!arr[i].is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            "'scenario.events[" + std::to_string(i) +
+                            "]' is not a string"));
+            }
+            m.events.emplace_back(arr[i].get<std::string>());
         }
     }
 
@@ -619,6 +884,62 @@ core::Result<ScenarioLoadOutcome> load_into_state(
             }
         }
         outcome.provinces_loaded = static_cast<int>(state.provinces.size());
+    }
+
+    // ---- 8. M5.1 events -------------------------------------------
+    // Each path in `manifest.events` points at an event file
+    // resolved against `base_dir`. The file is parsed via
+    // `parse_event_file`, which enforces the M5.1 trigger
+    // target/op allowlists + value finiteness + non-empty
+    // triggers + effects validation that mirrors
+    // `data_loader::parse_policy`. Cross-file uniqueness of
+    // `id_code` is enforced as we go.
+    //
+    // M5.1 loads + validates + stores ONLY — no event firing,
+    // no trigger evaluator, no effects application, no history,
+    // no monthly integration. The runner output artefacts are
+    // byte-identical with M4 except for the save schema (v12 →
+    // v13) and the canonical save's `events` block now carries
+    // the two canonical-scenario event definitions instead of
+    // an empty array.
+    {
+        std::unordered_map<std::string, std::size_t> event_index;
+        for (std::size_t fi = 0; fi < manifest.events.size(); ++fi) {
+            const auto event_path = base_dir / manifest.events[fi];
+            auto text_r = read_whole_file(event_path);
+            if (!text_r) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    std::move(text_r.error()));
+            }
+            auto entries_r =
+                parse_event_file(text_r.value(),
+                                 event_path.string());
+            if (!entries_r) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    std::move(entries_r.error()));
+            }
+            const auto entries = std::move(entries_r).value();
+            for (std::size_t i = 0; i < entries.size(); ++i) {
+                const auto& entry = entries[i];
+                if (event_index.count(entry.id_code) != 0) {
+                    return core::Result<ScenarioLoadOutcome>::failure(
+                        event_path.string() +
+                        ": events[" + std::to_string(i) +
+                        "].id '" + entry.id_code +
+                        "' is a duplicate across the scenario's"
+                        " event files");
+                }
+                core::EventDefinition ev;
+                ev.id_code     = entry.id_code;
+                ev.name        = entry.name;
+                ev.description = entry.description;
+                ev.triggers    = entry.triggers;
+                ev.effects     = entry.effects;
+                event_index.emplace(ev.id_code, state.events.size());
+                state.events.push_back(std::move(ev));
+            }
+        }
+        outcome.events_loaded = static_cast<int>(state.events.size());
     }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);

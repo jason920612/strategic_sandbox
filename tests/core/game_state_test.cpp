@@ -9,7 +9,6 @@
 using leviathan::core::CountryId;
 using leviathan::core::CountryState;
 using leviathan::core::EventDefinition;
-using leviathan::core::EventId;
 using leviathan::core::FactionId;
 using leviathan::core::FactionState;
 using leviathan::core::GameDate;
@@ -94,7 +93,16 @@ TEST_CASE("GameState containers accept their entity types") {
     }
     state.factions.push_back(FactionState{FactionId{100}, CountryId{1}});
     state.policies.push_back(PolicyData{PolicyId{1}, "increase_military_budget"});
-    state.events.push_back(EventDefinition{EventId{1}, "labor_strike"});
+    // M5.1: EventDefinition upgraded from the M0 stub. Fields:
+    // id_code / name / description / triggers / effects. Empty
+    // triggers + empty effects survive the in-memory shape check
+    // here; the loader / save layer enforce non-empty triggers,
+    // which is a separate concern.
+    state.events.push_back(EventDefinition{"labor_strike",
+                                           "Labor Strike",
+                                           "Workers walk out.",
+                                           {},
+                                           {}});
     LogEntry init_entry;
     init_entry.date    = GameDate(1930, 1, 1);
     init_entry.message = "init";
