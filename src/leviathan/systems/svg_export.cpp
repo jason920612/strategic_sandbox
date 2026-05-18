@@ -147,6 +147,19 @@ std::string render_svg_root(const core::GameState& state) {
         const std::string owner_int_attr =
             std::to_string(owner_v);
 
+        // M4.17: derived screen-reader label. The label
+        // before XML-escape is `name` alone when the owner
+        // is invalid, and `name + ", " + owner_name` when
+        // the owner resolves. The whole composed string is
+        // then XML-attribute-escaped as a single value, so
+        // names containing `& < > " '` cannot break the
+        // attribute syntax. This shape lives in render_svg_root
+        // so the standalone provinces.svg picks it up too.
+        const std::string aria_label_raw =
+            owner_name.empty() ? p.name : (p.name + ", " + owner_name);
+        const std::string aria_label_attr =
+            xml_attr_escape(aria_label_raw);
+
         // M4.15: emit tabindex="0" on every <circle> + <text>
         // so keyboard users can Tab through province markers
         // and fire the M4.10 click handler via Enter / Space.
@@ -155,12 +168,22 @@ std::string render_svg_root(const core::GameState& state) {
         // M4.7 legend swatch <circle> elements lack data-id
         // and are emitted in render_map_html separately, so
         // they stay non-focusable.
+        //
+        // M4.17: emit role="button" + aria-label="..." on
+        // both <circle> and <text>. Tells screen readers
+        // "this is an interactive button" (matches the
+        // click + Enter/Space activation) and gives the
+        // otherwise nameless circle a readable name. Same
+        // values on both elements so the announcement is
+        // consistent regardless of which sibling has focus.
         out << "  <circle"
                " cx=\"" << cx << "\""
                " cy=\"" << cy << "\""
                " r=\"8\""
                " fill=\"" << fill << "\""
                " tabindex=\"0\""
+               " role=\"button\""
+               " aria-label=\"" << aria_label_attr << "\""
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
@@ -172,6 +195,8 @@ std::string render_svg_root(const core::GameState& state) {
                " y=\"" << ty << "\""
                " text-anchor=\"middle\""
                " tabindex=\"0\""
+               " role=\"button\""
+               " aria-label=\"" << aria_label_attr << "\""
                " data-id=\"" << id_attr << "\""
                " data-owner=\"" << owner_int_attr << "\""
                " data-owner-code=\"" << owner_code_attr << "\""
