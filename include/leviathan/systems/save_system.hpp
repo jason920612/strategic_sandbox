@@ -193,7 +193,30 @@ namespace leviathan::systems::save_system {
 //                debug mode) does NOT ship in M6.1 — they
 //                land in 6.2–6.9 in their own sub-milestone
 //                PRs.
-inline constexpr std::uint32_t kSaveFormatVersion   = 15;
+//   v16 (M6.2) - adds a required `visible_report` string field
+//                on every `events[]` entry per RFC-090 §6.2.
+//                `visible_report` is the author-written public-
+//                facing fired-report description (what the
+//                player would see when an event fires); M6.2
+//                stores and round-trips it but no system
+//                consumes it yet. Later M6 sub-milestones
+//                (6.3 information_accuracy, 6.4 reported
+//                value, 6.5 bias/noise, etc.) will read it.
+//                We bump strictly under the M0.8 rule: a v15
+//                save's `events[]` entries lacked
+//                `visible_report`; silently defaulting to an
+//                empty string on reload would erase author
+//                intent. At the save-file level
+//                `visible_report` is REQUIRED non-empty for
+//                every event entry; missing / wrong-type /
+//                empty all rejected loudly. `event_history`
+//                schema is unchanged in M6.2.
+//                The wider M6 surface (information_accuracy,
+//                reported value, bias/noise, intelligence
+//                budget, corruption, debug mode, non-debug
+//                hiding) does NOT ship in M6.2 — they land
+//                in 6.3–6.9 in their own sub-milestone PRs.
+inline constexpr std::uint32_t kSaveFormatVersion   = 16;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

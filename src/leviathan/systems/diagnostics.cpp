@@ -607,6 +607,8 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
             check_string(out, prefix + ".name", ea.name, eb.name);
             check_string(out, prefix + ".description",
                          ea.description, eb.description);
+            check_string(out, prefix + ".visible_report",
+                         ea.visible_report, eb.visible_report);   // M6.2
             check_string(out, prefix + ".true_cause",
                          ea.true_cause, eb.true_cause);   // M6.1
 

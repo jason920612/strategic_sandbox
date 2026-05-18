@@ -1000,6 +1000,7 @@ std::string canonical_two_event_file() {
       "id": "low_stability_unrest",
       "name": "Low Stability Unrest",
       "description": "Low stability creates unrest pressure.",
+      "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
       "true_cause": "The country's actual stability has fallen below the unrest threshold.",
       "triggers": [
         { "target": "country.stability", "op": "lt", "value": 0.30 }
@@ -1012,6 +1013,7 @@ std::string canonical_two_event_file() {
       "id": "radical_interest_group_warning",
       "name": "Radical Interest Group Warning",
       "description": "A highly radical interest group signals political risk.",
+      "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
       "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
       "triggers": [
         { "target": "interest_group.radicalism", "op": "gt", "value": 0.75 }
@@ -1156,7 +1158,7 @@ TEST_CASE("M5.1 load_into_state: empty 'triggers' rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
             "triggers": [],
             "effects": [] }
         ]
@@ -1178,7 +1180,7 @@ TEST_CASE("M5.1 load_into_state: trigger target not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
             "triggers": [
               { "target": "country.gdp", "op": "lt", "value": 100.0 }
             ],
@@ -1202,7 +1204,7 @@ TEST_CASE("M5.1 load_into_state: trigger op not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
             "triggers": [
               { "target": "country.stability", "op": "eq", "value": 0.5 }
             ],
@@ -1226,7 +1228,7 @@ TEST_CASE("M5.1 load_into_state: trigger value wrong-type rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
             "triggers": [
               { "target": "country.stability", "op": "lt",
                 "value": "not a number" }
@@ -1251,7 +1253,7 @@ TEST_CASE("M5.1 load_into_state: effect missing 'op' rejected (matches policy-ef
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1277,7 +1279,7 @@ TEST_CASE("M5.1 load_into_state: empty 'effects' is allowed (warning-only events
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "warning.json", R"({
         "events": [
-          { "id": "warn", "name": "Warning Event", "description": "", "true_cause": "warn cause",
+          { "id": "warn", "name": "Warning Event", "description": "", "visible_report": "warn report", "true_cause": "warn cause",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.20 }
             ],
@@ -1302,7 +1304,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "one.json", R"({
         "events": [
-          { "id": "shared", "name": "First", "description": "", "true_cause": "shared 1",
+          { "id": "shared", "name": "First", "description": "", "visible_report": "shared report 1", "true_cause": "shared 1",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1311,7 +1313,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     })");
     write_file(td.path / "data" / "events" / "two.json", R"({
         "events": [
-          { "id": "shared", "name": "Second", "description": "", "true_cause": "shared 2",
+          { "id": "shared", "name": "Second", "description": "", "visible_report": "shared report 2", "true_cause": "shared 2",
             "triggers": [
               { "target": "country.stability", "op": "gt", "value": 0.8 }
             ],
@@ -1387,6 +1389,7 @@ TEST_CASE("M6.1 load_into_state: event missing 'true_cause' rejected") {
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
           { "id": "x", "name": "X", "description": "",
+            "visible_report": "valid",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1411,6 +1414,7 @@ TEST_CASE("M6.1 load_into_state: event true_cause wrong type rejected") {
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
           { "id": "x", "name": "X", "description": "",
+            "visible_report": "valid",
             "true_cause": 42,
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
@@ -1436,6 +1440,7 @@ TEST_CASE("M6.1 load_into_state: event true_cause empty rejected") {
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
           { "id": "x", "name": "X", "description": "",
+            "visible_report": "valid",
             "true_cause": "",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
@@ -1451,5 +1456,106 @@ TEST_CASE("M6.1 load_into_state: event true_cause empty rejected") {
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
     CHECK(r.error().find("true_cause must be non-empty")
+          != std::string::npos);
+}
+
+// =====================================================================
+// M6.2 - EventDefinition.visible_report (RFC-090 §6.2) loader
+// =====================================================================
+
+TEST_CASE("M6.2 load_into_state: canonical-shape events carry their authored visible_report") {
+    TempDir td("leviathan_m62_canonical_visible_report");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "core.json",
+               canonical_two_event_file());
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/core.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r);
+    REQUIRE(state.events.size() == 2u);
+    CHECK(state.events[0].visible_report ==
+          "Reports indicate growing unrest among the population; stability appears to be slipping.");
+    CHECK(state.events[1].visible_report ==
+          "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.");
+}
+
+TEST_CASE("M6.2 load_into_state: event missing 'visible_report' rejected") {
+    TempDir td("leviathan_m62_missing_visible_report");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "true_cause": "valid",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("visible_report missing or not a string")
+          != std::string::npos);
+}
+
+TEST_CASE("M6.2 load_into_state: event visible_report wrong type rejected") {
+    TempDir td("leviathan_m62_wrong_type_visible_report");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "visible_report": 42,
+            "true_cause": "valid",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("visible_report missing or not a string")
+          != std::string::npos);
+}
+
+TEST_CASE("M6.2 load_into_state: event visible_report empty rejected") {
+    TempDir td("leviathan_m62_empty_visible_report");
+    write_file(td.path / "data" / "countries" / "a.json", country_json("AAA"));
+    write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
+    write_file(td.path / "data" / "events" / "bad.json", R"({
+        "events": [
+          { "id": "x", "name": "X", "description": "",
+            "visible_report": "",
+            "true_cause": "valid",
+            "triggers": [
+              { "target": "country.stability", "op": "lt", "value": 0.5 }
+            ],
+            "effects": [] }
+        ]
+    })");
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               make_two_country_manifest_with_events("events/bad.json"));
+
+    GameState state;
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("visible_report must be non-empty")
           != std::string::npos);
 }

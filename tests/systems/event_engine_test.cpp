@@ -71,10 +71,11 @@ EventDefinition make_event(const std::string& id_code,
                            std::vector<EventTrigger> triggers,
                            std::vector<PolicyEffect> effects = {}) {
     EventDefinition d;
-    d.id_code    = id_code;
-    d.name       = id_code;
-    d.true_cause = "test true cause";   // M6.1: required non-empty
-    d.triggers   = std::move(triggers);
+    d.id_code        = id_code;
+    d.name           = id_code;
+    d.visible_report = "test visible report";   // M6.2: required non-empty
+    d.true_cause     = "test true cause";       // M6.1: required non-empty
+    d.triggers       = std::move(triggers);
     d.effects  = std::move(effects);
     return d;
 }
@@ -392,5 +393,50 @@ TEST_CASE("M6.1 tick_events: events with different true_cause fire identically")
     CHECK(s_a.event_history.size()           == s_b.event_history.size());
     REQUIRE(s_a.event_history.size() == 1u);
     // event_history records event_id_code, NOT true_cause.
+    CHECK(s_a.event_history[0].event_id_code == s_b.event_history[0].event_id_code);
+}
+
+// =====================================================================
+// M6.2 runtime regression: tick_events does NOT consult visible_report
+// =====================================================================
+
+TEST_CASE("M6.2 tick_events: events with different visible_report fire identically") {
+    // Mirrors the M6.1 runtime regression but pins that the
+    // engine is also blind to visible_report. Two states
+    // differing ONLY in visible_report should produce identical
+    // tick_events outcomes, identical post-tick state, identical
+    // event_history content.
+    GameState s_a;
+    s_a.current_date = GameDate(1930, 1, 1);
+    s_a.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def_a = make_event("unrest",
+        { make_trigger("country.stability", "lt", 0.30) },
+        { make_effect("country.stability", "add", -0.02) });
+    def_a.visible_report = "Public report A: unrest growing.";
+    def_a.true_cause     = "shared truth";
+    s_a.events.push_back(def_a);
+
+    GameState s_b;
+    s_b.current_date = GameDate(1930, 1, 1);
+    s_b.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def_b = make_event("unrest",
+        { make_trigger("country.stability", "lt", 0.30) },
+        { make_effect("country.stability", "add", -0.02) });
+    def_b.visible_report = "Public report B: completely different narrative.";
+    def_b.true_cause     = "shared truth";
+    s_b.events.push_back(def_b);
+
+    const auto r_a = eng::tick_events(s_a);
+    const auto r_b = eng::tick_events(s_b);
+    REQUIRE(r_a);
+    REQUIRE(r_b);
+    CHECK(r_a.value().events_matched         == r_b.value().events_matched);
+    CHECK(r_a.value().events_recorded        == r_b.value().events_recorded);
+    CHECK(r_a.value().events_applied         == r_b.value().events_applied);
+    CHECK(r_a.value().total_effects_applied  == r_b.value().total_effects_applied);
+    CHECK(s_a.countries[0].stability         == doctest::Approx(s_b.countries[0].stability));
+    CHECK(s_a.event_history.size()           == s_b.event_history.size());
+    REQUIRE(s_a.event_history.size() == 1u);
+    // event_history records event_id_code, NOT visible_report.
     CHECK(s_a.event_history[0].event_id_code == s_b.event_history[0].event_id_code);
 }

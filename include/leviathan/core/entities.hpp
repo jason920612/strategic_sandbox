@@ -257,9 +257,10 @@ struct PolicyData {
 // country / interest group satisfied each trigger). M5.4 added
 // the event_history data layer for fired-event records. M5.5–M5.8
 // shipped the firer / effects applicator / composition helper /
-// monthly-tick wiring; M5.10 closed M5. M6.1 adds the
-// `true_cause` field on EventDefinition (RFC-090 §6.1) — see
-// the EventDefinition struct below.
+// monthly-tick wiring; M5.10 closed M5. M6.1 added the
+// `true_cause` field on EventDefinition (RFC-090 §6.1); M6.2
+// adds `visible_report` (RFC-090 §6.2). See the EventDefinition
+// struct below.
 struct EventTrigger {
     std::string target;
     std::string op;
@@ -270,12 +271,16 @@ struct EventTrigger {
 // in `GameState::events`. M5.1 shipped the schema (loader + save
 // round-trip); M5.2-M5.8 added evaluator + firer + effects
 // applicator + monthly pipeline wiring; M5.10 closed M5. M6.1
-// adds `true_cause` (author-written truth narrative) per
-// RFC-090 §6.1 — the first step of M6 "hidden truth / information
-// distortion". M6.1 itself is schema-only: `true_cause` is stored
-// and round-tripped through the save layer but no system consumes
-// it. Later M6 sub-milestones (6.2 visible_report, 6.3
-// information_accuracy, etc.) will read it.
+// added `true_cause` (author-written truth narrative) per
+// RFC-090 §6.1. M6.2 adds `visible_report` (author-written
+// public-facing fired-report description) per RFC-090 §6.2 — the
+// second step of M6 "hidden truth / information distortion".
+// Field ordering reflects public-to-private narrative: name →
+// description → visible_report → true_cause → triggers → effects.
+// M6.2 itself is schema-only: `visible_report` is stored and
+// round-tripped through the save layer but no system consumes it.
+// Later M6 sub-milestones (6.3 information_accuracy, 6.4 reported
+// value, 6.5 bias/noise, etc.) will read it.
 //
 // M0 had an `{ EventId id; std::string name; }` stub here; M5.1
 // upgraded it in place. `id_code` is the natural string identifier
@@ -285,6 +290,7 @@ struct EventDefinition {
     std::string               id_code;
     std::string               name;
     std::string               description;
+    std::string               visible_report;   // M6.2 (RFC-090 §6.2) — non-empty at load
     std::string               true_cause;   // M6.1 (RFC-090 §6.1) — non-empty at load
     std::vector<EventTrigger> triggers;   // non-empty at load
     std::vector<PolicyEffect> effects;    // may be empty (warning-only)

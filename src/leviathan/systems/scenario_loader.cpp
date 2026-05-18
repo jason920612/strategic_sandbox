@@ -140,18 +140,21 @@ parse_province_file(std::string_view json_text,
 // M5.1: parse one event file. Each file is a JSON object with
 // a top-level `events` array of event-definition records:
 //   {
-//     "id":          "<id_code>",   // required non-empty string
-//     "name":        "<title>",      // required non-empty string
-//     "description": "...",          // required string (may be empty)
-//     "true_cause":  "...",          // required non-empty string (M6.1)
-//     "triggers":    [ {target, op, value}, ... ],  // required non-empty
-//     "effects":     [ {target, op, value}, ... ]   // required, may be empty
+//     "id":             "<id_code>",   // required non-empty string
+//     "name":           "<title>",      // required non-empty string
+//     "description":    "...",          // required string (may be empty)
+//     "visible_report": "...",          // required non-empty string (M6.2)
+//     "true_cause":     "...",          // required non-empty string (M6.1)
+//     "triggers":       [ {target, op, value}, ... ],  // required non-empty
+//     "effects":        [ {target, op, value}, ... ]   // required, may be empty
 //   }
-// M6.1 adds `true_cause` as a required non-empty string per
-// RFC-090 §6.1. It is the author-written truth narrative; M6.1
-// stores and validates it but no system consumes it yet. Later
-// M6 sub-milestones (6.2 visible_report, 6.3 information_accuracy,
-// etc.) will read it.
+// M6.1 added `true_cause` (RFC-090 §6.1) as a required non-empty
+// string — author-written truth narrative. M6.2 adds
+// `visible_report` (RFC-090 §6.2) as a required non-empty string
+// — author-written public-facing fired-report description.
+// Both are stored and validated but neither is consumed by any
+// system yet. Later M6 sub-milestones (6.3 information_accuracy,
+// 6.4 reported value, 6.5 bias/noise, etc.) will read them.
 // Trigger ops are allowlisted at load time {lt, lte, gt, gte};
 // trigger targets are allowlisted against a small set tied to
 // existing M1–M3 state. Effects validation mirrors the
@@ -258,6 +261,15 @@ parse_event_file(std::string_view json_text,
         }
         if (auto r = need_string_maybe_empty("description",
                                              ev.description); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+        // M6.2 (RFC-090 §6.2): visible_report is required non-empty.
+        // It is the author-written public-facing fired-report
+        // description; M6.2 stores and round-trips it but no
+        // system consumes it yet.
+        if (auto r = need_string_nonempty("visible_report",
+                                          ev.visible_report); !r) {
             return core::Result<std::vector<ManifestEvent>>::failure(
                 std::move(r.error()));
         }
@@ -944,10 +956,11 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                         " event files");
                 }
                 core::EventDefinition ev;
-                ev.id_code     = entry.id_code;
-                ev.name        = entry.name;
-                ev.description = entry.description;
-                ev.true_cause  = entry.true_cause;
+                ev.id_code        = entry.id_code;
+                ev.name           = entry.name;
+                ev.description    = entry.description;
+                ev.visible_report = entry.visible_report;   // M6.2
+                ev.true_cause     = entry.true_cause;
                 ev.triggers    = entry.triggers;
                 ev.effects     = entry.effects;
                 event_index.emplace(ev.id_code, state.events.size());

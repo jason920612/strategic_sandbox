@@ -8,40 +8,134 @@
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
-  M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 opened
-  at M6.1. M6 follows RFC-090 §M6 (隱藏真相與資訊
-  失真): the player will not always see the truth.
-  RFC-090 sequence: 6.1 add `true_cause`; 6.2
+  M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
+  progress at M6.2. M6 follows RFC-090 §M6 (隱藏真相
+  與資訊失真): the player will not always see the
+  truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
   `visible_report`; 6.3 `information_accuracy`; 6.4
   reported value; 6.5 bias/noise; 6.6 intelligence-
   budget influence; 6.7 corruption influence; 6.8
   debug-mode display; 6.9 non-debug hiding. **M6.1**
-  opens M6 with the schema foundation only — adds a
+  opened M6 with the schema foundation — added a
   required non-empty `true_cause` string field on
-  `core::EventDefinition` per RFC-090 §6.1, bumps
-  save format v14 → v15, validates the field through
-  `scenario_loader::parse_event_file`, walks it in
-  `diagnostics::compare_states`, and updates the two
-  canonical events to carry the author-written truth
-  narrative. **M6.1 is schema-only**: the field is
-  stored and round-tripped but no system consumes it
-  yet. The wider M6 surface (visible_report,
-  information_accuracy, reported value, bias/noise,
-  intelligence/corruption budget influence, debug
-  mode) all ship in M6.2–M6.9 in their own dedicated
-  sub-milestone PRs. **Canonical events still
-  deliberately don't fire** on the canonical scenario;
-  M6.1 adds zero behavioural drift to M1.17 / M2 /
-  M3 / M4 / M5 byte-identical determinism baselines.
+  `core::EventDefinition`; save v14 → v15. **M6.2**
+  adds the **`visible_report` field** (RFC-090 §6.2)
+  — author-written public-facing fired-report
+  description between `description` (public, M5.1)
+  and `true_cause` (truth, M6.1). Save format v15 →
+  v16. **Both M6.1 and M6.2 are schema-only**:
+  fields stored, round-tripped, walked by
+  diagnostics, but **no system consumes them**.
+  Future M6 sub-milestones — 6.3
+  `information_accuracy`, 6.4 reported value, 6.5
+  bias/noise, 6.6 intel budget, 6.7 corruption, 6.8
+  debug-mode, 6.9 non-debug hiding — will distort /
+  blur / hide / selectively leak `visible_report`
+  toward the truth in `true_cause`. **Canonical
+  events still deliberately don't fire** on the
+  canonical scenario; M6.1 + M6.2 add zero
+  behavioural drift to M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baselines.
   See `docs/m6-1-event-definition-true-cause-schema.md`
-  for the M6.1 design note, and
-  `docs/milestone-5-result.md` for the **M5 exit
-  report** (canonical M5 record going forward),
+  and `docs/m6-2-event-definition-visible-report-schema.md`
+  for the M6 design notes, and
+  `docs/milestone-5-result.md` for the M5 exit
+  report (canonical M5 record going forward),
   `docs/milestone-4-result.md` /
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.1 — EventDefinition
+- Latest shipped sub-milestone: **M6.2 — EventDefinition
+  visible_report schema.** Second M6 PR. Implements
+  only RFC-090 §6.2 (`6.2 加入 visible_report`).
+  Adds a required non-empty `std::string
+  visible_report` field on `core::EventDefinition`
+  between `description` (public, M5.1) and
+  `true_cause` (M6.1). **`visible_report` is the
+  author-written public-facing fired-report
+  description** — what the player would see when the
+  event fires. M6.3 (`information_accuracy`), M6.4
+  (reported value), M6.5 (bias/noise), M6.6
+  (intelligence budget), M6.7 (corruption), M6.8
+  (debug mode), M6.9 (non-debug hiding) are the M6
+  sub-milestones that will *distort, blur, hide, or
+  selectively leak* this string toward the truth in
+  `true_cause`. M6.2 itself is **schema-only**:
+  field stored, round-tripped, walked, but **no
+  system consumes it**. **Field ordering reflects
+  public-to-private narrative**: `name` →
+  `description` → `visible_report` → `true_cause` →
+  `triggers` → `effects`. **Save format bumped v15
+  → v16** with `visible_report` required non-empty
+  per event entry at the save layer; v15 saves
+  rejected loudly with `supports 16` in the message;
+  `event_history` schema unchanged (the field lives
+  on `EventDefinition`, not `EventInstance` —
+  instance-level distorted per-fire reports are M6.3+
+  scope). `scenario_loader::parse_event_file`
+  validates required non-empty `visible_report` via
+  the same `need_string_nonempty` helper used for
+  `id` / `name` / `true_cause`.
+  `diagnostics::compare_states` walks
+  `events[N].visible_report` between
+  `events[N].description` and `events[N].true_cause`.
+  Canonical fixture `data/events/1930_core_events.json`
+  updated: both `low_stability_unrest` and
+  `radical_interest_group_warning` get believable
+  fired-report `visible_report` strings (intelligence-
+  brief style). **No event runtime code change** —
+  `event_evaluator` / `event_firer` / `event_effects`
+  / `event_engine` / `monthly_pipeline` / `runner`
+  all unchanged. Dedicated runtime regression test
+  pins that two states differing ONLY in
+  `visible_report` produce identical `tick_events`
+  outcomes + identical post-tick state + identical
+  `event_history` content (mirrors the M6.1 test).
+  **Canonical no-fire property preserved** —
+  thresholds / triggers / effects unchanged; canonical
+  events still don't fire; M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baselines all still
+  pass. **13 new doctest cases (1065 total, 62436
+  assertions; verified via direct `leviathan_tests.exe`
+  run** per the `feedback_ctest_masks_doctest` rule):
+  save serialize emits `"visible_report":`; canonical
+  round-trip preserves field; v15 rejected with
+  `supports 16`; v16 missing / wrong-type / empty
+  `visible_report` rejected; loader missing /
+  wrong-type / empty rejected; diagnostics
+  `events[0].visible_report` mismatch path; identical-
+  `visible_report` no-mismatch; runtime regression
+  pinning that `tick_events` is `visible_report`-blind.
+  All 1052 M6.1-era tests still pass after fixture
+  migration (every hand-built EventDefinition now sets
+  `visible_report`; every hand-built v15 save JSON
+  fixture migrated to v16 + carries `"visible_report"`;
+  M6.1 negative tests that fed a bad `true_cause` now
+  also include a valid `visible_report` so the loader
+  reaches the `true_cause` check it was pinning).
+  New `docs/m6-2-event-definition-visible-report-schema.md`
+  design note. **No information_accuracy (M6.3), no
+  reported value (M6.4), no bias/noise (M6.5), no
+  intelligence-budget formula (M6.6), no corruption
+  formula (M6.7), no debug mode (M6.8), no non-debug
+  hiding (M6.9), no EventReport type / artefact, no
+  events.jsonl semantic change, no UI / map
+  integration, no new event definitions, no new
+  EventTrigger / EventInstance / EventInstanceActor
+  field, no trigger / effect behaviour change, no
+  event_evaluator / event_firer / event_effects /
+  event_engine / monthly_pipeline / runner code
+  change, no new artefact (still 10), no new
+  `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no new state field beyond
+  `EventDefinition.visible_report`, no RNG draws
+  from the event pipeline, no rebake of M1.17 / M2
+  / M3 / M4 / M5 byte-identical determinism
+  baselines, no M6.3 work in this PR, no
+  `docs/milestone-6-checkpoint.md`, no
+  `docs/milestone-6-result.md`, no "M6 closed"
+  wording.** M6 remains in progress.
+- Previously shipped: **M6.1 — EventDefinition
   true_cause schema.** First M6 PR. Implements only
   RFC-090 §6.1 (`6.1 為事件加入 true_cause`). Adds a
   required non-empty `std::string true_cause` field on

@@ -69,10 +69,11 @@ EventDefinition make_event(const std::string&             id_code,
                            std::vector<EventTrigger>      triggers,
                            std::vector<PolicyEffect>      effects = {}) {
     EventDefinition d;
-    d.id_code    = id_code;
-    d.name       = id_code;
-    d.true_cause = "test true cause";   // M6.1: required non-empty
-    d.triggers   = std::move(triggers);
+    d.id_code        = id_code;
+    d.name           = id_code;
+    d.visible_report = "test visible report";   // M6.2: required non-empty
+    d.true_cause     = "test true cause";       // M6.1: required non-empty
+    d.triggers       = std::move(triggers);
     d.effects  = std::move(effects);
     return d;
 }

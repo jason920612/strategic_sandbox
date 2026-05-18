@@ -218,7 +218,87 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.1
+  information distortion）** — **M6.2
+  （EventDefinition visible_report schema）** 是 M6
+  的第二個 sub-milestone。完全照 RFC-090 §6.2
+  （`6.2 加入 visible_report`）實作：在
+  `core::EventDefinition` 的 `description`（M5.1
+  公開）與 `true_cause`（M6.1）之間加上 required
+  non-empty `std::string visible_report` 欄位。
+  `visible_report` 是 **作者寫的對玩家可見的事件
+  觸發報告描述** ── 事件 fire 時玩家會看到的文字。
+  M6.3（`information_accuracy`）/ M6.4（reported
+  value）/ M6.5（bias/noise）/ M6.6（情報預算）/
+  M6.7（腐敗）/ M6.8（debug mode）/ M6.9（非 debug
+  隱藏）會 *扭曲、模糊、隱藏、選擇性洩漏* 這字串
+  朝 `true_cause` 的真相方向變化。M6.2 本身
+  **schema-only**：欄位被儲存、round-trip、被
+  diagnostics 走訪，但 **沒有系統消費它**。
+  **欄位順序反映公開→私密敘事**：`name` →
+  `description` → `visible_report` → `true_cause`
+  → `triggers` → `effects`。**Save format v15 →
+  v16**：`visible_report` 在 save 層 required
+  non-empty；v15 save 直接以 `supports 16` reject；
+  `event_history` schema 不變（欄位在
+  `EventDefinition` 上，不在 `EventInstance` ──
+  instance-level 動態扭曲的 per-fire report 是
+  M6.3+ 的事）。`scenario_loader::parse_event_file`
+  透過與 `id` / `name` / `true_cause` 相同的
+  `need_string_nonempty` helper 驗證 required
+  non-empty。`diagnostics::compare_states` 在
+  `events[N].description` 與 `events[N].true_cause`
+  之間走訪 `events[N].visible_report`。Canonical
+  fixture `data/events/1930_core_events.json` 更新：
+  兩個 canonical event 都拿到 intelligence-brief
+  風格的可信 `visible_report` 字串。
+  **沒有 event runtime 程式變動** ── `event_evaluator`
+  / `event_firer` / `event_effects` / `event_engine`
+  / `monthly_pipeline` / `runner` 全部不動。專屬
+  runtime regression test 釘住：兩個只差
+  `visible_report` 的 state 產生完全相同的
+  `tick_events` outcome + 完全相同的 post-tick
+  state + 完全相同的 `event_history` 內容（與
+  M6.1 的 true_cause-blind test 對稱）。
+  **Canonical no-fire 屬性保留** ── 閾值 / trigger
+  / effect 完全不變；canonical 事件仍不 fire；
+  M1.17 / M2 / M3 / M4 / M5 byte-identical
+  determinism baseline 全部仍通過。**13 個新
+  doctest case（1065 total，62436 assertions；
+  per `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：save serialize
+  emits `"visible_report":`；canonical round-trip
+  保留欄位；v15 拒；v16 missing / wrong-type /
+  empty 拒；loader missing / wrong-type / empty
+  拒；diagnostics mismatch path；identical
+  no-mismatch；runtime regression 釘住 `tick_events`
+  對 `visible_report` 視而不見。所有 1052 個
+  M6.1-era 測試 fixture migration 後仍通過（每個
+  手寫 EventDefinition 都 set `visible_report`；
+  每個手寫 v15 save JSON 都 migrate 到 v16 +
+  帶 `"visible_report"`；M6.1 餵壞 `true_cause`
+  的負面測試也加上合法 `visible_report` 讓 loader
+  跑到原本要釘的 `true_cause` check）。新
+  `docs/m6-2-event-definition-visible-report-schema.md`
+  design note。**沒有 information_accuracy（M6.3）
+  / reported value（M6.4）/ bias/noise（M6.5）/
+  情報預算公式（M6.6）/ 腐敗公式（M6.7）/ debug
+  模式（M6.8）/ 非 debug 隱藏（M6.9）/ EventReport
+  類型或 artefact / events.jsonl 語意變動 / UI /
+  map 整合 / 新事件定義 / 新 EventTrigger /
+  EventInstance / EventInstanceActor 欄位 / trigger
+  / effect 行為變動 / event-module / policy_system
+  / monthly_pipeline / runner 程式變動 / 新
+  artefact（仍 10）/ 新 `RunnerOptions` field /
+  CLI flag / 新 `PlayerCommandKind` / 新 state
+  field（只有 `EventDefinition.visible_report`）/
+  來自 event pipeline 的 RNG draw / 對 M1.17 /
+  M2 / M3 / M4 / M5 byte-identical determinism
+  baseline 的變動（canonical 事件仍不 fire ──
+  `visible_report` 是敘事 metadata，不是行為）/
+  M6.3 工作 / `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」字樣**。
+  M6 remains in progress。
+- **M6（歷史進行中）** — **M6.1
   （EventDefinition true_cause schema）** 是 M6 的
   第一個 sub-milestone。完全照 RFC-090 §6.1（`6.1
   為事件加入 true_cause`）實作：在

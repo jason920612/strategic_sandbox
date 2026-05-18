@@ -816,8 +816,8 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"GER_military\"") != std::string::npos);
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
-    // Save schema is now v15 - M6.1 added true_cause to event definitions.
-    CHECK(save.find("\"save_version\": 15") != std::string::npos);
+    // Save schema is now v16 - M6.2 added visible_report to event definitions.
+    CHECK(save.find("\"save_version\": 16") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1060,7 +1060,7 @@ TEST_CASE("run: empty state runner is unchanged by M1.10 wiring (determinism)") 
     CHECK(read_file(td_a.path / "events.jsonl") == read_file(td_b.path / "events.jsonl"));
 }
 
-TEST_CASE("run: save schema is now v15 (M6.1 bumped from v14 for EventDefinition.true_cause)") {
+TEST_CASE("run: save schema is now v16 (M6.2 bumped from v15 for EventDefinition.visible_report)") {
     TempDir td("leviathan_runner_m31_save_version");
     rn::RunnerOptions opts;
     opts.config_path = kCanonicalConfig;
@@ -1070,7 +1070,7 @@ TEST_CASE("run: save schema is now v15 (M6.1 bumped from v14 for EventDefinition
     const std::string save = read_file(td.path / "save.json");
     // Pin the current version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 15") != std::string::npos);
+    CHECK(save.find("\"save_version\": 16") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------
@@ -3340,13 +3340,14 @@ TEST_CASE("run: canonical scenario at M5.1 — still 10 artefacts, no new ones; 
     CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
     CHECK_FALSE(fs::exists(td.path / "event_log.csv"));
 
-    // save.json carries the current v15 schema (M6.1 floor; M5.4
+    // save.json carries the current v16 schema (M6.2 floor; M5.4
     // bumped v13 -> v14 for event_history; M6.1 bumped v14 -> v15
-    // for EventDefinition.true_cause), the 2 canonical event
+    // for EventDefinition.true_cause; M6.2 bumped v15 -> v16 for
+    // EventDefinition.visible_report), the 2 canonical event
     // definitions, and an empty event_history (no auto-fire on
     // the canonical scenario).
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 15") != std::string::npos);
+    CHECK(save.find("\"save_version\": 16") != std::string::npos);
     CHECK(save.find("\"id_code\": \"low_stability_unrest\"")
           != std::string::npos);
     CHECK(save.find("\"id_code\": \"radical_interest_group_warning\"")
@@ -3408,10 +3409,11 @@ TEST_CASE("run: canonical scenario at M5.4 - save.json carries empty event_histo
 
     const std::string save = read_file(td.path / "save.json");
 
-    // Current save floor is v15 (M5.4 bumped v13 -> v14 for the
+    // Current save floor is v16 (M5.4 bumped v13 -> v14 for the
     // event_history block; M6.1 bumped v14 -> v15 for
-    // EventDefinition.true_cause).
-    CHECK(save.find("\"save_version\": 15") != std::string::npos);
+    // EventDefinition.true_cause; M6.2 bumped v15 -> v16 for
+    // EventDefinition.visible_report).
+    CHECK(save.find("\"save_version\": 16") != std::string::npos);
 
     // event_history is the new M5.4 root-level key. M5.4 ships
     // the data layer only — no system creates EventInstance

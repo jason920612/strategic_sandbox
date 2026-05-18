@@ -818,10 +818,11 @@ leviathan::core::EventDefinition m51_event(
         const std::string& eff_op      = "add",
         double             eff_value   = -0.02) {
     leviathan::core::EventDefinition ev;
-    ev.id_code     = id_code;
-    ev.name        = name;
-    ev.description = description;
-    ev.true_cause  = "test cause";   // M6.1: required non-empty
+    ev.id_code        = id_code;
+    ev.name           = name;
+    ev.description    = description;
+    ev.visible_report = "test report";   // M6.2: required non-empty
+    ev.true_cause     = "test cause";    // M6.1: required non-empty
     leviathan::core::EventTrigger t;
     t.target = trig_target;
     t.op     = trig_op;
@@ -1012,6 +1013,38 @@ TEST_CASE("compare_states: M6.1 identical events with identical true_cause produ
     auto eb = m51_event("x", "X", "desc");
     ea.true_cause = "same cause text";
     eb.true_cause = "same cause text";
+    a.events.push_back(std::move(ea));
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    CHECK(m.empty());
+}
+
+// ---------------------------------------------------------------------
+// M6.2 - EventDefinition.visible_report (RFC-090 §6.2) walk
+// ---------------------------------------------------------------------
+
+TEST_CASE("compare_states: M6.2 events[N].visible_report mismatch reported per path") {
+    GameState a;
+    GameState b;
+    auto ea = m51_event("x", "X", "desc");
+    auto eb = m51_event("x", "X", "desc");
+    ea.visible_report = "alpha report";
+    eb.visible_report = "beta report";
+    a.events.push_back(std::move(ea));
+    b.events.push_back(std::move(eb));
+    const auto m = dg::compare_states(a, b);
+    // Only the visible_report field differs.
+    REQUIRE(m.size() == 1u);
+    CHECK(m[0].field_path == "events[0].visible_report");
+}
+
+TEST_CASE("compare_states: M6.2 identical visible_report produces no mismatch") {
+    GameState a;
+    GameState b;
+    auto ea = m51_event("x", "X", "desc");
+    auto eb = m51_event("x", "X", "desc");
+    ea.visible_report = "same report text";
+    eb.visible_report = "same report text";
     a.events.push_back(std::move(ea));
     b.events.push_back(std::move(eb));
     const auto m = dg::compare_states(a, b);
