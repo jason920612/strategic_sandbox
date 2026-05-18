@@ -14,7 +14,94 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.19 — hover
+- Latest shipped sub-milestone: **M4.20 — hover tooltip
+  skeleton.** Adds a small **hover-status text bar**
+  (`<p id="hover-status" class="hover-status">`) between
+  the inline SVG and the M4.10 details panel. The inline
+  `<script>` registers `mouseover` + `mouseout`
+  listeners on every province `<circle>` + `<text>`
+  (same per-element loop as the M4.10 click + M4.15
+  keydown listeners). On `mouseover` the bar's
+  `textContent` is updated to `"<name> (<owner-name>)"`
+  (or just `<name>` when owner-name is empty — same
+  defensive fallback as the M4.17 aria-label); on
+  `mouseout` it's cleared. Reads via `getAttribute` on
+  the existing M4.8/M4.13 `data-name` + `data-owner-name`
+  attributes (no new attribute, no schema growth);
+  writes via `textContent` only (XSS-safe — the M4.10
+  no-`innerHTML` discipline carries over). One new CSS
+  rule `.hover-status` provides minimal styling
+  (centred, italic muted text with `min-height: 1em` to
+  prevent layout jump on first hover). **Tooltip
+  design choice**: status-text bar chosen over SVG
+  `<title>` child (which would compete with the M4.17
+  `aria-label` as the accessible name — reviewer flagged
+  this) and over a position-aware floating tooltip
+  (more scope than a skeleton needs). The bar sits in
+  document flow above the details panel, browser
+  status-bar idiom. **Narrowly reverses the M4.19 "no
+  JS hover handler" non-goal** — only `mouseover` +
+  `mouseout` via `addEventListener` ship; `mouseenter`
+  / `mouseleave` / `.onmouseover` / `.onmouseout` /
+  inline `onmouseover=` / `onmouseout=` stay absent.
+  Hover and click are **independent surfaces** — the
+  M4.20 mouseover handler does NOT call `showDetails` /
+  `selectProvince`, never touches the details panel,
+  never mutates `.classList` on the hovered element.
+  No SVG `<title>` child anywhere. No `innerHTML` /
+  `outerHTML` / `document.write` / `eval` / `Function`
+  / `insertAdjacentHTML`. No fetch / XHR / storage /
+  history / navigation APIs. M4.10's XSS-safe DOM API,
+  no-network discipline, asymmetric one-inline-script
+  invariant, M4.12 `.selected`, M4.13 five-attr DOM
+  contract, M4.15 `tabindex` + keydown handler, M4.16
+  `:focus-visible` rings, M4.17 `role="button"` +
+  `aria-label`, M4.19 `:hover` CSS all carry over
+  unchanged (additive only). Per the
+  `feedback_checkpoint_drift` rule,
+  `docs/milestone-4-checkpoint.md` is refreshed
+  **inline** in this PR (selector count 19 → 20;
+  HTML body shape gains item 2 `<p id="hover-status">`;
+  script section gains the M4.20 listener block;
+  Interactivity surface section gains a hover-status
+  bullet; HOVER+TOOLTIPS deferred bucket rewrites with
+  M4.20 shipped). **M4 remains in progress** — no
+  `docs/milestone-4-result.md`; M4.20 is one more
+  skeleton sub-milestone, not an exit. Artefact set
+  unchanged (still 10). Save format unchanged (still
+  v12) — hover-status reads render-time attrs, no new
+  persistent state. `provinces.svg` bytes UNCHANGED
+  from M4.19 (hover-status is HTML-only); `map.html`
+  bytes did change (new element + new CSS rule + new
+  listener types in the script). **7 new doctest cases
+  + 1 retuned (886 total, 61651 assertions; verified
+  via direct `leviathan_tests.exe` run per
+  `feedback_ctest_masks_doctest`).** **No SVG `<title>`
+  child, no position-aware tooltip, no pair-hover, no
+  `mouseenter`/`mouseleave`, no hover delay, no
+  hover-driven panel preview, no `aria-live` on the
+  bar, no animation / transition, no broader ARIA, no
+  state mutation, no commands, no AI, no events
+  emitted by hover, no selection persistence, no
+  keyboard shortcut for the bar, no save schema bump,
+  no new state field / artefact / fixture /
+  `InterestGroupKind` / `PlayerCommandKind`, no rename
+  of the M4.8 / M4.13 data-* keys, no second
+  `<script>`, no `<script src=>` / `<script type=>`,
+  no `<link>`, no external CSS / font / `<iframe>` /
+  `<img>`, no `fetch` / XHR / storage / history /
+  navigation APIs, no `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function` /
+  `insertAdjacentHTML`, no inline event attributes, no
+  per-element inline `style="..."`, no `<meta
+  name="viewport">`, no CSS animations / transitions
+  / media queries / `@import` / `@font-face`, no
+  neighbour / adjacency edges, no terrain / resources
+  / population overlays, no runner CLI flag, no change
+  to `provinces.svg` bytes, no M4 close-out, no
+  `docs/milestone-4-result.md`, no "M4 closed"
+  wording.**
+- Previously shipped: **M4.19 — hover
   affordance skeleton.** Adds a mouse-hover visual cue
   so users can see "this marker reacts to me" before
   they click. Pure CSS — no JavaScript change, no
@@ -1281,7 +1368,7 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.19): **M4.20** — open.
+- Next sub-milestone candidate (post-M4.20): **M4.21** — open.
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1306,7 +1393,10 @@
   users get an interactive-control announcement with a
   readable name; M4.19 added the `:hover` CSS rules so
   mouse users see a grey-stroke / underline affordance
-  before they click; M4.18 refreshed the checkpoint doc to
+  before they click; M4.20 added the `<p id="hover-status">`
+  text bar that updates on `mouseover` with the composed
+  `"<name> (<owner-name>)"` label; M4.18 refreshed the
+  checkpoint doc to
   cover M4.15–M4.17 and added one new integration
   assertion. Natural next steps include
   (a) broader ARIA polish (`aria-selected` on the M4.12
@@ -1324,7 +1414,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1355,7 +1445,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 shipped. Sixty-six sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 shipped. Sixty-seven sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1502,6 +1592,75 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.20 hover tooltip skeleton — adds a `<p
+id="hover-status" class="hover-status">` text bar
+between the inline SVG and the M4.10 details panel.
+Inline `<script>` registers `mouseover` + `mouseout`
+listeners on every province marker (same per-element
+loop as click + keydown) that update the bar's
+`textContent` to `"<name> (<owner-name>)"` (or
+`<name>` alone when owner-name is empty) on mouseover
+and clear it on mouseout. Reads via `getAttribute` on
+M4.8/M4.13 `data-name` + `data-owner-name` (no new
+attribute); writes via `textContent` only (XSS-safe).
+One new `.hover-status` CSS rule. Tooltip design:
+status-bar chosen over SVG `<title>` (would compete
+with M4.17 aria-label as accessible name — reviewer
+flagged) and over position-aware floating tooltip
+(more scope than a skeleton). Narrowly reverses M4.19's
+"no JS hover handler" non-goal — only `mouseover` +
+`mouseout` via `addEventListener` ship; `mouseenter`
+/ `mouseleave` / `.onmouseover` / `.onmouseout` /
+inline `onmouseover=` / `onmouseout=` stay absent.
+Hover and click are **independent surfaces** — the
+mouseover handler does NOT call `showDetails` /
+`selectProvince` / touch `details.` / use `.classList`
+on hovered elements. No SVG `<title>` child anywhere
+(M4.5 head `<title>` preserved as the only one in the
+doc). Per `feedback_checkpoint_drift`,
+`docs/milestone-4-checkpoint.md` refreshed **inline**
+in this PR (selector count 19 → 20; HTML body shape
+gains item 2 `<p id="hover-status">`; script section
+gains the M4.20 listener block; HOVER+TOOLTIPS
+deferred bucket rewrites). M4.10's XSS-safe DOM API,
+no-network discipline, asymmetric one-inline-script
+invariant, M4.12 `.selected`, M4.13 five-attr DOM
+contract, M4.15 `tabindex` + keydown, M4.16
+`:focus-visible`, M4.17 role/aria-label, M4.19
+`:hover` CSS all carry over unchanged. **M4 remains
+in progress.** **Artefact set unchanged (still 10);
+save format unchanged (still v12);** M1.17 / M2.22 /
+M3.7 byte-identical determinism contracts continue to
+pass. `provinces.svg` bytes UNCHANGED from M4.19;
+`map.html` bytes did change (new element + new CSS
+rule + new listener types in script). 7 new + 1
+retuned doctest cases (886 total, 61651 assertions;
+**verified via direct `leviathan_tests.exe` run** per
+the `feedback_ctest_masks_doctest` rule — ctest can
+silently mask doctest CHECK failures). **No SVG
+`<title>` child, no position-aware tooltip, no
+pair-hover, no `mouseenter`/`mouseleave`, no hover
+delay, no hover-driven panel preview, no `aria-live`
+on the bar, no animation / transition, no broader
+ARIA, no state mutation, no commands, no AI, no
+events emitted by hover, no selection persistence, no
+keyboard shortcut for the bar, no save schema bump,
+no new state field / artefact / fixture /
+`InterestGroupKind` / `PlayerCommandKind`, no rename
+of the M4.8 / M4.13 data-* keys, no second
+`<script>`, no `<script src=>` / `<script type=>`,
+no `<link>`, no external CSS / font / `<iframe>` /
+`<img>`, no `fetch` / XHR / storage / history /
+navigation APIs, no `innerHTML` / `outerHTML` /
+`document.write` / `eval` / `Function` /
+`insertAdjacentHTML`, no inline event attributes, no
+per-element inline `style="..."`, no `<meta
+name="viewport">`, no CSS animations / transitions /
+media queries / `@import` / `@font-face`, no
+adjacency / terrain / overlays, no runner CLI flag,
+no change to `provinces.svg` bytes, no M4 close-out,
+no `docs/milestone-4-result.md`, no "M4 closed"
+wording.**;
 **M4.19 hover affordance skeleton — adds a mouse-hover
 visual cue so users can see "this marker reacts to me"
 before they click. Pure CSS — no JavaScript change, no

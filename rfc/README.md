@@ -217,8 +217,96 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.19
-  （hover affordance skeleton）** 在 `map.html` 加入
+- **M4（進行中，RFC-090 §M4 SVG map + UI）** — **M4.20
+  （hover tooltip skeleton）** 在 `map.html` 加入一個小型
+  hover-status 文字條。在 inline SVG 與 M4.10 details
+  panel 之間 emit `<p id="hover-status"
+  class="hover-status">&nbsp;</p>`；inline `<script>` 在
+  既有的 per-element loop 裡（與 M4.10 click、M4.15
+  keydown listener 同一個 loop）多註冊 `mouseover` 與
+  `mouseout` 兩個 listener：mouseover 用 `getAttribute`
+  讀 `data-name` 與 `data-owner-name`（M4.8 / M4.13 已
+  有的屬性 ── 不新增任何 data-* 屬性），組合成
+  `"<name> (<owner-name>)"`（owner-name 是空字串時
+  fallback 成 `<name>` 而不加尾括號 ── 與 M4.17
+  aria-label 的 fallback 同形），並用 `textContent`
+  寫進 hover-status 條；mouseout 把 `textContent` 清成
+  `""`。**寫入只用 `textContent` ── 永遠不用
+  `innerHTML`**，M4.10 的 XSS-safe DOM API contract
+  延續。新增一條 `.hover-status` CSS rule，提供置中、
+  斜體、灰字、`min-height: 1em` 防止 layout 跳動。
+  **tooltip 設計決策**：選 status-bar 而非 SVG
+  `<title>` child（會與 M4.17 aria-label 競爭 accessible
+  name，reviewer 已明確點出）、也不選 position-aware
+  浮動 tooltip（超過 skeleton 範圍）。bar 在 document
+  flow 裡固定位於 details panel 上方，遵循瀏覽器
+  status-bar 慣例。**narrowly reverses 了 M4.19「no JS
+  hover handler」這條非目標** ── 只有
+  `mouseover` + `mouseout` 透過 `addEventListener` 上線；
+  `mouseenter` / `mouseleave` / `.onmouseover` /
+  `.onmouseout` / inline `onmouseover=` / `onmouseout=`
+  全部仍然 absent。**hover 與 click 是兩個獨立的
+  surface** ── M4.20 mouseover handler 完全不呼叫
+  `showDetails` / `selectProvince`、不碰 `details.`、
+  也不在 hovered element 上動 `.classList`。整份文件
+  完全沒有 SVG `<title>` child；M4.5 head `<title>
+  Leviathan Map</title>` 仍是文件裡唯一的 `<title>`。
+  M4.10 的 XSS-safe DOM API、no-network discipline、
+  「`map.html` 有且只有一段 inline `<script>`；
+  `provinces.svg` 完全沒有 script」這條非對稱
+  invariant、M4.12 transient `.selected`、M4.13 五個
+  data-* DOM contract、M4.15 `tabindex` + keydown、
+  M4.16 `:focus-visible`、M4.17 `role="button"` +
+  `aria-label`、M4.19 `:hover` CSS 全部沿用，完全
+  additive。依照 `feedback_checkpoint_drift` 規則，
+  `docs/milestone-4-checkpoint.md` 在這個 PR 裡
+  **inline 刷新**（selector 從 19 條增加到 20 條；
+  HTML body shape 加上 item 2 `<p id="hover-status">`；
+  script section 加上 M4.20 的 listener block；
+  Interactivity surface section 加上 hover-status 條目；
+  HOVER+TOOLTIPS deferred bucket 改寫為「hover-status
+  bar 已 ship 在 M4.20；pair-hover / position-aware
+  tooltip / SVG `<title>` / `mouseenter`+`mouseleave`
+  仍 deferred」）。**M4 仍在 in progress** ── 沒有寫
+  `docs/milestone-4-result.md`，M4.20 只是再多一個
+  skeleton sub-milestone，不是 exit。**save 格式仍
+  v12** ── hover-status 從 render-time 屬性讀取，不
+  新增任何 persistent state field。`provinces.svg`
+  bytes 與 M4.19 完全相同（hover-status 只在 HTML
+  wrapper）；`map.html` bytes 有變（多 1 個元素、1
+  條 CSS rule、2 種 listener 類型）。**Artefact 數量
+  不變（仍 10）；save 格式不變（仍 v12）**；M1.17 /
+  M2.22 / M3.7 byte-identical determinism contract 仍
+  by construction 通過。7 個新 + 1 個 retune 的 doctest
+  cases（共 886、61651 assertions；**用直接 run
+  `leviathan_tests.exe` 驗證**，依照
+  `feedback_ctest_masks_doctest` 規則 ── ctest 可能
+  silently mask doctest CHECK failures）。
+  **M4 in progress.**
+  **M4.20 不做** SVG `<title>` child / position-aware
+  浮動 tooltip / pair-hover / `mouseenter` /
+  `mouseleave` / hover delay / hover-driven panel
+  preview / `aria-live` on the bar / animation /
+  transition / 更廣的 ARIA / state mutation / commands
+  / AI / 點擊以外的 event / selection 持久化 / panel
+  快捷鍵 / save schema bump / 新 state field / 新
+  artefact / 新 fixture / 新 `InterestGroupKind` /
+  `PlayerCommandKind` / rename M4.8 / M4.13 data-*
+  key / 第二個 `<script>` / `<script src=>` /
+  `<script type=>` / `<link>` / 外部 CSS / font /
+  `<iframe>` / `<img>` / `fetch` / `XMLHttpRequest` /
+  `localStorage` / `sessionStorage` /
+  `history.pushState` / `window.location` /
+  `navigator` / `innerHTML` / `outerHTML` /
+  `document.write` / `eval` / `Function` /
+  `insertAdjacentHTML` / inline event attribute /
+  per-element inline `style="..."` / `<meta
+  name="viewport">` / CSS animation / transition /
+  media query / `@import` / `@font-face` / 鄰接
+  edge / terrain / overlay / runner CLI flag / 動
+  `provinces.svg` bytes / M4 close-out /
+  `docs/milestone-4-result.md` / 「M4 closed」字樣。
+  **M4.19（hover affordance skeleton）** 在 `map.html` 加入
   滑鼠 hover 的視覺提示，讓使用者在按下去前就看到
   「這個 marker 會回應我」。**純 CSS** ── 沒有改
   JavaScript，也沒有改 markup 結構（只動 `<style>`

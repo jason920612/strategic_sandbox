@@ -117,16 +117,38 @@
 // `outline`. The rules sit BEFORE `.selected` /
 // `:focus-visible` in CSS source order so those (equal
 // specificity, later) win when both apply.
-// Pure CSS — no JS hover handler, no mouseover /
-// mouseout listener, no tooltip, no SVG `<title>`
-// child element. No state field, no new artefact, no
+// M4.19 itself is pure CSS — no JS hover handler.
+// M4.20 (this revision) adds a **hover-status text bar**
+// (`<p id="hover-status" class="hover-status">`) between
+// the SVG and the M4.10 details panel; the inline
+// `<script>` registers `mouseover` / `mouseout`
+// listeners on every `<circle>` + `<text>` (in the same
+// per-element loop as the M4.10 click + M4.15 keydown
+// listeners) that update `hoverStatus.textContent` to
+// the composed string `"<name> (<owner-name>)"` (just
+// `<name>` if the owner is missing) and clear it on
+// mouseout. Reads the existing M4.8 / M4.13 `data-name`
+// and `data-owner-name` attributes via `getAttribute`;
+// writes only via `textContent` (XSS-safe — the M4.10
+// no-`innerHTML` discipline carries over). **No SVG
+// `<title>` child element** anywhere — that would
+// compete with the M4.17 `aria-label` as the accessible
+// name. M4.20 narrowly reverses the M4.19 "no JS hover
+// handler" non-goal in the same shape M4.17 reversed
+// the M4.15/M4.16 "no ARIA" non-goal: only `mouseover`
+// + `mouseout` ship; `mouseenter` / `mouseleave` /
+// `.onmouseover` / `.onmouseout` (inline attribute
+// form) stay absent. The hover-status bar is a separate
+// element from the M4.10 details panel — hover never
+// mutates the panel's content, so the click semantics
+// stay clean. No state field, no new artefact, no
 // save-schema bump. Future M4 sub-milestones
-// (tooltips, pair-hover via JS, persistent selection
-// state, live-region announcements, neighbour-
-// adjacency lines, terrain, etc.) will extend the
-// renderer further.
+// (pair-hover, live-region announcements,
+// position-aware tooltip near cursor, persistent
+// selection state, neighbour-adjacency lines, terrain,
+// etc.) will extend the renderer further.
 //
-// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 / M4.19 deliberately do NOT do:
+// What M4.10 / M4.11 / M4.12 / M4.13 / M4.15 / M4.16 / M4.17 / M4.19 / M4.20 deliberately do NOT do:
 //   * No clickable UI / event handlers / hover state.
 //   * No tooltips.
 //   * No state mutation from the viewer. `map.html` is a
@@ -278,6 +300,10 @@
 //         `.details dd { margin: 0 0 8px 0; }`            (M4.10)
 //         `.details-empty { color: #666; font-style: italic; }`
 //                                                         (M4.10)
+//         `.hover-status { max-width: 1000px;
+//             margin: 8px auto; min-height: 1em;
+//             font-family: sans-serif; color: #666;
+//             font-style: italic; text-align: center; }`  (M4.20)
 //         `svg circle[data-id], svg text[data-id]
 //            { cursor: pointer; }`                        (M4.10)
 //         `svg circle:hover
@@ -299,7 +325,20 @@
 //           1. The **exact same** `<svg>...</svg>` body as
 //              `provinces.svg`, but WITHOUT the XML prolog
 //              (which is invalid inside HTML).
-//           2. (M4.10) A `<div id="details" class="details">`
+//           2. (M4.20) A `<p id="hover-status"
+//              class="hover-status">&nbsp;</p>` text bar.
+//              Initial body is a non-breaking space so the
+//              line takes layout space without text. The
+//              inline `<script>` updates its `textContent`
+//              on `mouseover` of a province marker to
+//              `"<name> (<owner-name>)"` (or just
+//              `<name>` when owner-name is empty) and
+//              clears it back to `""` on `mouseout`. Reads
+//              only via `getAttribute`; writes only via
+//              `textContent`. Never touches the M4.10
+//              details panel — hover and click are
+//              independent UI surfaces.
+//           3. (M4.10) A `<div id="details" class="details">`
 //              placeholder, initially containing a single
 //              `<p class="details-empty">` instructing the
 //              viewer to click a province. The M4.10 click
@@ -319,7 +358,7 @@
 //              the raw data-* keys (the M4.8 DOM contract
 //              is unchanged); only the labels rendered into
 //              `<dt>` cells change.
-//           3. (M4.7) A `<ul class="legend">`. One `<li
+//           4. (M4.7) A `<ul class="legend">`. One `<li
 //              data-owner="N">` per entry in
 //              `state.countries`, in vector order. Each
 //              `<li>` carries a tiny 16x16 inline SVG
@@ -335,7 +374,7 @@
 //              swatch `<circle>` elements carry NO
 //              `data-id` and therefore stay non-clickable
 //              under the M4.10 selector.
-//           4. (M4.10) A single inline `<script>` IIFE at
+//           5. (M4.10) A single inline `<script>` IIFE at
 //              the very end of `<body>`. The script attaches
 //              one `click` listener per
 //              `svg circle[data-id], svg text[data-id]`
@@ -367,6 +406,18 @@
 //              The two listeners share a per-element
 //              `activate()` closure so the effect cannot
 //              drift between input modalities.
+//              **M4.20**: the same loop ALSO registers
+//              `mouseover` + `mouseout` listeners that
+//              update the M4.20 `<p id="hover-status">`
+//              text bar via `textContent` (composed string
+//              `"<name> (<owner-name>)"` from
+//              `getAttribute("data-name")` +
+//              `getAttribute("data-owner-name")`). Hover
+//              never mutates the M4.10 details panel —
+//              hover and click are independent surfaces.
+//              `mouseenter` / `mouseleave` /
+//              `.onmouseover` / `.onmouseout` (inline
+//              attribute form) deliberately NOT used.
 //   * `<circle>` and `<text>` are interleaved (one of each per
 //     node, in that order) — keeps each node's elements
 //     grouped in the byte stream and matches the human

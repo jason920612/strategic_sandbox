@@ -330,11 +330,22 @@ std::string render_map_html(const core::GameState& state) {
            " margin-top: 4px; }\n";
     out << "  .details dd { margin: 0 0 4px 16px; }\n";
     out << "  .details-empty { margin: 0; color: #666; }\n";
+    // M4.20 hover-status text bar. A small italic line that
+    // sits between the SVG and the details panel; the inline
+    // <script> updates its textContent on mouseover and
+    // clears it on mouseout. min-height keeps the layout
+    // from jumping when the text is empty.
+    out << "  .hover-status { max-width: 1000px;"
+           " margin: 8px auto; min-height: 1em;"
+           " font-family: sans-serif; color: #666;"
+           " font-style: italic; text-align: center; }\n";
     out << "  svg circle[data-id], svg text[data-id]"
            " { cursor: pointer; }\n";
-    // M4.19 hover affordance. Pure CSS — no JS hover
-    // handler, no mouseover / mouseout listeners, no
-    // tooltip, no <title> child element. Goes BEFORE the
+    // M4.19 hover affordance. CSS-only visual cue (the
+    // M4.20 JS mouseover/mouseout listener for the
+    // hover-status bar lives in the inline <script>
+    // below). No SVG <title> child element, no tooltip
+    // popup, no CSS animation. Goes BEFORE the
     // M4.12 .selected and M4.16 :focus-visible rules so
     // those (later in source order, equal specificity)
     // win on the same element when both apply. Grey
@@ -384,6 +395,15 @@ std::string render_map_html(const core::GameState& state) {
     out << "</head>\n";
     out << "<body>\n";
     out << render_svg_root(state);
+
+    // M4.20 hover-status text bar. The inline <script>
+    // updates its textContent on `mouseover` of a province
+    // marker and clears it on `mouseout`. Initial body is
+    // a non-breaking space so the line takes layout space
+    // (avoids a height jump on first hover). XSS-safe:
+    // the script only writes textContent, never innerHTML.
+    out << "<p id=\"hover-status\" class=\"hover-status\">"
+           "&nbsp;</p>\n";
 
     // M4.10 details panel placeholder. Empty initial state
     // tells the user the panel exists and what to do.
@@ -459,6 +479,7 @@ std::string render_map_html(const core::GameState& state) {
     out << "(function() {\n";
     out << "  var details = document.getElementById(\"details\");\n";
     out << "  if (!details) { return; }\n";
+    out << "  var hoverStatus = document.getElementById(\"hover-status\");\n";
     out << "  var fields = [\n";
     out << "    { attr: \"data-id\",         label: \"Province ID\"   },\n";
     out << "    { attr: \"data-owner\",      label: \"Owner Index\"   },\n";
@@ -509,6 +530,27 @@ std::string render_map_html(const core::GameState& state) {
     out << "          ev.preventDefault();\n";
     out << "          activate();\n";
     out << "        }\n";
+    out << "      });\n";
+    // M4.20: mouseover writes the hovered province's
+    // "<name> (<owner-name>)" composed label to the
+    // hover-status bar via textContent; mouseout clears it.
+    // XSS-safe: textContent never re-interprets the string
+    // as HTML, and we read the values via getAttribute on
+    // the M4.8 / M4.13 data-* attributes already on the
+    // element (no new attribute, no new state, no innerHTML).
+    out << "      el.addEventListener(\"mouseover\", function() {\n";
+    out << "        if (!hoverStatus) { return; }\n";
+    out << "        var name  = el.getAttribute(\"data-name\")"
+           " || \"\";\n";
+    out << "        var owner = el.getAttribute(\"data-owner-name\")"
+           " || \"\";\n";
+    out << "        hoverStatus.textContent = owner\n";
+    out << "          ? (name + \" (\" + owner + \")\")\n";
+    out << "          : name;\n";
+    out << "      });\n";
+    out << "      el.addEventListener(\"mouseout\", function() {\n";
+    out << "        if (!hoverStatus) { return; }\n";
+    out << "        hoverStatus.textContent = \"\";\n";
     out << "      });\n";
     out << "    })(nodes[j]);\n";
     out << "  }\n";
