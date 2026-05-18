@@ -217,7 +217,74 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M5（進行中，RFC-090 §M5 event engine）** — **M5.3
+- **M5（進行中，RFC-090 §M5 event engine）** — **M5.4
+  （EventInstance / event_history data skeleton）** 是
+  M5 的第四個 sub-milestone。把 fired-event record 的
+  data layer 建起來，這樣未來 M5.x firer 不必同時 ship
+  save bump。新增 `core::EventInstanceActor { std::string
+  kind; std::string id_code; std::string
+  country_id_code; std::size_t index; }` ── 用 string
+  而不是 numeric handle 才能跨 reload 穩定（`CountryId`
+  是 session-local 索引）；`country_id_code` 是 owning
+  country，對 `kind="country"` 等於 `id_code`，對
+  `kind="interest_group"` 是 IG 所屬國家；`index` 是
+  transient runtime hint，`id_code` 才是 authoritative。
+  新增 `core::EventInstance { std::string event_id_code;
+  GameDate fired_on; std::vector<EventInstanceActor>
+  actors; }`。新增 `GameState::event_history`
+  append-only vector。**Save format 從 v13 → v14**：
+  `event_history` 在 save 層 required（允許空陣列）；
+  每筆 entry per-field 驗證（`event_id_code` 非空、
+  `fired_on` 必為合法 Gregorian 日期、actor `kind` 在
+  allowlist `{"country", "interest_group"}` 內、
+  `id_code` + `country_id_code` 非空、`index` 非負）；
+  v13 save 直接以 `supports 14` reject。**M5.4 故意不
+  cross-check `event_id_code` 是否能 resolve 到
+  `state.events`** ── 保留「把 save reload 進另一個
+  scenario manifest」的合法工作流；未來 M5.x consumer
+  自行在 callsite 處理 resolve-or-skip（pinned by
+  test）。`diagnostics::compare_states` 走
+  `event_history.size()` → 每筆 entry `{event_id_code,
+  fired_on, actors.size()}` → 每個 actor `{kind,
+  id_code, country_id_code, index}`（entry 或 actor
+  層級 size mismatch 都跳過 per-element walk；對齊
+  M3.1 / M4.1 / M5.1 pattern）。`scenario_loader` 沒
+  動 ── event_history 是 runtime accumulation，不是
+  scenario input。M5.3 `event_evaluator` 沒動 ── M5.4
+  **不** 把 evaluator auto-wire 到 firer。沒 ship
+  `EventMatch → EventInstance` converter（one-liner，
+  未來 firer 自己 own，連同 `fired_on` 捕捉）。
+  **18 個新 doctest case（983 total，62064 assertions；
+  per `feedback_ctest_masks_doctest` 規則直接跑
+  `leviathan_tests.exe` 驗證**）：空 history serialize；
+  canonical 單筆 + cross-scope round-trip；v13 拒；
+  v14 missing / wrong-type 拒；per-field 拒
+  （event_id_code、fired_on、actor kind allowlist、
+  country_id_code、actors array、空 id_code）；
+  cross-check 契約（被引用的 event_id_code 不存在於
+  state.events 仍可載入）；diagnostics walk（size +
+  per-field + actors.size mismatch 跳 per-actor walk）；
+  runner regression（canonical scenario 在 M5.4 仍是
+  10 artefact、save 有 v14 + 空 event_history、不
+  auto-fire、events.jsonl 語意不變）；m4 dom contract
+  從 v13 升 v14。新
+  `docs/m5-4-event-instance-history-data-skeleton.md`
+  design note。**沒有 system 產生 EventInstance
+  record（不 auto-fire）/ effects application / log
+  entry on fire / state.logs append / events.jsonl
+  變動 / runner 或 monthly 整合 / auto-fire cadence /
+  新 artefact（仍 10）/ 新 `RunnerOptions` field /
+  CLI flag / 新 `PlayerCommandKind` / scenario_loader
+  變動 / event_evaluator 變動 / `EventMatch →
+  EventInstance` converter / 對 event_id_code 與
+  state.events 的 cross-check / 更廣 trigger op /
+  target / logical operator / 更廣 actor kind（faction
+  等）/ selection-policy 變體 / UI surface / balance
+  pass / 對 M1/M2/M3/M4 system 的變動 /
+  `docs/milestone-5-checkpoint.md`（仍 deferred ──
+  在 M5.4 開 checkpoint 仍是 premature framing）**。
+  M5 remains in progress。
+- **M5（歷史進行中）** — **M5.3
   （EventMatch actor-binding skeleton）** 是 M5 的
   第三個 sub-milestone。擴充 M5.2 `event_evaluator`
   module 的回傳形狀，讓未來的 firer / effects-applicator

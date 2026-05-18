@@ -646,6 +646,57 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
         }
     }
 
+    // ---- event_history (M5.4) --------------------------------------
+    // Walks state.event_history (typed EventInstance since M5.4).
+    // Per-entry: event_id_code, fired_on, actors[].(kind/id_code/
+    // country_id_code/index). Size mismatch skips per-entry walk;
+    // per-actor size mismatch skips per-actor walk. Mirrors the
+    // M3.1 interest_groups / M4.1 provinces / M5.1 events shape.
+    if (a.event_history.size() != b.event_history.size()) {
+        push_mismatch(out, "event_history.size()",
+                      std::to_string(a.event_history.size()) + " != " +
+                      std::to_string(b.event_history.size()));
+    } else {
+        for (std::size_t i = 0; i < a.event_history.size(); ++i) {
+            const auto& ha = a.event_history[i];
+            const auto& hb = b.event_history[i];
+            const std::string prefix =
+                "event_history[" + std::to_string(i) + "]";
+
+            check_string(out, prefix + ".event_id_code",
+                         ha.event_id_code, hb.event_id_code);
+            if (ha.fired_on != hb.fired_on) {
+                push_mismatch(out, prefix + ".fired_on",
+                              ha.fired_on.to_string() + " != " +
+                              hb.fired_on.to_string());
+            }
+
+            if (ha.actors.size() != hb.actors.size()) {
+                push_mismatch(out, prefix + ".actors.size()",
+                              std::to_string(ha.actors.size()) + " != " +
+                              std::to_string(hb.actors.size()));
+            } else {
+                for (std::size_t ai = 0; ai < ha.actors.size(); ++ai) {
+                    const auto& aa = ha.actors[ai];
+                    const auto& ab = hb.actors[ai];
+                    const std::string aprefix =
+                        prefix + ".actors[" + std::to_string(ai) + "]";
+                    check_string(out, aprefix + ".kind",
+                                 aa.kind, ab.kind);
+                    check_string(out, aprefix + ".id_code",
+                                 aa.id_code, ab.id_code);
+                    check_string(out, aprefix + ".country_id_code",
+                                 aa.country_id_code, ab.country_id_code);
+                    if (aa.index != ab.index) {
+                        push_mismatch(out, aprefix + ".index",
+                                      std::to_string(aa.index) + " != " +
+                                      std::to_string(ab.index));
+                    }
+                }
+            }
+        }
+    }
+
     return out;
 }
 

@@ -66,6 +66,15 @@ struct GameState {
     // scenario JSON; SaveSystem requires it at the save layer (save
     // format v11).
     std::vector<InterestGroupState> interest_groups;
+
+    // M5.4: append-only history of fired events. Each entry records
+    // the event that fired, the date it fired, and the per-trigger
+    // actor binding at fire time. M5.4 is DATA only — no system
+    // creates these records (the future M5.x firer will). Hand-built
+    // entries round-trip through the save layer (save format v14).
+    // Loader does not populate this from the scenario manifest;
+    // history is a runtime accumulation, not a scenario input.
+    std::vector<EventInstance> event_history;
 };
 
 // Builds a fresh GameState from `config`:
