@@ -14,7 +14,82 @@
   RFC-090 §M4 description calls out. See
   `docs/milestone-3-result.md` for the M3 exit report and
   `docs/milestone-2-result.md` for the M2 exit report.
-- Latest shipped sub-milestone: **M4.21 — responsive
+- Latest shipped sub-milestone: **M4.22 — close-out
+  readiness checkpoint.** Mirrors M3.7's role for the M3
+  reaction loop: docs + 1 integration test, no renderer
+  behaviour change. After M4.21 the M4 viewer stack is
+  structurally complete; M4.22 formally assesses
+  readiness, locks the current contract with one
+  consolidated end-to-end integration test (test G "M4
+  viewer contract complete"), fixes a small math wording
+  the PR #87 reviewer flagged, and leaves the M4 exit
+  report (`docs/milestone-4-result.md`) for a deliberate
+  follow-up PR once the reviewer gives the "do M4
+  close-out" green light. **`docs/milestone-4-checkpoint.md`
+  gains a new section 9 "Close-out readiness assessment"**
+  with four subsections: (9.1) one-line summary of what
+  M4 shipped — a deterministic 10-artefact viewer stack
+  with 5-attr DOM identity surface, click+keydown+hover
+  listeners, transient `.selected`/`:focus-visible`/`:hover`
+  CSS rings, `role="button"` + `aria-label`,
+  hover-status text bar, viewport meta + one responsive
+  `@media` rule; (9.2) still-deferred items categorised:
+  Category A defer-to-M5+ gameplay-domain (neighbour
+  adjacency, terrain, ownership dynamics, event
+  integration), Category B recommended post-M4 follow-up
+  polish (broader ARIA — `aria-selected`/`aria-current`/
+  `aria-pressed`/`aria-live`/`aria-describedby`, pair-hover,
+  position-aware tooltip, selection persistence, keyboard
+  polish, mobile-only layouts, dark-mode, CSS
+  animations), Category C not-needed-for-close
+  nice-to-haves (container queries, `@supports`,
+  responsive font sizing, JS responsive surface, hover
+  delay); (9.3) verdict — **M4 is structurally ready
+  for close-out**; (9.4) the PR #87 wording fix. New
+  integration test G touches every M4.x surface marker
+  on the canonical scenario in one runner-driven check
+  (viewBox, circle, text, 5 data-* attrs, tabindex, role,
+  aria-label, details panel, legend, click+keydown+mouseover+mouseout
+  listeners, hover-status, `.selected` CSS,
+  `:focus-visible`, `:hover`, fields-array labels,
+  viewport meta, `@media` block) AND pins that
+  `provinces.svg` carries NONE of the HTML-wrapper
+  surfaces AND pins all 7 unconditional artefacts present
+  AND `save_version: 12`. **Math wording fix** per PR
+  #87 reviewer flag: 1040px threshold = `1000 (SVG) + 2
+  * 20 (body padding) = 1040` (the SVG's 1px border
+  lives INSIDE the padded column, not adding to layout
+  width); the implementation always used 1040 correctly,
+  only the explanatory text in svg_export.cpp /
+  svg_export.hpp / READMEs / m4-21 design note had
+  drifted to `1000 + 20*2 + 1*2 = 1042`. Fixed across
+  all sites; m4-21 design note got a short "Fixed in
+  M4.22" acknowledgement. **M4 remains in progress at
+  the end of this PR** — no `docs/milestone-4-result.md`,
+  no "M4 closed" wording. The reviewer's next decision
+  per the checkpoint section 9.6 is one of: (1) M4
+  close-out (publish exit report + flip READMEs), (2)
+  one more polish PR from category B, or (3) stop M4
+  and move to M5. M4.22 does NOT pick. Artefact set
+  unchanged (still 10). Save format unchanged (still
+  v12). `provinces.svg` and `map.html` bytes BOTH
+  byte-identical with M4.21 — the svg_export.cpp change
+  is comment-only, not behavioural. **1 new doctest
+  case (892 total, 61742 assertions; verified via direct
+  `leviathan_tests.exe` run** per the
+  `feedback_ctest_masks_doctest` rule). **No new system,
+  no new formula, no new artefact, no new state field /
+  fixture / `InterestGroupKind` / `PlayerCommandKind`,
+  no save schema bump, no new feature surface (M4.22 is
+  docs + 1 integration test + 1 math-wording fix), no
+  rename of any data-* attribute, no renderer behaviour
+  change, no broader ARIA / pair-hover / position-aware
+  tooltip / keyboard polish / selection persistence /
+  hover delay / dark-mode (all explicitly deferred per
+  checkpoint section 9.2), no change to `provinces.svg`
+  or `map.html` bytes, no M4 close-out, no
+  `docs/milestone-4-result.md`, no "M4 closed" wording.**
+- Previously shipped: **M4.21 — responsive
   viewport skeleton.** Makes `map.html` render usably on
   narrow / mobile screens. Two small additions: (a)
   `<meta name="viewport" content="width=device-width,
@@ -1449,7 +1524,18 @@
   hardening. **M2.13** Verify tolerance CLI. **M2.8 / M2.11 /
   M2.12** `--replay` / `--verify` / `--verify-strict` CLI
   family.
-- Next sub-milestone candidate (post-M4.21): **M4.22** — open.
+- Next sub-milestone candidate (post-M4.22): **M4 close-out
+  (M4.23?)** awaiting explicit reviewer "do M4 close-out"
+  go-ahead. Per the M4.22 checkpoint section 9.6, the
+  reviewer's decision options are: (1) M4 close-out
+  (publish `docs/milestone-4-result.md` exit report
+  mirroring `milestone-3-result.md` + flip three READMEs
+  to "M4 closed"), (2) one more polish PR from
+  checkpoint section 9.2 category B (broader ARIA,
+  pair-hover, position-aware tooltip, keyboard polish,
+  selection persistence, mobile-only layouts, dark-mode,
+  CSS animations), or (3) stop M4 and move to M5.
+  Historical context (M4.1–M4.22):
   M4.1–M4.4 shipped the SVG data → pixels pipeline; M4.5
   shipped the HTML viewer wrapper; M4.6 the minimal CSS;
   M4.7 the legend; M4.8 widened the SVG identity surface
@@ -1481,7 +1567,11 @@
   so `map.html` renders usably on narrow / mobile screens;
   M4.18 refreshed the checkpoint doc to
   cover M4.15–M4.17 and added one new integration
-  assertion. Natural next steps include
+  assertion; M4.22 added a close-out readiness
+  assessment + consolidated integration test G "M4
+  viewer contract complete" + fixed the PR #87 reviewer
+  flag about the 1040px math wording. Natural next
+  steps include
   (a) broader ARIA polish (`aria-selected` on the M4.12
   `.selected` markers, `aria-live` region on the
   details panel for click-update announcements,
@@ -1497,7 +1587,7 @@
 - M0 closed. M1 closed. M2 closed. **M3 closed** with M3.1 +
   M3.2 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9
   shipped. **M4 in progress** with M4.1 + M4.2 + M4.3 +
-  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 shipped. See
+  M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 shipped. See
   `docs/milestone-0-result.md`, `docs/milestone-1-result.md`,
   `docs/milestone-2-result.md`, and `docs/milestone-3-result.md`
   for the exit reports, `docs/milestone-4-checkpoint.md`
@@ -1528,7 +1618,7 @@ merged; **Milestone 3** (internal politics / interest-group
 reaction layer, RFC-090 §M3) is complete with M3.1 + M3.2
 + M3.3 + M3.4 + M3.5 + M3.6 + M3.7 + M3.8 + M3.9 shipped;
 **Milestone 4** (SVG map + UI, RFC-090 §M4) is in progress
-with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 shipped. Sixty-eight sub-milestones shipped:
+with M4.1 + M4.2 + M4.3 + M4.4 + M4.5 + M4.6 + M4.7 + M4.8 + M4.9 + M4.10 + M4.11 + M4.12 + M4.13 + M4.14 + M4.15 + M4.16 + M4.17 + M4.18 + M4.19 + M4.20 + M4.21 + M4.22 shipped. Sixty-nine sub-milestones shipped:
 M1.1 CountryState fields; M1.2 FactionState; M1.3 BudgetState
 (seven categories, no sum-to-1 enforcement); M1.4 PolicyData +
 PolicyEffect; M1.5 PolicySystem `apply_policy_effects` (first real
@@ -1675,6 +1765,59 @@ contract, so bad target_date writes no artefacts. `main()` prints
 `Target date: <value>` in the replay block when set.
 `replay_with_time` and `step_one_day` semantics are unchanged;
 M2.14 is glue. No save format change;
+**M4.22 close-out readiness checkpoint — mirrors M3.7's
+role for the M3 reaction loop: docs + 1 integration
+test, no renderer behaviour change. After M4.21 the M4
+viewer stack is structurally complete; M4.22 formally
+assesses readiness, locks the current contract with one
+consolidated end-to-end integration test (test G "M4
+viewer contract complete"), and fixes the PR #87
+reviewer flag about the 1040px math wording (the
+implementation always used 1040 = 1000 + 2*20; only the
+doc text drifted to "1000 + 20*2 + 1*2 = 1042"; fixed
+across svg_export.cpp, svg_export.hpp, READMEs, m4-21
+design note). `docs/milestone-4-checkpoint.md` gains a
+new section 9 "Close-out readiness assessment" with
+four subsections (9.1 one-line summary of what M4
+shipped; 9.2 still-deferred items categorised — A
+defer-to-M5+ gameplay-domain, B recommended post-M4
+follow-up polish, C not-needed-for-close nice-to-haves;
+9.3 verdict — M4 is structurally ready; 9.4 the PR #87
+wording fix). New integration test G touches every M4.x
+surface marker (viewBox, circle, text, 5 data-* attrs,
+tabindex, role, aria-label, details panel, legend,
+click+keydown+mouseover+mouseout listeners,
+hover-status, .selected CSS, :focus-visible, :hover,
+fields-array labels, viewport meta, @media block) and
+pins provinces.svg carries NONE of the HTML-wrapper
+surfaces + all 7 unconditional artefacts present +
+save_version: 12. **M4 remains in progress at end of
+this PR** — no `docs/milestone-4-result.md`, no "M4
+closed" wording. **The reviewer's next decision is one
+of: (1) M4 close-out PR (publish exit report + flip
+READMEs), (2) one more polish PR from category B
+(broader ARIA, pair-hover, position-aware tooltip,
+keyboard polish, selection persistence, mobile-only
+layouts, dark-mode, CSS animations), or (3) stop M4
+and move to M5. M4.22 does NOT pick.** Renderer bytes
+byte-identical with M4.21 — the svg_export.cpp change
+is comment-only. **Artefact set unchanged (still 10);
+save format unchanged (still v12);** M1.17 / M2.22 /
+M3.7 byte-identical determinism contracts continue to
+pass. **1 new doctest case (892 total, 61742
+assertions; verified via direct `leviathan_tests.exe`
+run** per the `feedback_ctest_masks_doctest` rule).
+**No new system / formula / artefact / state field /
+fixture / `InterestGroupKind` / `PlayerCommandKind`,
+no save schema bump, no new feature surface, no
+rename of any data-* attribute, no renderer
+behaviour change, no broader ARIA / pair-hover /
+position-aware tooltip / keyboard polish / selection
+persistence / hover delay / dark-mode (all
+explicitly deferred per checkpoint section 9.2), no
+change to `provinces.svg` or `map.html` bytes, no M4
+close-out, no `docs/milestone-4-result.md`, no "M4
+closed" wording.**;
 **M4.21 responsive viewport skeleton — makes `map.html`
 render usably on narrow / mobile screens. Two small
 additions: (a) `<meta name="viewport"
@@ -1687,7 +1830,7 @@ instead of the default ~980px desktop emulation;
 block scaling the SVG to `width: 100%; max-width: 100%;
 height: auto` so it fits the column without horizontal
 scroll. The 1040px threshold is `1000 (SVG width) + 2 *
-20 (body padding) + 2 * 1 (border)`. Above 1040px the
+20 (body padding) = 1040px` (the SVG's 1px border lives inside the padded column, not adding to its layout width). Above 1040px the
 M4.6 desktop rule (`margin: 0 auto`) wins; at and below
 the @media rule wins. The existing `viewBox` preserves
 the SVG aspect ratio for free under the percentage

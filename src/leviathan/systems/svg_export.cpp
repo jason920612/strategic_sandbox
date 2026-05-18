@@ -398,14 +398,15 @@ std::string render_map_html(const core::GameState& state) {
            " { outline: 2px solid #1976d2;"
            " outline-offset: 2px; }\n";
     // M4.21: one small responsive rule. The 1040px
-    // threshold is the SVG's 1000px viewBox-width plus
-    // body padding (20px each side) plus the 1px border
-    // each side. Below that, the SVG would either be
-    // cropped or force horizontal scroll; scaling it to
-    // 100% of the column with auto height preserves the
-    // aspect ratio via the existing viewBox. No
-    // breakpoint cascade, no mobile-only layout, no
-    // container queries, no JS resize listener.
+    // threshold is 1000px (SVG viewBox-width) plus
+    // 2 * 20px body padding (the SVG's 1px border lives
+    // INSIDE the padded column, not adding to its layout
+    // width). Below the threshold the fixed-width SVG
+    // would either be cropped or force horizontal scroll;
+    // scaling to 100% of the column with auto height
+    // preserves the aspect ratio via the existing
+    // viewBox. No breakpoint cascade, no mobile-only
+    // layout, no container queries, no JS resize listener.
     out << "  @media (max-width: 1040px) {\n";
     out << "    svg { width: 100%; max-width: 100%;"
            " height: auto; }\n";

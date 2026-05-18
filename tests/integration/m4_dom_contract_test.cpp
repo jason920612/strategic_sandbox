@@ -503,4 +503,123 @@ TEST_CASE("M4 DOM contract: M4.17 role=button + aria-label end-to-end; M4.16 foc
     }
 }
 
+// =====================================================================
+// G. (M4.22) "M4 viewer contract complete" — single end-to-end
+//    catch-all that touches every M4.x surface marker on the
+//    canonical scenario.
+//
+//    Tests A–F already pin individual surfaces; test G is the
+//    "did anything regress holistically?" check. If a future PR
+//    accidentally drops one of the M4.x surfaces from the
+//    canonical artefact path (e.g. by short-circuiting
+//    render_map_html under some condition), this catch-all
+//    fires.
+//
+//    M4.22 is a close-out readiness checkpoint — this test
+//    documents the M4 viewer contract end-to-end as of the
+//    readiness moment, so future regressions show up
+//    immediately rather than at M4 close-out time.
+// =====================================================================
+TEST_CASE("M4 DOM contract: canonical map.html carries every M4.x surface marker; provinces.svg carries the SVG-body subset") {
+    TempDir td("leviathan_m4_dom_contract_complete");
+    rn::RunnerOptions opts;
+    opts.config_path   = kCanonicalConfig;
+    opts.days          = 1;
+    opts.output_dir    = td.path;
+    opts.scenario_path = kCanonicalScenario;
+    REQUIRE(rn::run(opts).ok());
+
+    const std::string svg  = read_file(td.path / "provinces.svg");
+    const std::string html = read_file(td.path / "map.html");
+
+    // -----------------------------------------------------------------
+    // SVG body surfaces (live in render_svg_root → BOTH artefacts).
+    // -----------------------------------------------------------------
+    for (const std::string& body : {svg, html}) {
+        // M4.2 / M4.3: viewBox + circle / fill.
+        CHECK(body.find("viewBox=\"0 0 1000 1000\"") != std::string::npos);
+        CHECK(body.find("<circle ") != std::string::npos);
+        // M4.4: <text> labels.
+        CHECK(body.find("<text ") != std::string::npos);
+        // M4.8 + M4.13: five-attr identity surface.
+        CHECK(body.find("data-id=")         != std::string::npos);
+        CHECK(body.find("data-owner=")      != std::string::npos);
+        CHECK(body.find("data-owner-code=") != std::string::npos);
+        CHECK(body.find("data-owner-name=") != std::string::npos);
+        CHECK(body.find("data-name=")       != std::string::npos);
+        // M4.15: tabindex on every marker.
+        CHECK(body.find("tabindex=\"0\"") != std::string::npos);
+        // M4.17: role + aria-label.
+        CHECK(body.find("role=\"button\"") != std::string::npos);
+        CHECK(body.find("aria-label=")     != std::string::npos);
+    }
+
+    // -----------------------------------------------------------------
+    // HTML-wrapper-only surfaces (live in render_map_html).
+    // -----------------------------------------------------------------
+    // M4.5 / M4.6 / M4.10: <!DOCTYPE html> + <style> + details panel.
+    CHECK(html.find("<!DOCTYPE html>")            != std::string::npos);
+    CHECK(html.find("<style>")                    != std::string::npos);
+    CHECK(html.find("<div id=\"details\"")        != std::string::npos);
+    // M4.7: legend.
+    CHECK(html.find("<ul class=\"legend\">")      != std::string::npos);
+    // M4.10 click handler infrastructure.
+    CHECK(html.find("addEventListener(\"click\"") != std::string::npos);
+    // M4.11 + M4.13 five-entry fields array.
+    CHECK(html.find("\"Province ID\"")    != std::string::npos);
+    CHECK(html.find("\"Owner Name\"")     != std::string::npos);
+    CHECK(html.find("\"Province Name\"")  != std::string::npos);
+    // M4.12 .selected CSS.
+    CHECK(html.find("svg circle.selected") != std::string::npos);
+    CHECK(html.find("svg text.selected")   != std::string::npos);
+    // M4.15 keydown listener.
+    CHECK(html.find("addEventListener(\"keydown\"") != std::string::npos);
+    // M4.16 :focus-visible CSS.
+    CHECK(html.find(":focus-visible")              != std::string::npos);
+    CHECK(html.find("#1976d2")                     != std::string::npos);
+    // M4.19 :hover CSS.
+    CHECK(html.find("svg circle:hover")  != std::string::npos);
+    CHECK(html.find("svg text:hover")    != std::string::npos);
+    // M4.20 hover-status surface.
+    CHECK(html.find("<p id=\"hover-status\"")        != std::string::npos);
+    CHECK(html.find(".hover-status")                 != std::string::npos);
+    CHECK(html.find("addEventListener(\"mouseover\"") != std::string::npos);
+    CHECK(html.find("addEventListener(\"mouseout\"")  != std::string::npos);
+    // M4.21 responsive surface.
+    CHECK(html.find("<meta name=\"viewport\"") != std::string::npos);
+    CHECK(html.find("@media (max-width: 1040px)") != std::string::npos);
+
+    // -----------------------------------------------------------------
+    // Bytes provinces.svg deliberately does NOT carry (HTML-only
+    // surfaces). One catch-all check that no HTML-wrapper surface
+    // leaked into the standalone SVG.
+    // -----------------------------------------------------------------
+    CHECK(svg.find("<!DOCTYPE")        == std::string::npos);
+    CHECK(svg.find("<style>")          == std::string::npos);
+    CHECK(svg.find("<script")          == std::string::npos);
+    CHECK(svg.find("<div id=\"details\"") == std::string::npos);
+    CHECK(svg.find("<p id=\"hover-status\"") == std::string::npos);
+    CHECK(svg.find("<ul class=\"legend\">") == std::string::npos);
+    CHECK(svg.find("@media")           == std::string::npos);
+    CHECK(svg.find("<meta")            == std::string::npos);
+    CHECK(svg.find(":focus-visible")   == std::string::npos);
+    CHECK(svg.find(":hover")           == std::string::npos);
+    CHECK(svg.find(".selected")        == std::string::npos);
+    CHECK(svg.find("addEventListener") == std::string::npos);
+
+    // -----------------------------------------------------------------
+    // Save format + artefact contract pinned at the readiness moment.
+    // -----------------------------------------------------------------
+    CHECK(fs::exists(td.path / "save.json"));
+    CHECK(fs::exists(td.path / "events.jsonl"));
+    CHECK(fs::exists(td.path / "interest_groups.csv"));
+    CHECK(fs::exists(td.path / "interest_group_country_feedback.csv"));
+    CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
+    CHECK(fs::exists(td.path / "provinces.svg"));
+    CHECK(fs::exists(td.path / "map.html"));
+    // save.json carries `"save_version": 12` (M4.1 schema bump).
+    const std::string save_json = read_file(td.path / "save.json");
+    CHECK(save_json.find("\"save_version\": 12") != std::string::npos);
+}
+
 #endif  // LEVIATHAN_TEST_DATA_DIR

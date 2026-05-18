@@ -82,14 +82,21 @@ default for modern web apps. No `maximum-scale` /
 trying to lock zoom.
 
 **`@media (max-width: 1040px)`** — the threshold is
-chosen to match `1000 (SVG width) + 20*2 (body padding)
-+ 1*2 (border) = 1042`. Below the threshold the SVG
-would either be cropped (overflow hidden) or force
-horizontal scroll. At and below 1040px the rule
-activates and the SVG scales to `width: 100%`. Above
-1040px the original `svg { ... margin: 0 auto; ... }`
-rule (M4.6) centres the fixed-size SVG, which is the
-desktop layout we want preserved.
+chosen to match `1000 (SVG width) + 2 * 20px (body
+padding) = 1040px`. The SVG's 1px border lives INSIDE
+the padded column, so it doesn't add to the layout
+width. Below the threshold the fixed-width SVG would
+either be cropped (overflow hidden) or force horizontal
+scroll. At and below 1040px the rule activates and the
+SVG scales to `width: 100%`. Above 1040px the original
+`svg { ... margin: 0 auto; ... }` rule (M4.6) centres
+the fixed-size SVG, which is the desktop layout we
+want preserved.
+
+(Fixed in M4.22: an earlier draft of this note wrote
+`1000 + 20*2 + 1*2 = 1042`, double-counting the border.
+The implementation always used 1040 correctly; only the
+math wording drifted.)
 
 **`width: 100%; max-width: 100%; height: auto`** — the
 SVG's `width="1000"` / `height="1000"` attributes from

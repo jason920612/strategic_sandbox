@@ -7,7 +7,10 @@ Refreshed at **M4.18** (companion notes for
 **inline-refreshed at M4.19** for the hover affordance
 surface, **inline-refreshed at M4.20** for the
 hover-status text bar surface, **inline-refreshed at
-M4.21** for the responsive viewport surface. Originally written at M4.9 (M4.2–M4.8 SVG / HTML
+M4.21** for the responsive viewport surface,
+**refreshed-as-close-out-readiness at M4.22**
+(zero new renderer behaviour; consolidated integration
+test + close-out readiness assessment). Originally written at M4.9 (M4.2–M4.8 SVG / HTML
 DOM contract); refreshed at M4.14 to cover M4.10–M4.13
 (first JavaScript, decoupled labels, transient
 `.selected`, fifth `data-owner-name`); refreshed at M4.18
@@ -78,6 +81,14 @@ M4.21  responsive viewport skeleton — <meta name="viewport"
        Narrowly reverses the M4.5–M4.20 "no <meta viewport>,
        no media queries" non-goal — only ONE meta + ONE
        media query ship.
+M4.22  close-out readiness checkpoint (this PR) — zero new
+       behaviour; consolidated end-to-end integration test
+       (test G "M4 viewer contract complete"); refreshed
+       checkpoint with a "Close-out readiness assessment"
+       section; fixes the 1040px math wording PR #87 review
+       flagged. M4 is **ready for close-out review** pending
+       explicit reviewer instruction; M4 still in progress
+       at the end of this PR.
 ```
 
 ## 2. Current artefact contract
@@ -649,7 +660,150 @@ of `tests/systems/runner_test.cpp`; the integration tests
 above are the end-to-end check against the canonical
 fixture.
 
-## 9. What M4.18 does NOT do
+## 9. (M4.22) Close-out readiness assessment
+
+M4.22 explicitly assesses whether M4 has reached a
+sensible close-out point. **It does not write the M4
+exit report** (`docs/milestone-4-result.md` is still
+deliberately absent) — that lands when the reviewer
+gives the explicit "do M4 close-out" green light. M4.22
+only categorises the remaining deferred items and
+recommends whether M4 is structurally ready.
+
+### 9.1 What M4 shipped (one-line summary)
+
+A deterministic ten-artefact viewer stack consisting of:
+the M4.1 typed `ProvinceNode` data layer (save v11 →
+v12); a shared `render_svg_root` helper feeding two
+artefacts (`provinces.svg` for byte-stable vector output
++ `map.html` for browser-friendly viewing); a five-attr
+DOM identity surface (`data-id` / `data-owner` /
+`data-owner-code` / `data-owner-name` / `data-name`) on
+every `<circle>` + `<text>`; a single-script-block
+interactivity layer with click + Enter/Space + hover
+listeners, a `<div id="details">` panel, a `.selected`
+transient highlight, a `<p id="hover-status">` text bar,
+and `:focus-visible` + `:hover` CSS rings; an
+accessibility surface with `tabindex="0"` + `role="button"`
++ `aria-label="<name>, <owner-name>"`; and a small
+responsive surface (`<meta name="viewport">` + one
+`@media (max-width: 1040px)` rule). All twenty plain CSS
+selectors + one `@media` block live in a single inline
+`<style>` block; the single inline `<script>` carries
+all event listeners. XSS-safe DOM API only (no
+`innerHTML` / `eval` / etc); no fetch / storage /
+navigation / history APIs; selection / hover / focus are
+purely DOM-level (lost on reload). No SVG `<title>`
+child anywhere. The renderer is byte-deterministic;
+canonical-fixture integration tests (A–G) lock the
+end-to-end contract on the runner-driven path.
+
+### 9.2 Still-deferred items — categorised
+
+**Category A — DEFERRED to M5 or later (gameplay-domain
+items that don't belong in M4's viewer scope):**
+
+```text
+neighbour adjacency edges (SVG <line> / <polyline>)
+terrain / resources / population overlays
+SVG-side controller-vs-owner distinction
+multi-province countries with explicit grouping
+unowned provinces (current contract assumes valid
+   CountryId; empty data-owner-name is a defensive
+   fallback for hand-built bad states, not a modelled
+   "neutral" status)
+event integration / AI / command integration with the
+   viewer
+runner CLI flag for the artefacts (RunnerOptions::
+   provinces_svg_path / map_html_path stay as opt-in
+   path overrides, no CLI surface)
+atomic end_tick writes (deferred since M2.9)
+```
+
+**Category B — RECOMMENDED follow-up after M4 close
+(viewer polish that could land in M5.x or M6.x without
+disrupting the M4 contract):**
+
+```text
+broader ARIA (aria-selected on .selected markers;
+   aria-live region on the details panel / hover-
+   status bar; aria-current; aria-pressed; aria-
+   describedby / aria-labelledby for indirection)
+pair-hover (JS classList toggling on the sibling
+   sharing data-id when either is hovered)
+position-aware floating tooltip near the cursor
+selection persistence across reloads (URL fragment
+   read on load, NOT write; no localStorage)
+keyboard polish (arrow-key navigation between
+   markers; Escape-to-clear the details panel;
+   Tab-within-panel; keyboard shortcut to focus the
+   panel; skip-link / landmark navigation)
+mobile-only layout rules beyond the M4.21 SVG-scale
+   rule (breakpoint cascade, dedicated mobile
+   layouts for legend / details / hover-status)
+dark-mode variant via prefers-color-scheme
+prefers-reduced-motion respect (would matter once any
+   animation / transition is added)
+CSS animations / transitions on .selected / focus /
+   hover state changes
+```
+
+**Category C — NOT NEEDED for M4 close (nice-to-haves
+that have no concrete consumer in the current viewer):**
+
+```text
+container queries (@container)
+@supports feature queries
+responsive font sizing (clamp() / vw / vh units)
+font-family / font-size on the SVG <text> elements
+   themselves (M4.4 contract preserved)
+JS responsive surface (matchMedia / ResizeObserver /
+   window.innerWidth / "resize" listener)
+hover delay / hover-driven detail-panel preview
+mouseenter / mouseleave instead of mouseover /
+   mouseout (no behavioural advantage given the
+   marker shape)
+```
+
+### 9.3 Close-out readiness verdict
+
+**M4 is structurally ready for close-out.** Every
+shipped surface has unit-test coverage in
+`tests/systems/svg_export_test.cpp`, end-to-end
+coverage in `tests/integration/m4_dom_contract_test.cpp`
+(tests A through G as of M4.22), and a per-sub-milestone
+design note in `docs/m4-NN-*.md`. The renderer is
+byte-deterministic; save format stays at v12; the
+artefact set stays at 10; M1.17 / M2.22 / M3.7
+byte-identical determinism contracts all continue to
+pass by construction.
+
+What remains undone is by design:
+  - Category A items are explicit M5+ gameplay-domain
+    work (not viewer scope).
+  - Category B items are nice-to-have polish that
+    M4 close-out shouldn't block on.
+  - Category C items have no concrete consumer.
+
+When the reviewer is ready, the M4 close-out PR
+(`m4-23-*` or whatever number lands next) should
+publish `docs/milestone-4-result.md` (the M4 exit
+report, mirroring `milestone-3-result.md`'s shape) and
+flip the three READMEs to "M4 closed". **M4.22 does
+NOT do that** — the close-out is its own deliberate PR,
+not a side effect of the readiness assessment.
+
+### 9.4 The reviewer's PR #87 wording fix
+
+M4.21 docs originally said the 1040px threshold was
+`1000 + 20*2 + 1*2 = 1042`, double-counting the SVG's
+1px border. The implementation always used 1040 (matching
+1000 + 2*20 — body padding only); only the doc math
+drifted. M4.22 fixes the wording across
+`svg_export.cpp`, `svg_export.hpp`, root + docs + rfc
+READMEs, and `m4-21-responsive-viewport-skeleton.md`.
+
+## 10. What M4.18 does NOT do
 
 ```text
 no new system
