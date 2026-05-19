@@ -1,6 +1,7 @@
 #include "leviathan/systems/runner.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -9,9 +10,13 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/log_entry.hpp"
+#include "leviathan/core/player_commands.hpp"
 #include "leviathan/core/simulation_config.hpp"
 #include "leviathan/systems/commands.hpp"
 #include "leviathan/systems/data_loader.hpp"
@@ -204,6 +209,23 @@ std::string usage_text() {
         "                      Must be a valid Gregorian date and must\n"
         "                      not be before the scenario start date.\n"
         "                      Requires --replay.\n"
+        "  --commands PATH     JSON command script applied AFTER the\n"
+        "                      day-loop and BEFORE end_tick (issue #112).\n"
+        "                      Script shape:\n"
+        "                        { \"commands\": [\n"
+        "                            { \"kind\": \"EnactPolicy\",\n"
+        "                              \"policy_id_code\": \"...\" },\n"
+        "                            { \"kind\": \"AdjustBudget\",\n"
+        "                              \"budget_category\": \"...\",\n"
+        "                              \"budget_delta\": 0.05 },\n"
+        "                            { \"kind\": \"ChooseEventOption\",\n"
+        "                              \"event_history_index\": 0,\n"
+        "                              \"option_id_code\": \"act\" }\n"
+        "                        ] }\n"
+        "                      Each command flows through the same\n"
+        "                      `commands::dispatch_one` pipeline as the\n"
+        "                      M2 surface; successful commands land in\n"
+        "                      state.applied_commands.\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -317,6 +339,11 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
                     "' is not a valid Gregorian date (" + std::move(d.error()) + ")");
             }
             opts.target_date = d.value();
+            ++i;
+        } else if (a == "--commands") {
+            auto v = need_value(i, a);
+            if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
+            opts.commands_path = std::filesystem::path(std::string(v.value()));
             ++i;
         } else {
             return core::Result<RunnerOptions>::failure(
@@ -989,6 +1016,120 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     return core::Result<RunOutcome>::success(std::move(outcome));
 }
 
+namespace {
+
+// Parse an `opts.commands_path` JSON script into a vector of
+// `core::PlayerCommand`. Shape:
+//
+//   { "commands": [
+//       { "kind": "EnactPolicy",
+//         "policy_id_code": "..." },
+//       { "kind": "AdjustBudget",
+//         "budget_category": "...",
+//         "budget_delta": 0.05 },
+//       { "kind": "ChooseEventOption",
+//         "event_history_index": 0,
+//         "option_id_code": "act" }
+//   ] }
+//
+// `kind` token matches `save_system::player_command_kind_to_string`'s
+// output so round-tripping a save's applied_commands JSON is
+// straightforward. Each entry's per-kind payload is validated; an
+// invalid entry produces Result::failure naming the index +
+// missing/wrong field. The `applied_on` field is intentionally
+// not parsed — apply_command_script auto-stamps the current
+// state.current_date.
+core::Result<std::vector<core::PlayerCommand>>
+parse_commands_script(const std::filesystem::path& path) {
+    using nlohmann::json;
+    std::ifstream f(path, std::ios::binary);
+    if (!f) {
+        return core::Result<std::vector<core::PlayerCommand>>::failure(
+            "--commands: failed to open '" + path.string() + "'");
+    }
+    json root;
+    try {
+        f >> root;
+    } catch (const json::exception& e) {
+        return core::Result<std::vector<core::PlayerCommand>>::failure(
+            "--commands: '" + path.string() + "': JSON parse error: " +
+            e.what());
+    }
+    if (!root.is_object() || !root.contains("commands") ||
+        !root.at("commands").is_array()) {
+        return core::Result<std::vector<core::PlayerCommand>>::failure(
+            "--commands: '" + path.string() +
+            "': expected top-level object with 'commands' array");
+    }
+    const auto& arr = root.at("commands");
+    std::vector<core::PlayerCommand> out;
+    out.reserve(arr.size());
+    for (std::size_t i = 0; i < arr.size(); ++i) {
+        const std::string ctx =
+            "--commands: '" + path.string() +
+            "': commands[" + std::to_string(i) + "]";
+        const auto& e = arr[i];
+        if (!e.is_object()) {
+            return core::Result<std::vector<core::PlayerCommand>>::failure(
+                ctx + ": expected JSON object");
+        }
+        if (!e.contains("kind") || !e.at("kind").is_string()) {
+            return core::Result<std::vector<core::PlayerCommand>>::failure(
+                ctx + ": 'kind' missing or not a string");
+        }
+        const std::string kind = e.at("kind").get<std::string>();
+        core::PlayerCommand cmd;
+        if (kind == "EnactPolicy") {
+            cmd.kind = core::PlayerCommandKind::EnactPolicy;
+            if (!e.contains("policy_id_code") ||
+                !e.at("policy_id_code").is_string()) {
+                return core::Result<std::vector<core::PlayerCommand>>::failure(
+                    ctx + ": EnactPolicy requires string 'policy_id_code'");
+            }
+            cmd.policy_id_code = e.at("policy_id_code").get<std::string>();
+        } else if (kind == "AdjustBudget") {
+            cmd.kind = core::PlayerCommandKind::AdjustBudget;
+            if (!e.contains("budget_category") ||
+                !e.at("budget_category").is_string()) {
+                return core::Result<std::vector<core::PlayerCommand>>::failure(
+                    ctx + ": AdjustBudget requires string 'budget_category'");
+            }
+            cmd.budget_category = e.at("budget_category").get<std::string>();
+            if (!e.contains("budget_delta") ||
+                !e.at("budget_delta").is_number()) {
+                return core::Result<std::vector<core::PlayerCommand>>::failure(
+                    ctx + ": AdjustBudget requires number 'budget_delta'");
+            }
+            cmd.budget_delta = e.at("budget_delta").get<double>();
+        } else if (kind == "ChooseEventOption") {
+            cmd.kind = core::PlayerCommandKind::ChooseEventOption;
+            if (!e.contains("event_history_index") ||
+                !e.at("event_history_index").is_number_unsigned()) {
+                return core::Result<std::vector<core::PlayerCommand>>::failure(
+                    ctx + ": ChooseEventOption requires unsigned-integer "
+                    "'event_history_index'");
+            }
+            cmd.event_history_index =
+                e.at("event_history_index").get<std::size_t>();
+            if (!e.contains("option_id_code") ||
+                !e.at("option_id_code").is_string()) {
+                return core::Result<std::vector<core::PlayerCommand>>::failure(
+                    ctx + ": ChooseEventOption requires string 'option_id_code'");
+            }
+            cmd.option_id_code = e.at("option_id_code").get<std::string>();
+        } else {
+            return core::Result<std::vector<core::PlayerCommand>>::failure(
+                ctx + ": unknown 'kind' '" + kind +
+                "' (expected EnactPolicy|AdjustBudget|ChooseEventOption)");
+        }
+        out.push_back(std::move(cmd));
+    }
+    return core::Result<std::vector<core::PlayerCommand>>::success(
+        std::move(out));
+}
+
+}  // namespace
+
 core::Result<RunOutcome> run_state(core::GameState& state,
                                    const RunnerOptions& opts) {
     if (opts.days < 0) {
@@ -1006,6 +1147,56 @@ core::Result<RunOutcome> run_state(core::GameState& state,
             return core::Result<RunOutcome>::failure(std::move(step_r.error()));
         }
     }
+
+    // Issue #112: --commands script applied AFTER the day-loop
+    // and BEFORE end_tick. The script flows through the same
+    // commands::dispatch_one dispatch path as M2 apply_pending,
+    // so successful entries appear in state.applied_commands and
+    // ChooseEventOption resolves pending_player_events created
+    // by the just-completed day-loop's tick_events.
+    if (opts.commands_path.has_value()) {
+        namespace cmd = leviathan::systems::commands;
+        auto script_r = parse_commands_script(opts.commands_path.value());
+        if (!script_r) {
+            return core::Result<RunOutcome>::failure(
+                std::move(script_r.error()));
+        }
+        auto apply_r = cmd::apply_command_script(state, script_r.value());
+        if (!apply_r) {
+            return core::Result<RunOutcome>::failure(
+                "--commands '" + opts.commands_path.value().string() +
+                "': " + std::move(apply_r.error()));
+        }
+        // Rejected commands (order_execution gate) surface as
+        // Result::success with a RejectionRecord; treat them as
+        // a soft failure so the runner exits non-zero rather
+        // than silently absorbing the rejection.
+        if (apply_r.value().rejection.has_value()) {
+            const auto& rj = apply_r.value().rejection.value();
+            std::string rj_desc;
+            if (rj.kind == core::PlayerCommandKind::EnactPolicy) {
+                rj_desc = "EnactPolicy '" + rj.policy_id_code +
+                          "' (compliance " +
+                          std::to_string(rj.compliance) +
+                          " < threshold " +
+                          std::to_string(rj.threshold) + ")";
+            } else if (rj.kind == core::PlayerCommandKind::AdjustBudget) {
+                rj_desc = "AdjustBudget '" + rj.budget_category +
+                          "' (compliance " +
+                          std::to_string(rj.compliance) +
+                          " < threshold " +
+                          std::to_string(rj.threshold) + ")";
+            } else {
+                rj_desc = "(unknown kind)";
+            }
+            return core::Result<RunOutcome>::failure(
+                "--commands '" + opts.commands_path.value().string() +
+                "': rejected at index after " +
+                std::to_string(apply_r.value().apply.commands_applied) +
+                " successful command(s): " + rj_desc);
+        }
+    }
+
     return end_tick(state, opts, ctrl);
 }
 

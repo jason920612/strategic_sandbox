@@ -133,10 +133,23 @@ recurse_followups_impl(core::GameState&                  state,
                        FollowupNode                      parent_node,
                        const core::CountryState&         country_for_option,
                        const std::string&                tag_prefix,
-                       std::unordered_set<std::string>*  tick_fired_in /* may be nullptr */) {
+                       std::unordered_set<std::string>*  tick_fired_in /* may be nullptr */,
+                       int*                              pending_player_followups_out /* may be nullptr */) {
     FollowupOutcome out;
     std::unordered_set<std::string> visited;
     visited.insert(parent_node.event_id_code);
+
+    // Issue #112 §3 (player-followup deferral): when a followup
+    // event has options AND fires for the player's country, the
+    // chain pauses — record the followup, append a
+    // PendingPlayerEvent, apply NO effects, return out. The
+    // player must resolve via ChooseEventOption before the chain
+    // continues. AI/headless followups (non-player country, OR
+    // followup without options) still auto-apply via apply_for_ai
+    // as before.
+    const bool actor_is_player =
+        state.player_country.valid()
+        && state.player_country == country_for_option.id;
 
     FollowupNode current = std::move(parent_node);
 
@@ -206,9 +219,33 @@ recurse_followups_impl(core::GameState&                  state,
         const std::size_t child_instance_index =
             state.event_history.size() - 1;
         out.followups_recorded += 1;
+        visited.insert(fdef.id_code);
+        if (tick_fired_in != nullptr) {
+            tick_fired_in->insert(fdef.id_code);
+        }
+
+        // Issue #112 §3: if the followup has options AND fires
+        // for the player country, defer effects + halt the
+        // chain. A PendingPlayerEvent is appended; the player
+        // must resolve via ChooseEventOption before the chain
+        // can resume. Without this guard, AI/headless option
+        // selection would auto-pick options[best] and bypass
+        // the player's choice for downstream followups.
+        if (actor_is_player && !fdef.options.empty()) {
+            core::PendingPlayerEvent pending;
+            pending.event_history_index = child_instance_index;
+            pending.event_id_code       = fdef.id_code;
+            pending.country_id_code     = country_for_option.id_code;
+            state.pending_player_events.push_back(std::move(pending));
+            if (pending_player_followups_out != nullptr) {
+                *pending_player_followups_out += 1;
+            }
+            break;   // chain pauses; ChooseEventOption resumes it
+        }
 
         // Apply the followup's effects (mode-aware just like a
-        // parent fire).
+        // parent fire). Non-player country, OR player country
+        // with an options-empty followup (base-effects path).
         const auto& child_instance =
             state.event_history[child_instance_index];
         auto eff_r = apply_for_ai(state, child_instance, fdef,
@@ -220,10 +257,6 @@ recurse_followups_impl(core::GameState&                  state,
         out.total_followup_effects_applied +=
             eff_r.value().effects_applied;
 
-        visited.insert(fdef.id_code);
-        if (tick_fired_in != nullptr) {
-            tick_fired_in->insert(fdef.id_code);
-        }
         current = FollowupNode{fidx, child_instance_index, fdef.id_code};
     }
 
@@ -277,9 +310,15 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
             };
             std::vector<DrawEntry> draw_pool;
             for (const auto& m : bucket.matches) {
-                // Skip events that have already fired this tick
-                // (via a different country's draw OR via a
-                // followup chain).
+                // Skip events that have already fired for THIS
+                // country this tick — either via a different
+                // category bucket OR via this country's followup
+                // recursion. The `fired_in_tick` set is per-
+                // country (declared at the top of the country
+                // loop), so it does NOT block another country
+                // from firing the same template (RFC E1: same
+                // template may fire for multiple countries
+                // independently in the same tick).
                 if (fired_in_tick.count(
                         state.events[m.event_index].id_code) > 0) {
                     continue;
@@ -376,9 +415,10 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
                 state.countries[ci];
             FollowupNode parent_node{
                 event_index, parent_instance_index, def.id_code};
+            int pending_player_followups = 0;
             auto follow_r = recurse_followups_impl(
                 state, parent_node, refreshed_country, tag,
-                &fired_in_tick);
+                &fired_in_tick, &pending_player_followups);
             if (!follow_r) {
                 return core::Result<TickOutcome>::failure(
                     "tick_events: " + def.id_code + " followup: " +
@@ -388,6 +428,7 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
                 follow_r.value().followups_recorded;
             out.total_followup_effects_applied +=
                 follow_r.value().total_followup_effects_applied;
+            out.events_pending_player_choice += pending_player_followups;
         }
     }
 
@@ -418,9 +459,15 @@ recurse_followups_from_event(core::GameState&             state,
     // Public entry-point (called from commands::dispatch_one after
     // ChooseEventOption) doesn't have a tick-scope dedup set —
     // the player command happens between ticks, so per-tick
-    // semantics don't apply. Pass nullptr.
+    // semantics don't apply. Pass nullptr for the dedup set.
+    // The pending_player_followups counter is plumbed through so
+    // a player-country followup chain that hits another options-
+    // event correctly pauses again (the player gets another
+    // ChooseEventOption prompt for the downstream chain).
+    int pending_player_followups = 0;
     return recurse_followups_impl(
-        state, node, country_for_option, tag_prefix, nullptr);
+        state, node, country_for_option, tag_prefix, nullptr,
+        &pending_player_followups);
 }
 
 }  // namespace leviathan::systems::event_engine
