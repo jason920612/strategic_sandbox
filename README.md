@@ -59,17 +59,22 @@
 >    unchanged (11); 9-container scenario-loader empty-state
 >    contract.
 >
-> After issue #112 lands, execution returns to the
-> M-numbered milestone sequence — **M6.6 resumes per
-> RFC-090 §6.6 on explicit go-ahead**. **There is no
-> RCR-2 track.** Issues #105 / #108 / #110 / #112 stay
-> open until the reviewer confirms strict compliance on
-> PR #111.
+> Issue #112 has now landed (PR #111 squash-merged) and
+> execution has returned to the M-numbered milestone
+> sequence: **M6.6** (RFC-090 §6.6 "加入情報預算影響") is
+> the latest shipped sub-milestone — the
+> `information_accuracy::compute_for_country` body now
+> reads `government_authority.intelligence_capability`
+> and `budget.intelligence`, ranging
+> `[kMinInformationAccuracy=0.4, 1.0]` instead of the
+> M6.3 constant 1.0. **There is no RCR-2 track.** Issues
+> #105 / #108 / #110 / #112 stay open until the reviewer
+> confirms strict compliance.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at M6.5. M6 follows RFC-090 §M6 (隱藏真相
+  progress at M6.6. M6 follows RFC-090 §M6 (隱藏真相
   與資訊失真): the player will not always see the
   truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
   `visible_report`; 6.3 `information_accuracy`; 6.4
@@ -113,7 +118,88 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.5 — bias_noise
+- Latest shipped sub-milestone: **M6.6 — intelligence-
+  budget influence on `information_accuracy`.** Sixth M6
+  PR. Implements RFC-090 §6.6 (`6.6 加入情報預算影響`).
+  Replaces the M6.3 placeholder body of
+  `leviathan::systems::information_accuracy::compute_for_country`
+  (which always returned
+  `kPlaceholderInformationAccuracy = 1.0`) with the
+  intelligence-budget formula:
+
+  ```
+  intel_score = 0.7 × country.government_authority.intelligence_capability
+              + 0.3 × country.budget.intelligence
+  accuracy    = 0.4 + 0.6 × intel_score
+  ```
+
+  Both inputs are clamped to `[0, 1]` defensively before
+  the weighted sum. The result lives in
+  `[kMinInformationAccuracy=0.4, 1.0]`: a country with
+  maxed intelligence on both axes returns the old
+  no-distortion ceiling (1.0); a country with zero
+  intelligence capability AND zero intelligence budget
+  hits the new floor (0.4) — degraded but not blank, so
+  the M6.5 bias / noise primitive that will layer on top
+  retains a signal band. New public header constants
+  expose every load-bearing number for tests + future
+  M6.7 / M6.9 callers: `kMinInformationAccuracy = 0.4`,
+  `kInformationAccuracyCapabilityWeight = 0.7`,
+  `kInformationAccuracyBudgetWeight = 0.3`. The
+  `kPlaceholderInformationAccuracy = 1.0` constant
+  graduates from "always returned" (M6.3) to
+  "no-distortion ceiling" (M6.6) — the numeric value
+  stays put; only the semantic shifts.
+  **No save schema bump.** Both intelligence inputs
+  (`intelligence_capability` from M2.16 + `budget.intelligence`
+  from M1.3) already exist on `CountryState`; M6.6 adds no
+  new persistent field. Save format stays at **v18**;
+  artefact contract stays at **11**.
+  **No production caller wired.** `compute_for_country`
+  remains uncalled outside tests — `event_evaluator` /
+  `event_firer` / `event_effects` / `event_engine` /
+  `monthly_pipeline` / `runner` all unchanged; M6.9 will
+  be the first downstream caller. Canonical
+  `1930_minimal` 365-day run still produces a byte-
+  identical save to the PR #111 baseline (verified):
+  M1.17 / M2 / M3 / M4 / M5 byte-identical determinism
+  baselines stay green.
+  **No `state.rng` consumption.** Helper is pure / read-
+  only; same state + same country → same result.
+  **18 new doctest cases (1208 total, 64169 assertions;
+  verified via direct `leviathan_tests.exe` run** per
+  the `feedback_ctest_masks_doctest` rule): maxed-input
+  → 1.0; zero-input → 0.4; pinned affine formula across
+  seven `(cap, bud)` samples; range invariant over a
+  swept grid; capability weight dominates budget weight;
+  monotonicity in both axes; defensive clamping of
+  out-of-range inputs; non-consumption of corruption
+  (M6.7 scope); preserved validation surface (invalid
+  CountryId / empty state.countries / `CountryId::invalid()`);
+  preserved purity (no GameState mutation across two
+  countries + a failed call); preserved determinism
+  (three repeated calls); stable public constants
+  (`kPlaceholderInformationAccuracy = 1.0`,
+  `kMinInformationAccuracy = 0.4`, weights sum to 1.0).
+  Reported-value composition test rewritten to assert
+  the M6.6 contract: full-intelligence country still
+  yields `reported = true_value` verbatim; zero-intel
+  country damps reported to `0.4 × true_value`.
+  **What M6.6 deliberately does NOT do (forward-stable):**
+  no save format bump, no new state field, no
+  corruption term (M6.7), no debug-mode bypass (M6.8),
+  no non-debug hiding consumer (M6.9), no new artefact,
+  no new `RunnerOptions` field / CLI flag, no new
+  `PlayerCommandKind`, no scenario_loader change, no
+  event-module / monthly_pipeline / runner code change,
+  no `random_service` consumption, no
+  `compute_for_event` variant (deferred to M6.9), no
+  `docs/milestone-6-checkpoint.md`, no
+  `docs/milestone-6-result.md`, no "M6 closed" wording.
+  M6 remains in progress; M6.7 (corruption) /
+  M6.8 (debug) / M6.9 (first non-debug caller) follow
+  per RFC-090 §M6.
+- Previously shipped: **M6.5 — bias_noise
   helper skeleton.** Fifth M6 PR. Implements only
   RFC-090 §6.5 (`6.5 實作 bias/noise`). New
   `leviathan::systems::bias_noise` module

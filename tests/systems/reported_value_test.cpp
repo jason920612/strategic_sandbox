@@ -157,23 +157,24 @@ TEST_CASE("M6.4 from_true_value: deterministic — repeated calls return the sam
 }
 
 // =====================================================================
-// M6.4 composition with M6.3 information_accuracy
+// M6.4 composition with M6.6 information_accuracy
 // =====================================================================
 
-TEST_CASE("M6.4 + M6.3 composition: with M6.3 placeholder accuracy=1.0 reported equals true_value") {
-    // Pin the M6 pipeline composition: pull the M6.3 accuracy
-    // for a country (M6.3 placeholder returns 1.0), feed it
-    // into M6.4 along with a true_value, get the true_value
-    // back verbatim. When M6.6 / M6.7 land (and reduce
-    // accuracy below 1.0), THIS test should remain valid for
-    // a state where intelligence is full + corruption is zero,
-    // and a NEW test should be added pinning the damping
-    // behavior for non-perfect-intel countries.
+TEST_CASE("M6.4 + M6.6 composition: with maxed intelligence accuracy=1.0 reported equals true_value") {
+    // Pin the M6 pipeline composition: pull the M6.6 accuracy
+    // for a country with full intelligence (capability=1.0,
+    // budget.intelligence=1.0), feed it into M6.4 along with a
+    // true_value, get the true_value back verbatim. Under M6.6
+    // the helper only returns 1.0 when both intelligence inputs
+    // are at 1.0 — the M6.3 "any country returns 1.0" placeholder
+    // is gone.
     GameState s;
     CountryState ger;
     ger.id      = CountryId{0};
     ger.id_code = "GER";
     ger.name    = "GER";
+    ger.government_authority.intelligence_capability = 1.0;
+    ger.budget.intelligence                          = 1.0;
     s.countries.push_back(ger);
 
     const auto acc = ia::compute_for_country(s, CountryId{0});
@@ -184,6 +185,31 @@ TEST_CASE("M6.4 + M6.3 composition: with M6.3 placeholder accuracy=1.0 reported 
     const auto rep = rv::from_true_value(0.30, acc.value());
     REQUIRE(rep);
     CHECK(rep.value() == doctest::Approx(0.30));
+}
+
+TEST_CASE("M6.4 + M6.6 composition: degraded intelligence damps the reported_value") {
+    // The M6.6 damping case the previous test's comment promised:
+    // a country with zero intelligence_capability AND zero
+    // budget.intelligence sits at the M6.6 accuracy floor
+    // (kMinInformationAccuracy = 0.4); M6.4 multiplies the
+    // true_value by that floor verbatim.
+    GameState s;
+    CountryState ger;
+    ger.id      = CountryId{0};
+    ger.id_code = "GER";
+    ger.name    = "GER";
+    ger.government_authority.intelligence_capability = 0.0;
+    ger.budget.intelligence                          = 0.0;
+    s.countries.push_back(ger);
+
+    const auto acc = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(acc);
+    CHECK(acc.value() == doctest::Approx(ia::kMinInformationAccuracy));
+    CHECK(acc.value() == doctest::Approx(0.4));
+
+    const auto rep = rv::from_true_value(0.30, acc.value());
+    REQUIRE(rep);
+    CHECK(rep.value() == doctest::Approx(0.30 * 0.4));
 }
 
 TEST_CASE("M6.4 + M6.3 composition: an invalid M6.3 lookup propagates through the caller") {

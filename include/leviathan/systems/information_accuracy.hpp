@@ -2,70 +2,67 @@
 // computing how accurate the player's view of an event is in a
 // given country.
 //
-// M6.3 ships the SKELETON of RFC-090 §6.3 (`6.3 實作
-// information_accuracy`): a pure free-function helper that
-// returns a `[0, 1]` accuracy value. M6.3 itself is a
-// **placeholder formula** — it always returns 1.0
-// (`kPlaceholderInformationAccuracy` = player sees the truth
-// verbatim, no distortion). Later M6 sub-milestones add the
-// actual distortion model:
+// M6.3 shipped the function shape with a placeholder body that
+// always returned `kPlaceholderInformationAccuracy = 1.0`
+// (no-distortion ceiling). M6.6 replaces the body with the
+// intelligence-budget formula RFC-090 §6.6 (`加入情報預算影響`)
+// describes. Subsequent M6 sub-milestones continue the chain:
 //
-//   M6.4 reported value         — uses this accuracy to derive
-//                                 the numeric reported value of
-//                                 an event's trigger / effect.
-//   M6.5 bias / noise           — adds randomised distortion on
-//                                 top of the accuracy gate.
-//   M6.6 intelligence budget    — weights accuracy by the
-//                                 country's intelligence
-//                                 budget (lower budget ->
-//                                 lower accuracy).
-//   M6.7 corruption             — weights accuracy by the
-//                                 country's corruption (higher
-//                                 corruption -> lower accuracy).
-//   M6.8 debug mode             — bypasses accuracy entirely
-//                                 (always show the truth).
-//   M6.9 non-debug mode         — uses the computed accuracy
+//   M6.4 reported value         — uses accuracy to derive the
+//                                 numeric reported value of an
+//                                 event's trigger / effect.
+//   M6.5 bias / noise           — adds deterministic-hash noise
+//                                 on top of the accuracy gate.
+//   M6.6 intelligence budget    — SHIPPED. body reads
+//                                 government_authority
+//                                 .intelligence_capability and
+//                                 budget.intelligence; lowers
+//                                 accuracy toward
+//                                 `kMinInformationAccuracy = 0.4`
+//                                 when both are zero.
+//   M6.7 corruption             — will add a -corruption term on
+//                                 top of the M6.6 baseline.
+//   M6.8 debug mode             — will bypass accuracy entirely.
+//   M6.9 non-debug mode         — first downstream caller: will
+//                                 consume accuracy through
+//                                 reported_value::from_true_value
+//                                 + bias_noise::sample_for_event
 //                                 to hide / distort the
 //                                 visible_report (M6.2) toward
 //                                 the true_cause (M6.1).
 //
-// M6.3 intentionally does NOT bump the save schema. Per the PR
-// #101 reviewer's note (preserved here so future-me doesn't
-// drift): *"M6.3 要做 information_accuracy 時，建議不要再 bump
-// save schema，除非真的新增 persistent field"*. The helper
-// reads existing GameState; no new field on GameState /
-// CountryState / EventDefinition / EventInstance ships. M6.6
-// will introduce an intelligence_budget field (or reuse an
-// existing one) and may bump the save format at that time;
-// M6.7 similarly for corruption coupling if needed.
+// M6.6 intentionally does NOT bump the save schema. Both
+// intelligence inputs (intelligence_capability + budget.intelligence)
+// already exist on CountryState since M2.16 / M1.3. No new
+// persistent field ships.
 //
-// Semantics:
+// Semantics (after M6.6):
 //
 //   * Pure read.  `compute_for_country` never mutates state.
 //   * Deterministic.  Same state + same country → same result.
-//   * Range.  Result is in `[0, 1]`:
+//   * Range.  Result is in `[kMinInformationAccuracy, 1.0]` =
+//     `[0.4, 1.0]`:
 //       1.0 = player sees truth verbatim (no distortion).
-//       0.0 = player sees no useful info (full distortion).
-//     M6.3 always returns 1.0; later sub-milestones bring the
-//     value below 1.0.
+//       0.4 = zero intelligence floor — degraded but not blank.
+//     The exact value is
+//       accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability
+//                              + 0.3 × budget.intelligence)
+//     Both inputs are clamped to [0, 1] defensively. M6.7 will
+//     subtract a corruption term and may push effective accuracy
+//     below 0.4 when corruption is high; M6.6 itself never goes
+//     below kMinInformationAccuracy.
 //   * Validation.  `country` must be a valid index into
 //     `state.countries`; otherwise the helper returns
 //     `Result::failure` with the offending CountryId in the
-//     message. The country's actual field values are not
-//     consulted in the M6.3 placeholder; future formulas
-//     (M6.6 / M6.7) will read `state.countries[country].*`
-//     fields.
+//     message.
 //
-// M6.3 deliberate non-goals:
+// M6.6 deliberate non-goals (forward-stable):
 //
-//   no save schema bump (still v16)
+//   no save schema bump (still v18; M6.6 reuses existing fields)
 //   no new state field
-//   no reported value (M6.4)
-//   no bias / noise (M6.5)
-//   no intelligence-budget formula (M6.6)
 //   no corruption formula (M6.7)
 //   no debug mode (M6.8)
-//   no non-debug hiding (M6.9)
+//   no non-debug hiding consumer (M6.9 will wire it)
 //   no EventReport type / artefact
 //   no events.jsonl semantic change
 //   no UI surface
@@ -73,13 +70,19 @@
 //     `event_evaluator` / `event_firer` / `event_effects` /
 //     `event_engine` / `monthly_pipeline` / `runner` all
 //     unchanged; the helper is callable but no one calls it
-//     yet (M6.4+ will).
-//   no per-event variant — `compute_for_event` is M6.4 scope
-//     (it'll resolve the country from
+//     yet (M6.9 will be the first caller).
+//   no per-event variant — `compute_for_event` is still
+//     deferred (M6.9 will resolve the actor's country from
 //     `instance.actors.front().country_id_code` and delegate
 //     to `compute_for_country`).
-//   no allowlist of country fields the future formulas can
-//     read — that's a design decision for M6.6 / M6.7.
+//   no RNG consumption — the helper is RNG-free; bias / noise
+//     belongs to M6.5 which is layered on top of accuracy, not
+//     baked into it.
+//   no allowlist drift — M6.6 reads exactly two CountryState
+//     fields (intelligence_capability + budget.intelligence).
+//     M6.7 will add one more read (corruption); the helper
+//     body never reads beyond what the active sub-milestone
+//     formula needs.
 
 #ifndef LEVIATHAN_SYSTEMS_INFORMATION_ACCURACY_HPP
 #define LEVIATHAN_SYSTEMS_INFORMATION_ACCURACY_HPP
@@ -90,21 +93,52 @@
 
 namespace leviathan::systems::information_accuracy {
 
-// M6.3 placeholder return value. Exposed so tests and any
-// future consumer can grep for the constant rather than the
-// magic number; M6.6 / M6.7 will replace the body of
-// `compute_for_country` so this constant becomes the
-// "no-distortion ceiling" rather than the always-returned
-// value.
+// "No-distortion ceiling" — the value `compute_for_country`
+// returns for a country with maxed intelligence. The semantic
+// is stable across M6.6 / M6.7: 1.0 = the player sees the truth
+// verbatim. M6.3 returned this unconditionally; M6.6 returns
+// it only when both intelligence inputs are at 1.0.
 inline constexpr double kPlaceholderInformationAccuracy = 1.0;
 
+// M6.6 accuracy floor — the value `compute_for_country` returns
+// for a country with zero intelligence_capability AND zero
+// budget.intelligence. A country with no intelligence apparatus
+// still gets a degraded report rather than a complete blackout
+// (M6.5's bias / noise primitive layers on top; collapsing this
+// floor to 0 would over-attenuate the noise band's signal).
+//
+// Exposed publicly so tests + future M6.7 / M6.9 callers can pin
+// the boundary without re-deriving it. M6.7's corruption term
+// will subtract from accuracy AFTER this floor, so the effective
+// final accuracy under high corruption may sit below the M6.6
+// floor; this constant is the floor of the M6.6 contribution
+// alone.
+inline constexpr double kMinInformationAccuracy = 0.4;
+
+// M6.6 weights for the two intelligence inputs in the
+// `compute_for_country` formula. `intelligence_capability` is
+// the more direct signal (current ability to produce accurate
+// reports); `budget.intelligence` is the slower-moving funding
+// input. Sum = 1.0; a future M-driver may rebalance.
+inline constexpr double kInformationAccuracyCapabilityWeight = 0.7;
+inline constexpr double kInformationAccuracyBudgetWeight     = 0.3;
+
 // Compute the player's information accuracy for events in the
-// given country, in `[0, 1]`.
+// given country, in `[kMinInformationAccuracy, 1.0]` =
+// `[0.4, 1.0]` (M6.6).
+//
+// Formula:
+//   intel_score = kInformationAccuracyCapabilityWeight
+//                 × country.government_authority.intelligence_capability
+//               + kInformationAccuracyBudgetWeight
+//                 × country.budget.intelligence
+//   accuracy   = kMinInformationAccuracy
+//              + (1 - kMinInformationAccuracy) × intel_score
 //
 // Returns:
-//   - `Result::success` with `kPlaceholderInformationAccuracy`
-//     (= 1.0) for any valid country index. M6.6 / M6.7 will
-//     replace this body with the actual formula.
+//   - `Result::success` with the computed accuracy for any
+//     valid country index. The value is in
+//     `[kMinInformationAccuracy, 1.0]` (= [0.4, 1.0]).
 //   - `Result::failure` when `country` is not a valid index
 //     into `state.countries`. Error message includes the
 //     offending `CountryId.value()`.
