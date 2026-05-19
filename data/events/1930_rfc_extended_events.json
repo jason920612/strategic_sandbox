@@ -248,6 +248,38 @@
           "value": -0.03
         }
       ]
+    },
+    {
+      "id": "military_pressure",
+      "name": "Military Pressure",
+      "description": "Senior military figures are openly pressing the regime to change course.",
+      "visible_report": "Defence-ministry briefings increasingly read as ultimatums; uniformed leaders are openly demanding policy concessions.",
+      "true_cause": "Combined legitimacy slip + low-loyalty interest-group pressure satisfy the M7.5 military-pressure trigger (RFC-090 §7.5).",
+      "category": "military",
+      "triggers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.40
+        },
+        {
+          "target": "interest_group.loyalty",
+          "op": "lt",
+          "value": 0.30
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "add",
+          "value": -0.01
+        },
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
     }
   ]
 }
