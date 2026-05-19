@@ -200,8 +200,10 @@ sequence:
      DellaVigna-Kaplan QJE 2007).
   Metadata count on country-anchored fires: 10 keys
   (was 9; the new key sits at position 7). Vacuous-
-  actor fires unchanged. **No save schema bump (still
-  v18); no artefact contract change (still 11); no
+  actor fires unchanged. **No save schema bump (PR
+  #118 left save at v18; M7.1 later bumped v18 → v19
+  for `state.faction_demands` — see the M7 entry
+  above); no artefact contract change (still 11); no
   `state.rng` consumption; no new player-facing
   command; no new RFC-090 milestone feature; no per-
   event TrueValue source (still 1.0); no separate
@@ -522,10 +524,36 @@ M0 / M1 中落地，部分仍是未來工作：
   faction reactions / multi-country interaction / weighted
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
-- **M6（進行中，RFC-090 §M6 hidden truth /
+- **M7（進行中，RFC-090 §M7 派系深化）** — 目前 PR 是
+  **M7.1 加入派系要求** (RFC-090 §7.1, RFC-020 §7).
+  Ships `core::FactionDemand` data layer +
+  `state.faction_demands` vector + save format v18 → v19
+  + `leviathan::systems::faction_demands` module
+  (`tick_generate` + `tick_expire_and_apply`) + wiring
+  into `monthly::tick_all_countries` as new steps 8 + 9
+  + 10-container scenario-loader empty-state preflight
+  + diagnostics walk. Six demand kinds drawn directly
+  from RFC-020 §7's enumerated examples
+  (`military` / `workers` / `religious` / `local_elites`
+  / `technical_elites` / `intelligence` → corresponding
+  demand kinds). Faction types outside §7's allowlist
+  generate no demand under M7.1; the satisfaction
+  surface is unauthorised by §7 itself and lives in
+  a later sub-milestone. Game-model coefficients per
+  RFC-080 §1 / §11; direction grounding cited
+  (Collier-Hoeffler grievance-opportunity model;
+  Alesina-Perotti instability-via-discontent). No
+  `state.rng` consumption; no new player-facing
+  command; no new CLI flag; no new artefact (still
+  11). **M6 closeout-audit blockers unaffected** —
+  M6 REMAINS OPEN until Jason approves closure.
+  Design note: `docs/m7-1-faction-demands.md`.
+
+- **M6（OPEN, RFC-090 §M6 hidden truth /
   information distortion）** — RFC-090 §6.x
   sub-milestones M6.1 – M6.9 all shipped through PRs
-  #100 – #117. **目前 PR 是 M6 closeout audit**
+  #100 – #117 + M6 closeout audit PR #118. **The
+  closeout audit explicitly does NOT close M6**
   （見 `docs/m6-closeout-audit.md`），名稱維持 "M6
   closeout audit"（不是 M7，不是 RCR-2，per
   `feedback_milestone_direction_gate` +

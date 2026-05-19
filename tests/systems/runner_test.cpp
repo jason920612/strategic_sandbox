@@ -836,7 +836,7 @@ TEST_CASE("run: with --scenario the runner loads the canonical 1930_minimal worl
     CHECK(save.find("\"increase_military_budget\"") != std::string::npos);
 
     // Save schema is now v16 - M6.2 added visible_report to event definitions.
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
 }
 
 TEST_CASE("run: --scenario + 31 days actually mutates country and faction state") {
@@ -1092,7 +1092,7 @@ TEST_CASE("run: save schema is now v16 (M6.2 bumped from v15 for EventDefinition
     const std::string save = read_file(td.path / "save.json");
     // Pin the current version: M0.8 documented strict equality.
     CHECK(save.find("\"save_version\":") != std::string::npos);
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
 }
 
 // ---- run_state: integration with hand-built state -------------------
@@ -3368,7 +3368,7 @@ TEST_CASE("run: canonical scenario at M5.1 ??still 10 artefacts, no new ones; sa
     // definitions, and an empty event_history (no auto-fire on
     // the canonical scenario).
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
     CHECK(save.find("\"id_code\": \"low_stability_unrest\"")
           != std::string::npos);
     CHECK(save.find("\"id_code\": \"radical_interest_group_warning\"")
@@ -3434,7 +3434,7 @@ TEST_CASE("run: canonical scenario at M5.4 - save.json carries empty event_histo
     // event_history block; M6.1 bumped v14 -> v15 for
     // EventDefinition.true_cause; M6.2 bumped v15 -> v16 for
     // EventDefinition.visible_report).
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
 
     // event_history is the new M5.4 root-level key. M5.4 ships
     // the data layer only ??no system creates EventInstance
