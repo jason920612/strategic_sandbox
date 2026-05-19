@@ -196,7 +196,7 @@ TEST_CASE("RCR-1 integration: compliance scenario loads with 20 countries / 20 p
     // Save format is now v17 (RCR-1 bumped v16 -> v17 in one
     // batched migration: military_strength + weight_modifiers +
     // options + followup_event_ids + relationships).
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
 
     // The original 10 artefacts still appear, plus the new
     // annual_world_stats.csv as the 11th unconditional artefact
@@ -306,7 +306,7 @@ TEST_CASE("RCR-1 integration: compliance scenario survives a 365-day run with ze
 
     // Save reflects the post-run state and is now v17.
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
@@ -561,6 +561,6 @@ TEST_CASE("RCR-1 integration: 10-year event stress run records many fires + surv
 
     // Save round-trip survives.
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
     CHECK(save.find("stress_event")          != std::string::npos);
 }

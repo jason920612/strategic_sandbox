@@ -115,10 +115,28 @@ struct GameState {
     // for these events until the player issues a
     // `PlayerCommandKind::ChooseEventOption` command. Save v18
     // persists this vector; scenario_loader rejects a pre-populated
-    // entry on entry (9-container preflight). Order is the natural
-    // append-order from tick_events; the command handler resolves
-    // by `event_history_index` so order is informational only.
+    // entry on entry (M7.1 extended preflight to 10 containers).
+    // Order is the natural append-order from tick_events; the
+    // command handler resolves by `event_history_index` so order
+    // is informational only.
     std::vector<PendingPlayerEvent> pending_player_events;
+
+    // M7.1 (RFC-090 §7.1, RFC-020 §7) — faction demands. Producers:
+    // `faction_demands::tick_generate` appends new Pending demands
+    // for any faction whose `type` matches an RFC-020 §7 demand
+    // kind and whose `radicalism` exceeds the threshold (and which
+    // does not already hold a Pending demand of that kind).
+    // `faction_demands::tick_expire_and_apply` flips Pending →
+    // Expired when `state.current_date >= expires_on` and applies
+    // asymptotic radicalism / loyalty drift on the matching
+    // faction. Expired entries stay in this vector as an audit
+    // trail; the generator allows a fresh Pending demand for the
+    // same `(faction_id_code, kind)` to be created later, with a
+    // different `created_on`. Save v19 persists this vector;
+    // scenario_loader rejects a pre-populated `faction_demands` on
+    // entry (10-container preflight). Order is the natural
+    // append-order from `tick_generate`.
+    std::vector<FactionDemand> faction_demands;
 };
 
 // Builds a fresh GameState from `config`:

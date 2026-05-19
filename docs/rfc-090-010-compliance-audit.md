@@ -481,6 +481,65 @@ save-layer surface; no new gameplay system module.
 Design note:
 [`m6-9-non-debug-mode-distortion.md`](m6-9-non-debug-mode-distortion.md).
 
+### 1.6 M7.1 — 加入派系要求 (RFC-090 §7.1, RFC-020 §7)
+
+After the M6 closeout audit (PR #118) landed, execution
+returned to the M-numbered milestone sequence. **M7.1**
+opens the **§M7 派系深化** track.
+
+What M7.1 ships:
+
+- `core::FactionDemand` data layer +
+  `core::FactionDemandKind` / `core::FactionDemandStatus`
+  enums + `state.faction_demands` vector.
+- `leviathan::systems::faction_demands` module with two
+  deterministic, RNG-free, Result-bearing helpers:
+  - `tick_generate(state, current_date)` — appends a new
+    Pending `FactionDemand` for any faction whose `type`
+    matches one of the six RFC-020 §7 examples AND whose
+    `radicalism` strictly exceeds
+    `kFactionDemandGenerateRadicalismThreshold = 0.50`
+    AND which holds no Pending demand of that kind yet.
+  - `tick_expire_and_apply(state, current_date)` — flips
+    Pending → Expired when `expires_on <= current_date`
+    and applies asymptotic radicalism / loyalty drift on
+    the issuing faction
+    (+0.05 asymptotic-radicalism / -0.03
+    asymptotic-loyalty per RFC-080 §11 game-model
+    coefficients).
+- Save format bump **v18 → v19** with strict required-
+  field validation (closed allowlists on `kind` and
+  `status`; cross-checks `faction_id_code` against
+  `state.factions` and `country_id_code` against
+  `state.countries`).
+- Scenario-loader empty-state preflight extended **9 →
+  10** containers (rejects pre-populated
+  `faction_demands` on entry).
+- Diagnostics walk pins the demand audit-trail
+  byte-stably across replay-verify runs.
+- Wired into `monthly::tick_all_countries` as new
+  steps 8 + 9 (between ai_policy::apply and
+  event_engine::tick_events).
+
+What M7.1 deliberately DOES NOT do:
+
+- No `Satisfied` lifecycle state — RFC-020 §7 ships
+  the active-demand side only.
+- No player-facing command, no CLI flag, no new
+  artefact (still 11).
+- No `state.rng` consumption.
+- No claim that M6 is closed. The M6 closeout-audit
+  backlog (§1.5 above) is unaffected by M7.1.
+
+Game-model coefficients (RFC-080 §1 / §11): direction
+grounding cited (Collier-Hoeffler grievance-opportunity
+model; Alesina-Perotti instability-via-discontent
+loop). No paper pins the exact threshold / lifetime /
+drift coefficients M7.1 ships; they are explicit
+game-model assumptions disclosed in the helper's
+doc-comment and design note
+(`docs/m7-1-faction-demands.md`).
+
 ### 1.5 M6 closeout audit (after M6.9)
 
 After M6.9 landed (PR #117), an **M6 closeout audit** ran on

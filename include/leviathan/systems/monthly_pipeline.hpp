@@ -47,10 +47,46 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
-// The two final global steps AFTER M3.4 (issue #112 semantics):
+// The global steps AFTER M3.4 (issue #112 semantics + M7.1
+// faction-demands insertion):
 //
-//   7.  ai_policy::apply_selected_policies (state)
-//   8.  event_engine::tick_events            (state)
+//   7.  ai_policy::apply_selected_policies      (state)
+//   8.  faction_demands::tick_generate          (state, current_date)
+//   9.  faction_demands::tick_expire_and_apply  (state, current_date)
+//  10.  event_engine::tick_events               (state)
+//
+// Step 8 — M7.1 demand generation (RFC-090 §7.1, RFC-020 §7):
+//   - For each faction whose `type` matches an RFC-020 §7
+//     demand kind AND whose `radicalism > kFactionDemand-
+//     GenerateRadicalismThreshold` AND which holds no Pending
+//     demand of that kind yet, append a new Pending
+//     FactionDemand with the canonical id_code shape and
+//     `expires_on = current_date + kFactionDemandLifetimeDays`.
+//   - Deterministic, RNG-free; appends to
+//     `state.faction_demands`.
+//   - Runs AFTER ai_policy::apply so AI policy mutations
+//     (which can move budget shares / authority fields) are
+//     observable to a future demand kind that reads them; runs
+//     BEFORE the expire step so a freshly-generated demand
+//     cannot also expire in the same tick (lifetime > 0).
+//   - Runs BEFORE event_engine::tick_events so events that
+//     read faction state see the post-generate radicalism /
+//     loyalty drift produced by step 9 (the expire/apply step
+//     drifts the faction whose demand expired).
+//
+// Step 9 — M7.1 demand expire + apply (RFC-090 §7.1):
+//   - For each Pending demand whose `expires_on <=
+//     current_date`, flip status to Expired and apply
+//     asymptotic radicalism / loyalty drift on the issuing
+//     faction (asymptotic-add radicalism +
+//     kFactionDemandExpireRadicalismAsymptoticDelta;
+//     asymptotic-subtract loyalty -
+//     kFactionDemandExpireLoyaltyAsymptoticDelta). Expired
+//     demands stay in `state.faction_demands` as an audit
+//     trail.
+//   - Deterministic, RNG-free.
+//   - Runs BEFORE event_engine::tick_events so M5 events
+//     that key off faction radicalism observe the drift.
 //
 // Step 7 — AI policy selection (RFC-090 §3.5 / RFC-040 §4):
 //   - PRESSURE-gated: countries whose `compute_total_pressure`
@@ -146,6 +182,7 @@
 #include "leviathan/systems/ai_policy.hpp"
 #include "leviathan/systems/economy_system.hpp"
 #include "leviathan/systems/event_engine.hpp"
+#include "leviathan/systems/faction_demands.hpp"
 #include "leviathan/systems/faction_system.hpp"
 #include "leviathan/systems/interest_group_system.hpp"
 #include "leviathan/systems/stability_system.hpp"
@@ -225,6 +262,16 @@ struct MonthlyOutcome {
     int ai_policies_applied    = 0;
     int ai_policies_skipped    = 0;
     int ai_policies_failed     = 0;
+
+    // M7.1 (RFC-090 §7.1, RFC-020 §7) faction-demand counters.
+    // Populated by the new step 8 (generation) and step 9
+    // (expire+apply) of `tick_all_countries`. Zero on a month
+    // where no faction qualifies for a new demand and no Pending
+    // demand has reached its expiry date.
+    int faction_demands_factions_considered = 0;
+    int faction_demands_generated           = 0;
+    int faction_demands_expired             = 0;
+    int faction_demands_factions_affected   = 0;
 
     // M5.8: final global step's outcome. Mirrors the fields of
     // `event_engine::TickOutcome` (events_matched / events_recorded

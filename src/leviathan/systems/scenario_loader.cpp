@@ -957,11 +957,11 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     namespace dl = leviathan::systems::data_loader;
 
     // ---- 0. Reject pre-populated state -----------------------------
-    // Issue #112 §7: "scenario-load-clean GameState" — every container
-    // whose load_into_state needs a clean slate must be empty on
-    // entry. The contract covers both scenario-loaded containers
-    // (7 of these) and runtime-carryover containers that would
-    // contaminate a fresh scenario load (2 of these):
+    // Issue #112 §7 + M7.1: "scenario-load-clean GameState" — every
+    // container whose load_into_state needs a clean slate must be
+    // empty on entry. The contract covers both scenario-loaded
+    // containers (7 of these) and runtime-carryover containers
+    // that would contaminate a fresh scenario load (3 of these):
     //
     //   Scenario-loaded:
     //     countries / provinces / factions / policies / events /
@@ -973,6 +973,9 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     //         entry from a different scenario
     //     event_history          — would mix two scenarios' fire
     //         audit trails into one save
+    //     faction_demands        — M7.1 runtime accumulation;
+    //         issuing-faction id_codes from a different scenario
+    //         would not resolve under a fresh load
     //
     // `state.logs` and `state.applied_commands` are intentionally
     // NOT checked: they're runtime audit trails whose carryover
@@ -995,6 +998,7 @@ core::Result<ScenarioLoadOutcome> load_into_state(
         note("relationships",        !state.relationships.empty());
         note("pending_player_events", !state.pending_player_events.empty());
         note("event_history",        !state.event_history.empty());
+        note("faction_demands",      !state.faction_demands.empty());
         if (!non_empty.empty()) {
             return core::Result<ScenarioLoadOutcome>::failure(
                 manifest_path.string() +

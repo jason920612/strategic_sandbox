@@ -73,16 +73,60 @@
 > started.** Issues #105 / #108 / #110 / #112 stay open
 > until the reviewer confirms strict compliance.
 
-- Phase: **Milestone 6 — Hidden truth /
-  information distortion (M6 CLOSEOUT AUDIT RUN — M6
-  REMAINS OPEN, RFC-090 §M6).**
+- Phase: **Milestone 7 — Faction deepening (IN PROGRESS,
+  RFC-090 §M7).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6.1 – M6.9
-  all shipped; the M6 closeout audit has now run
-  (`docs/m6-closeout-audit.md`) and explicitly does NOT
-  close M6 — see §1 of the audit doc and §9 for the
-  remaining-blockers list. M6 follows RFC-090 §M6
-  (隱藏真相與資訊失真): the player will not always see
-  the truth. Shipped so far:
+  all shipped + M6 closeout audit ran but M6 REMAINS
+  OPEN (`docs/m6-closeout-audit.md`); M7 work has now
+  started at **M7.1 — 加入派系要求** (faction demands).
+  M7 follows RFC-090 §M7 (派系深化): factions actively
+  demand from the state, conflict, and exert political
+  pressure. M7.1 ships the first observable surface:
+
+  - **M7.1** (RFC-090 §7.1, RFC-020 §7) adds
+    `state.faction_demands` as a new persistent
+    container (save format `v18 → v19`). The new
+    `leviathan::systems::faction_demands` module:
+    - `tick_generate(state, current_date)`: for each
+      faction whose `type` matches one of the six
+      RFC-020 §7 examples (`military` / `workers` /
+      `religious` / `local_elites` /
+      `technical_elites` / `intelligence`) AND whose
+      `radicalism` strictly exceeds
+      `kFactionDemandGenerateRadicalismThreshold =
+      0.50`, appends a Pending `FactionDemand` with a
+      deterministic id_code and
+      `expires_on = current_date +
+      kFactionDemandLifetimeDays = 60`.
+    - `tick_expire_and_apply(state, current_date)`:
+      flips Pending → Expired when
+      `expires_on <= current_date` and applies
+      asymptotic radicalism / loyalty drift on the
+      issuing faction.
+    - Wired into `monthly::tick_all_countries` as
+      new steps 8 + 9 (between ai_policy::apply and
+      event_engine::tick_events).
+    - Game-model coefficients (RFC-080 §1, §11) with
+      research-direction grounding: Collier &
+      Hoeffler; Alesina & Perotti.
+    - Scenario-loader empty-state preflight extended
+      9 → 10 containers.
+    - Diagnostics walk pins the demand audit-trail
+      byte-stably across replay-verify runs.
+    - 24 new unit tests; 1325 total / 96 375
+      assertions / 0 failed.
+
+  **Still deferred under M6 closeout audit (see
+  `docs/m6-closeout-audit.md` §9)**: remaining RFC-080
+  §8 Bias terms (FactionInterestBias /
+  BureaucraticSelfProtection), remaining accuracy
+  modifiers (-FactionCapture / -LeaderIsolation /
+  -LocalAutonomyOpacity / +BureaucraticProfessionalism
+  / +AuditCapacity), per-event TrueValue source, and
+  separate player-facing `event_reports.jsonl` artefact.
+
+  M0 / M1 / M2 / M3 / M4 / M5 / M6 historical
+  references retained below for archaeology:
   - **M6.1** added a required non-empty `true_cause`
     string field on `core::EventDefinition` (save
     v14 → v15).
@@ -228,7 +272,44 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped change: **M6 closeout audit +
+- Latest shipped change: **M7.1 — 加入派系要求**
+  (faction demands; RFC-090 §7.1 + RFC-020 §7). First
+  M7 sub-milestone. Ships `state.faction_demands` (save
+  format v18 → v19), a new
+  `leviathan::systems::faction_demands` module with
+  `tick_generate` + `tick_expire_and_apply` deterministic
+  pure-Result helpers, and wires both into
+  `monthly::tick_all_countries` as new steps 8 + 9
+  (between ai_policy::apply and event_engine::tick_events).
+  Demand-kind allowlist (six RFC-020 §7 examples mapped
+  to existing FactionState type strings) + closed
+  `pending` / `expired` status enum. Game-model
+  coefficients (RFC-080 §1, §11): generation threshold
+  0.50 (Collier-Hoeffler / Alesina-Perotti direction;
+  midpoint coefficient), lifetime 60 days (≈ two monthly
+  ticks), expiration drift +0.05 asymptotic-radicalism /
+  -0.03 asymptotic-loyalty. Scenario-loader
+  empty-state preflight 9 → 10 containers (rejects
+  pre-populated `faction_demands` on entry). Diagnostics
+  walk pins the audit trail byte-stably across
+  replay-verify runs. **No new player-facing command,
+  no new CLI flag, no new artefact, no `state.rng`
+  consumption.** Canonical `1930_minimal` 365-day sweep:
+  `faction_demands` stays `[]` (canonical faction
+  radicalism never crosses 0.50 in one year);
+  `1930_rfc_compliance` 25 567-day sweep completes with
+  `Sanity issues : 0` and likewise no demand generation
+  (compliance carries the same three GER factions, all
+  below threshold). The faction-demand mechanism is
+  exercised by 24 new unit tests in
+  `tests/systems/faction_demands_test.cpp` against
+  hand-built above-threshold states. **1325 cases /
+  96 375 assertions / 0 failed**, verified via direct
+  `build/bin/Debug/leviathan_tests.exe` run per
+  `feedback_ctest_masks_doctest`. **No "M6 closed"
+  claim** — M6 remains OPEN per `docs/m6-closeout-audit.md`
+  §1. Design note: `docs/m7-1-faction-demands.md`.
+  Previous landed change: **M6 closeout audit +
   representative RFC-080 §8 residual implementation
   (M6 REMAINS OPEN).** Not a numbered RFC-090
   sub-milestone — the M6.1 – M6.9 numbered sequence

@@ -32,8 +32,8 @@
 //      this; here we pin the explicit "canonical run ->
 //      event_history is empty AND save_version is at the
 //      current save format" (the asserted version below tracks
-//      whatever the current save-format bump is — save v18 as
-//      of PR #118; subsequent save bumps update the assertion
+//      whatever the current save-format bump is — save v19 as
+//      of M7.1; subsequent save bumps update the assertion
 //      in lock-step).
 //
 //   B. A hand-built state whose event DOES fire on its first
@@ -214,7 +214,7 @@ const fs::path kCanonicalScenario =
 // =====================================================================
 // A. canonical scenario at M5.9 still produces event_history: []
 // =====================================================================
-TEST_CASE("M5 integration: canonical scenario -> event_history is empty, save_version 18") {
+TEST_CASE("M5 integration: canonical scenario -> event_history is empty, save_version 19") {
     TempDir td("leviathan_m5_canonical_no_fire");
     rn::RunnerOptions opts;
     opts.config_path   = kCanonicalConfig;
@@ -229,7 +229,7 @@ TEST_CASE("M5 integration: canonical scenario -> event_history is empty, save_ve
     // month boundary, but the canonical events at M5.1 are
     // deliberately tuned so neither fires on the canonical
     // 1930 scenario.
-    CHECK(save.find("\"save_version\": 18")    != std::string::npos);
+    CHECK(save.find("\"save_version\": 19")    != std::string::npos);
     CHECK(save.find("\"event_history\": []")   != std::string::npos);
 
     // events.jsonl is the M0.6 lifecycle log; M5.8 did NOT
@@ -278,7 +278,7 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
 
     // The event recorded one EventInstance + applied its effect
     // to GER (the first / only actor).
-    CHECK(save.find("\"save_version\": 18")                       != std::string::npos);
+    CHECK(save.find("\"save_version\": 19")                       != std::string::npos);
     CHECK(save.find("\"low_stability_unrest_firing\"")            != std::string::npos);
     // Mechanical asymptotic-add applied to legitimacy:
     //   0.50 + (-0.05) * 0.50 = 0.475
@@ -662,8 +662,14 @@ TEST_CASE("M6.9 integration: same seed produces deterministic distorted publicTe
     CHECK(save_a == save_b);
 }
 
-TEST_CASE("M6.9 integration: save format stays at v18 (no schema bump)") {
-    TempDir td("leviathan_m6_9_save_version");
+TEST_CASE("M7.1 integration: save format is v19 (faction_demands schema bump) and v20 is not used") {
+    // M6.9 originally pinned v18 here as "save format stays at
+    // v18 (no schema bump)". M7.1 (RFC-090 §7.1) introduced
+    // `state.faction_demands` as a required persistent field;
+    // bumped the save format v18 → v19. The check pins the
+    // current floor and verifies no later version slipped in
+    // ahead of its own milestone.
+    TempDir td("leviathan_m7_1_save_version");
     GameState s = make_m5_firing_state();
     rn::RunnerOptions opts;
     opts.days       = 31;
@@ -671,6 +677,6 @@ TEST_CASE("M6.9 integration: save format stays at v18 (no schema bump)") {
     REQUIRE(rn::run_state(s, opts).ok());
 
     const std::string save = read_file(td.path / "save.json");
-    CHECK(save.find("\"save_version\": 18") != std::string::npos);
-    CHECK(save.find("\"save_version\": 19") == std::string::npos);
+    CHECK(save.find("\"save_version\": 19") != std::string::npos);
+    CHECK(save.find("\"save_version\": 20") == std::string::npos);
 }

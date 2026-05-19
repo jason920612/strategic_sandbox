@@ -255,7 +255,22 @@ namespace leviathan::systems::save_system {
 //                {event_history_index, option_id_code} payload.
 //                Pre-v18 saves are rejected with a migration
 //                message naming the three new fields.
-inline constexpr std::uint32_t kSaveFormatVersion   = 18;
+//   v18 -> v19:  M7.1 (RFC-090 §7.1, RFC-020 §7) — add
+//                `GameState.faction_demands` (vector). Each
+//                entry round-trips
+//                  { id_code, faction_id_code, country_id_code,
+//                    kind, created_on, expires_on, status }
+//                with strict required-field validation. The
+//                `kind` field is a closed snake_case enum
+//                allowlist (six RFC-020 §7 variants); the
+//                `status` field is a closed allowlist (pending /
+//                expired). `faction_id_code` is cross-checked
+//                against `state.factions`, `country_id_code`
+//                against `state.countries`, and the (faction,
+//                country) link is verified at load. Pre-v19
+//                saves are rejected with the version-mismatch
+//                error.
+inline constexpr std::uint32_t kSaveFormatVersion   = 19;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

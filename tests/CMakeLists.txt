@@ -46,6 +46,7 @@ add_executable(leviathan_tests
     systems/event_engine_test.cpp
     systems/event_evaluator_test.cpp
     systems/event_firer_test.cpp
+    systems/faction_demands_test.cpp
     systems/faction_system_test.cpp
     systems/information_accuracy_test.cpp
     systems/interest_group_system_test.cpp

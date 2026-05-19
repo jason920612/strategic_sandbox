@@ -855,6 +855,49 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
         }
     }
 
+    // ---- faction_demands (M7.1, RFC-090 §7.1) ----------------------
+    // Walks state.faction_demands (typed FactionDemand since M7.1).
+    // Per-entry: id_code, faction_id_code, country_id_code, kind,
+    // created_on, expires_on, status. Size mismatch skips per-entry
+    // walk. Mirrors the M3.1 / M4.1 / M5.1 / M5.4 / issue #112
+    // shape so a future cross-state replay-verify run pins the
+    // demand audit-trail byte-stably.
+    if (a.faction_demands.size() != b.faction_demands.size()) {
+        push_mismatch(out, "faction_demands.size()",
+                      std::to_string(a.faction_demands.size()) + " != " +
+                      std::to_string(b.faction_demands.size()));
+    } else {
+        for (std::size_t i = 0; i < a.faction_demands.size(); ++i) {
+            const auto& da = a.faction_demands[i];
+            const auto& db = b.faction_demands[i];
+            const std::string prefix =
+                "faction_demands[" + std::to_string(i) + "]";
+
+            check_string(out, prefix + ".id_code",
+                         da.id_code, db.id_code);
+            check_string(out, prefix + ".faction_id_code",
+                         da.faction_id_code, db.faction_id_code);
+            check_string(out, prefix + ".country_id_code",
+                         da.country_id_code, db.country_id_code);
+            check_int(out, prefix + ".kind",
+                      static_cast<long long>(da.kind),
+                      static_cast<long long>(db.kind));
+            if (da.created_on != db.created_on) {
+                push_mismatch(out, prefix + ".created_on",
+                              da.created_on.to_string() + " != " +
+                              db.created_on.to_string());
+            }
+            if (da.expires_on != db.expires_on) {
+                push_mismatch(out, prefix + ".expires_on",
+                              da.expires_on.to_string() + " != " +
+                              db.expires_on.to_string());
+            }
+            check_int(out, prefix + ".status",
+                      static_cast<long long>(da.status),
+                      static_cast<long long>(db.status));
+        }
+    }
+
     return out;
 }
 

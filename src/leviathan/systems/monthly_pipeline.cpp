@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <string>
 
+#include "leviathan/systems/faction_demands.hpp"
+
 namespace leviathan::systems::monthly {
 
 core::Result<CountryMonthlyOutcome> tick_country(core::GameState& state,
@@ -130,15 +132,57 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.ai_policies_failed =
         static_cast<int>(ai.value().failed_countries.size());
 
-    // ---- 8. M5.8: event_engine::tick_events --------------------------
+    // ---- 8. M7.1 faction_demands::tick_generate ----------------------
+    // RFC-090 §7.1 + RFC-020 §7. Append a new Pending
+    // FactionDemand for every faction whose `type` matches an
+    // RFC-020 §7 demand kind AND whose `radicalism` strictly
+    // exceeds `faction_demands::kFactionDemandGenerateRadicalism-
+    // Threshold` AND which holds no Pending demand of that kind
+    // yet. Runs AFTER ai_policy::apply so AI mutations on budget /
+    // authority are observable; runs BEFORE the expire step
+    // (the lifetime guarantees a freshly-generated demand cannot
+    // also expire this tick) and BEFORE event_engine::tick_events
+    // (so events keyed off the post-expire radicalism / loyalty
+    // values see the drift from step 9).
+    auto fd_gen = faction_demands::tick_generate(
+        state, state.current_date);
+    if (!fd_gen.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: faction_demands::"
+            "tick_generate failed: " + fd_gen.error());
+    }
+    out.faction_demands_factions_considered =
+        fd_gen.value().factions_considered;
+    out.faction_demands_generated =
+        fd_gen.value().demands_generated;
+
+    // ---- 9. M7.1 faction_demands::tick_expire_and_apply --------------
+    // RFC-090 §7.1. For every Pending demand whose `expires_on
+    // <= current_date`, flip status to Expired AND drift the
+    // issuing faction's radicalism (asymptotic-add +Δ) and
+    // loyalty (asymptotic-subtract -Δ). Expired demands stay in
+    // `state.faction_demands` as an audit trail.
+    auto fd_exp = faction_demands::tick_expire_and_apply(
+        state, state.current_date);
+    if (!fd_exp.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: faction_demands::"
+            "tick_expire_and_apply failed: " + fd_exp.error());
+    }
+    out.faction_demands_expired =
+        fd_exp.value().demands_expired;
+    out.faction_demands_factions_affected =
+        fd_exp.value().factions_affected;
+
+    // ---- 10. M5.8: event_engine::tick_events -------------------------
     // Final global step: evaluate every state.events trigger
-    // against the post-M3.4 + post-AI-apply state snapshot, fire
-    // every matching event, and apply each fired event's effects.
-    // Runs LAST so events about "low stability / high radicalism"
-    // check the values as they stand at month-end, not pre-month.
-    // M5.7's tick_events ships the snapshot-evaluation contract
-    // (evaluator runs once at the top; cascade events wait for
-    // the next monthly tick).
+    // against the post-M3.4 + post-AI-apply + post-M7.1 state
+    // snapshot, fire every matching event, and apply each fired
+    // event's effects. Runs LAST so events about "low stability /
+    // high radicalism" check the values as they stand at
+    // month-end, not pre-month. M5.7's tick_events ships the
+    // snapshot-evaluation contract (evaluator runs once at the
+    // top; cascade events wait for the next monthly tick).
     auto ev = event_engine::tick_events(state);
     if (!ev.ok()) {
         return core::Result<MonthlyOutcome>::failure(

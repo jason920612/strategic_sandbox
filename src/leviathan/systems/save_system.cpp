@@ -16,6 +16,7 @@
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/interest_group_kind.hpp"
 #include "leviathan/core/log_entry.hpp"
+#include "leviathan/systems/faction_demands.hpp"
 
 namespace leviathan::systems::save_system {
 
@@ -989,6 +990,25 @@ std::string serialize(const core::GameState& state) {
         igs.push_back(std::move(entry));
     }
     root["interest_groups"] = std::move(igs);
+
+    // M7.1 faction_demands block (save v19). Always emitted as
+    // an array; empty array is valid. Field order mirrors the
+    // FactionDemand struct for read-stable round-trips.
+    json fds = json::array();
+    for (const auto& d : state.faction_demands) {
+        json entry = json::object();
+        entry["id_code"]         = d.id_code;
+        entry["faction_id_code"] = d.faction_id_code;
+        entry["country_id_code"] = d.country_id_code;
+        entry["kind"]            =
+            leviathan::systems::faction_demands::kind_to_string(d.kind);
+        entry["created_on"]      = d.created_on.to_string();
+        entry["expires_on"]      = d.expires_on.to_string();
+        entry["status"]          =
+            leviathan::systems::faction_demands::status_to_string(d.status);
+        fds.push_back(std::move(entry));
+    }
+    root["faction_demands"] = std::move(fds);
 
     return root.dump(/*indent=*/2);
 }
@@ -2229,6 +2249,161 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         p.event_id_code       = std::move(eid_r).value();
         p.country_id_code     = std::move(cid_r).value();
         state.pending_player_events.push_back(std::move(p));
+    }
+
+    // M7.1 (save v19): faction_demands. Required at the save layer;
+    // may be empty. Each entry:
+    //   { id_code, faction_id_code, country_id_code,
+    //     kind, created_on, expires_on, status }
+    // All fields strictly required; kind / status closed-allowlist;
+    // dates parsed via GameDate::parse; faction_id_code and
+    // country_id_code cross-checked against state.factions /
+    // state.countries; the (faction, country) link is verified.
+    if (!root.contains("faction_demands")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'faction_demands'"));
+    }
+    const auto& fd_arr = root.at("faction_demands");
+    if (!fd_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'faction_demands' has wrong type (expected JSON array)"));
+    }
+    state.faction_demands.reserve(fd_arr.size());
+    for (std::size_t i = 0; i < fd_arr.size(); ++i) {
+        const std::string dctx =
+            std::string(source_label) + ": faction_demands[" +
+            std::to_string(i) + "]";
+        const auto& entry = fd_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": expected JSON object");
+        }
+        auto id_r = require_string(entry, "id_code", dctx);
+        if (!id_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(id_r.error()));
+        }
+        if (id_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'id_code' must be non-empty");
+        }
+        auto fid_r = require_string(entry, "faction_id_code", dctx);
+        if (!fid_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(fid_r.error()));
+        }
+        if (fid_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'faction_id_code' must be non-empty");
+        }
+        auto cid_r = require_string(entry, "country_id_code", dctx);
+        if (!cid_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(cid_r.error()));
+        }
+        if (cid_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'country_id_code' must be non-empty");
+        }
+        auto kind_r = require_string(entry, "kind", dctx);
+        if (!kind_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(kind_r.error()));
+        }
+        auto kind_parsed = leviathan::systems::faction_demands::
+            kind_from_string(kind_r.value());
+        if (!kind_parsed) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": " + kind_parsed.error());
+        }
+        auto created_r = require_string(entry, "created_on", dctx);
+        if (!created_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(created_r.error()));
+        }
+        auto created_parsed =
+            core::GameDate::parse(created_r.value());
+        if (!created_parsed) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'created_on' invalid date '" +
+                created_r.value() + "': " + created_parsed.error());
+        }
+        auto expires_r = require_string(entry, "expires_on", dctx);
+        if (!expires_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(expires_r.error()));
+        }
+        auto expires_parsed =
+            core::GameDate::parse(expires_r.value());
+        if (!expires_parsed) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'expires_on' invalid date '" +
+                expires_r.value() + "': " + expires_parsed.error());
+        }
+        if (expires_parsed.value() < created_parsed.value()) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'expires_on' (" +
+                expires_parsed.value().to_string() +
+                ") is before 'created_on' (" +
+                created_parsed.value().to_string() + ")");
+        }
+        auto status_r = require_string(entry, "status", dctx);
+        if (!status_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(status_r.error()));
+        }
+        auto status_parsed = leviathan::systems::faction_demands::
+            status_from_string(status_r.value());
+        if (!status_parsed) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": " + status_parsed.error());
+        }
+        // Cross-check faction_id_code resolves to a faction in
+        // state.factions AND that faction's country_id_code matches
+        // the demand's country_id_code (rejects forged or stale
+        // demand records).
+        bool faction_found = false;
+        for (const auto& f : state.factions) {
+            if (f.id_code == fid_r.value()) {
+                faction_found = true;
+                if (f.country_id_code != cid_r.value()) {
+                    return core::Result<core::GameState>::failure(
+                        dctx + ": faction '" + fid_r.value() +
+                        "' belongs to country '" + f.country_id_code +
+                        "' but the demand records country '" +
+                        cid_r.value() + "'");
+                }
+                break;
+            }
+        }
+        if (!faction_found) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'faction_id_code' '" + fid_r.value() +
+                "' does not match any entry in state.factions");
+        }
+        bool country_found = false;
+        for (const auto& c : state.countries) {
+            if (c.id_code == cid_r.value()) {
+                country_found = true;
+                break;
+            }
+        }
+        if (!country_found) {
+            return core::Result<core::GameState>::failure(
+                dctx + ": 'country_id_code' '" + cid_r.value() +
+                "' does not match any entry in state.countries");
+        }
+        core::FactionDemand d;
+        d.id_code         = std::move(id_r).value();
+        d.faction_id_code = std::move(fid_r).value();
+        d.country_id_code = std::move(cid_r).value();
+        d.kind            = kind_parsed.value();
+        d.created_on      = created_parsed.value();
+        d.expires_on      = expires_parsed.value();
+        d.status          = status_parsed.value();
+        state.faction_demands.push_back(std::move(d));
     }
 
     return core::Result<core::GameState>::success(std::move(state));

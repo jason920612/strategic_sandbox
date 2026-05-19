@@ -617,15 +617,20 @@ TEST_CASE("M4 DOM contract: canonical map.html carries every M4.x surface marker
     CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
     CHECK(fs::exists(td.path / "provinces.svg"));
     CHECK(fs::exists(td.path / "map.html"));
-    // save.json carries `"save_version": 18` (current floor as
-    // of M6.2). History: M4 closed at v12, M5.1 bumped v12 -> v13
+    // save.json carries `"save_version": 19` (current floor as
+    // of M7.1). History: M4 closed at v12, M5.1 bumped v12 -> v13
     // for the typed EventDefinition block, M5.4 bumped v13 -> v14
     // for the typed event_history array, M6.1 bumped v14 -> v15
     // for EventDefinition.true_cause (RFC-090 §6.1), M6.2 bumped
     // v15 -> v16 for EventDefinition.visible_report
-    // (RFC-090 §6.2).
+    // (RFC-090 §6.2), RCR-1 bumped v16 -> v17 for the
+    // relationships / EventOption / WeightModifier additions,
+    // issue #112 bumped v17 -> v18 for EventDefinition.category /
+    // option_effect_mode / pending_player_events, and M7.1
+    // bumped v18 -> v19 for state.faction_demands
+    // (RFC-090 §7.1 / RFC-020 §7).
     const std::string save_json = read_file(td.path / "save.json");
-    CHECK(save_json.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save_json.find("\"save_version\": 19") != std::string::npos);
 }
 
 #endif  // LEVIATHAN_TEST_DATA_DIR
