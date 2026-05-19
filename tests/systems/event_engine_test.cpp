@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,7 @@ using leviathan::core::GameState;
 using leviathan::core::InterestGroupKind;
 using leviathan::core::InterestGroupState;
 using leviathan::core::PolicyEffect;
+using leviathan::core::WeightModifier;
 namespace eng = leviathan::systems::event_engine;
 namespace ss  = leviathan::systems::save_system;
 
@@ -146,7 +149,8 @@ TEST_CASE("M5.7 tick_events: one matching event is recorded AND its effects appl
     REQUIRE(s.event_history.size()         == 1u);
     CHECK(s.event_history[0].event_id_code == "unrest");
     CHECK(s.event_history[0].fired_on      == GameDate(1930, 3, 15));
-    CHECK(s.countries[0].stability         == doctest::Approx(0.18));
+    // Mechanical asymptotic-add: 0.20 + (-0.02) * 0.20 = 0.196
+    CHECK(s.countries[0].stability         == doctest::Approx(0.196));
 }
 
 TEST_CASE("M5.7 tick_events: fired_on for every recorded instance is state.current_date") {
@@ -196,8 +200,11 @@ TEST_CASE("Issue #112 tick_events: two matches in DIFFERENT categories "
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[0].event_id_code == "low_stab");
     CHECK(s.event_history[1].event_id_code == "radical_ig");
-    CHECK(s.countries[0].stability  == doctest::Approx(0.18));  // 0.20 - 0.02
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.49));  // 0.50 - 0.01
+    // Mechanical asymptotic-add:
+    //   stability  0.20 + (-0.02) * 0.20 = 0.196
+    //   legitimacy 0.50 + (-0.01) * 0.50 = 0.495
+    CHECK(s.countries[0].stability  == doctest::Approx(0.196));
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.495));
 }
 
 // =====================================================================
@@ -215,8 +222,10 @@ TEST_CASE("M5.7 tick_events: calling twice fires twice (M5.7 has no dedup; coold
     REQUIRE(eng::tick_events(s));
     REQUIRE(eng::tick_events(s));
     REQUIRE(s.event_history.size() == 2u);
-    // Stability dropped twice: 0.20 -> 0.18 -> 0.16.
-    CHECK(s.countries[0].stability == doctest::Approx(0.16));
+    // Mechanical asymptotic-add applied twice:
+    //   first:  0.20 + (-0.02) * 0.20  = 0.196
+    //   second: 0.196 + (-0.02) * 0.196 = 0.19208
+    CHECK(s.countries[0].stability == doctest::Approx(0.19208));
 }
 
 // =====================================================================
@@ -248,7 +257,8 @@ TEST_CASE("M5.7 tick_events: an event that fires drops state past another event'
     CHECK(r.value().events_matched == 1);  // only "first" matched the snapshot
     REQUIRE(s.event_history.size() == 1u);
     CHECK(s.event_history[0].event_id_code == "first");
-    CHECK(s.countries[0].stability  == doctest::Approx(0.20));
+    // Mechanical asymptotic-add: 0.40 + (-0.20) * 0.40 = 0.32
+    CHECK(s.countries[0].stability  == doctest::Approx(0.32));
     CHECK(s.countries[0].legitimacy == doctest::Approx(0.50));  // untouched
 }
 
@@ -299,7 +309,8 @@ TEST_CASE("M5.7 tick_events: after-tick state round-trips through save v14") {
     REQUIRE(r.value().event_history.size() == 1u);
     CHECK(r.value().event_history[0].event_id_code == "x");
     CHECK(r.value().event_history[0].fired_on      == GameDate(1930, 5, 1));
-    CHECK(r.value().countries[0].stability         == doctest::Approx(0.18));
+    // Mechanical asymptotic-add: 0.20 + (-0.02) * 0.20 = 0.196
+    CHECK(r.value().countries[0].stability         == doctest::Approx(0.196));
 }
 
 // =====================================================================
@@ -448,4 +459,71 @@ TEST_CASE("M6.2 tick_events: events with different visible_report fire identical
     REQUIRE(s_a.event_history.size() == 1u);
     // event_history records event_id_code, NOT visible_report.
     CHECK(s_a.event_history[0].event_id_code == s_b.event_history[0].event_id_code);
+}
+
+// =====================================================================
+// Post-M6.7 hardening: malformed weight modifiers fail loudly through
+// the event_engine pipeline. The previous `w > 0.0` silent-skip on
+// `rank_weighted_events` is gone — non-finite weight_delta or
+// malformed modifier propagates as `Result::failure` to
+// `tick_events`. Importantly, the failure surfaces BEFORE
+// `weighted_choice` runs, so `state.rng.counter` is unchanged on
+// rejection.
+// =====================================================================
+
+TEST_CASE("Hardening: tick_events FAILS LOUDLY on NaN modifier weight_delta") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def = make_event(
+        "ev_nan",
+        { make_trigger("country.stability", "lt", 0.30) });
+    def.weight_modifiers.push_back(
+        WeightModifier{"country.stability", "lt", 0.30,
+                       std::numeric_limits<double>::quiet_NaN()});
+    s.events.push_back(std::move(def));
+
+    const std::uint64_t counter_before = s.rng.counter;
+    const auto r = eng::tick_events(s);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+    CHECK(r.error().find("ev_nan") != std::string::npos);
+    // weighted_choice never ran -> rng.counter must be unchanged.
+    CHECK(s.rng.counter == counter_before);
+}
+
+TEST_CASE("Hardening: tick_events FAILS LOUDLY on +Inf modifier weight_delta") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def = make_event(
+        "ev_inf",
+        { make_trigger("country.stability", "lt", 0.30) });
+    def.weight_modifiers.push_back(
+        WeightModifier{"country.stability", "lt", 0.30,
+                       std::numeric_limits<double>::infinity()});
+    s.events.push_back(std::move(def));
+
+    const std::uint64_t counter_before = s.rng.counter;
+    const auto r = eng::tick_events(s);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+    CHECK(s.rng.counter == counter_before);
+}
+
+TEST_CASE("Hardening: tick_events FAILS LOUDLY on malformed modifier target") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    auto def = make_event(
+        "ev_bad_target",
+        { make_trigger("country.stability", "lt", 0.30) });
+    def.weight_modifiers.push_back(
+        WeightModifier{"country.notarealfield", "lt", 0.30, 0.5});
+    s.events.push_back(std::move(def));
+
+    const std::uint64_t counter_before = s.rng.counter;
+    const auto r = eng::tick_events(s);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.notarealfield") != std::string::npos);
+    CHECK(r.error().find("not in the country/interest_group allowlist")
+          != std::string::npos);
+    CHECK(s.rng.counter == counter_before);
 }

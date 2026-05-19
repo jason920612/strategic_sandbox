@@ -18,10 +18,13 @@
 //   sub-milestone (per the PR #92 review note: don't sneak
 //   selection-policy variants into the firing/effects PR).
 //
-//   Empty `instance.actors` → no-op success (0 effects applied).
+//   Empty `instance.actors` → Result::failure (post-M6.7
+//     strict-fallback hardening; the previous "vacuous no-op
+//     success" silently tolerated a structurally inconsistent
+//     EventInstance and is no longer accepted).
 //   Cannot resolve `country_id_code` to a country in
-//   `state.countries` → Result::failure (state unchanged thanks
-//   to the M1.5 pre-flight atomicity).
+//     `state.countries` → Result::failure (state unchanged thanks
+//     to the M1.5 pre-flight atomicity).
 //
 // Effect resolution:
 //
@@ -77,11 +80,13 @@ struct ApplyOutcome {
 // State is unchanged on failure (inherits M1.5 pre-flight
 // atomicity).
 //
-// Special case: `instance.actors` empty → success with
-// `effects_applied=0`. This models the vacuous-true M5.1 case
-// where a definition has no triggers — no actor to direct
-// effects at, no effects applied. The caller can detect this
-// via `outcome.effects_applied == 0`.
+// Post-M6.7 strict-fallback hardening: `instance.actors` empty
+// returns `Result::failure` (was previously a silent vacuous-
+// no-op success). Per `feedback_no_silent_degradation`, a
+// hand-built EventInstance with no actors is a structurally
+// inconsistent input; the engine path never produces one (every
+// fired event has at least one actor), so this branch is now
+// reserved for surfacing the inconsistency.
 core::Result<ApplyOutcome> apply_event_effects(
     core::GameState&             state,
     const core::EventInstance&   instance,
@@ -132,7 +137,15 @@ core::Result<ApplyOutcome> apply_default_option_effects(
 // `definition.options` entry using
 //   sum over option.effects e: e.value * effect_desire::for_country(country, e.target, state)
 // and returns a pointer to the highest-scored option. Ties resolve
-// to the lower vector index. Returns nullptr when options is empty.
+// to the lower vector index.
+//
+// Post-M6.7 hardening (`feedback_api_signature_expresses_failure`):
+// signature is now `Result<const core::EventOption*>`. Success
+// with `nullptr` indicates `definition.options` is empty (structurally
+// "no options to choose"). Failure propagates any
+// `effect_desire::for_country` failure (non-finite / out-of-range
+// CountryState inputs) so a corrupted state surfaces here rather
+// than silently scoring as 0 and picking arbitrary options.
 //
 // Used by `event_engine::tick_events` for non-player-country events
 // (and for non-player-country followups with options). Player
@@ -140,7 +153,7 @@ core::Result<ApplyOutcome> apply_default_option_effects(
 // instead — see PendingPlayerEvent + commands.cpp.
 //
 // Pure read; never mutates state or definition.
-const core::EventOption*
+core::Result<const core::EventOption*>
 select_best_option_for_country(const core::GameState&       state,
                                const core::CountryState&    country,
                                const core::EventDefinition& definition);
@@ -173,15 +186,22 @@ apply_option_effects_with_mode(
 
 // RFC-090 §5.12 — followup-event-id resolver. Given a
 // definition's `followup_event_ids` vector, returns the matching
-// `state.events` indices for every id_code that resolves
-// successfully. Unresolvable id_codes are skipped (the M5.4-era
-// "EventInstance.event_id_code is NOT cross-checked against
-// state.events on load" tolerance applies here too — followup
-// chains across scenario reloads are legitimate).
+// `state.events` indices for every id_code.
 //
-// Returns a vector of size <= `definition.followup_event_ids.size()`;
-// the result preserves the order of `definition.followup_event_ids`.
-// Empty input → empty output. Pure read.
+// Post-M6.7 strict-fallback hardening: an unresolvable
+// `id_code` (not present in `state.events`) now returns
+// `Result::failure` naming the offending id_code. The previous
+// silent-skip-and-continue behavior tolerated cross-scenario
+// save reloads but masked authoring errors where a followup
+// chain references a typoed event id. If a scenario reload
+// legitimately needs to tolerate missing followups, the caller
+// must do its own pre-resolution check before invoking the
+// resolver.
+//
+// Returns a vector of size == `definition.followup_event_ids.size()`
+// on success; the result preserves the order of
+// `definition.followup_event_ids`. Empty input → empty success.
+// Pure read.
 //
 // Scope split between resolver + firer:
 //   - `resolve_followup_ids` (THIS function) only resolves
@@ -193,7 +213,7 @@ apply_option_effects_with_mode(
 //   - `event_engine::tick_events` and
 //     `event_engine::recurse_followups_from_event` own recursive,
 //     conditional followup selection and depth/cycle guards.
-std::vector<std::size_t>
+core::Result<std::vector<std::size_t>>
 resolve_followup_ids(const core::GameState&       state,
                      const core::EventDefinition& definition);
 

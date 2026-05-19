@@ -76,8 +76,26 @@ inline constexpr double kNoFactionsRadicalismDefault = 0.5;
 // Apply one step of stability adjustment to `country` in `state`.
 // See the formula at the top of this header.
 //
+// Strict numeric validation (post-M6.7 hardening sweep): per
+// `feedback_no_silent_degradation`, the previous post-formula
+// `std::clamp` on both `target` and `c.stability` has been
+// removed. Every input is validated as a finite ratio in
+// `[0, 1]` (including `last_gdp_growth_rate` validated as a
+// finite double — it is signed, so the bounds check is finite-
+// only, not unit-ratio). The intermediate `target` candidate
+// and the post-drift `c.stability` candidate are each validated
+// in `[0, 1]` before any mutation. Any candidate that escapes
+// rejects the whole call.
+//
 // Failure cases:
 //   - `country` is not a valid index into `state.countries`
+//   - any of `country.legitimacy`, `country.corruption`,
+//     or any matched faction's `support` / `radicalism` is
+//     non-finite or outside `[0, 1]`
+//   - `country.last_gdp_growth_rate` is non-finite
+//   - the computed `target` escapes `[0, 1]` (formerly silently
+//     clamped; now a failure)
+//   - the post-drift `c.stability` candidate escapes `[0, 1]`
 // On failure, no state is modified.
 //
 // Only state.countries[country].stability is modified. Faction state

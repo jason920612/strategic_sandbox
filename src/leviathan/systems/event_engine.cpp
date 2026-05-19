@@ -29,21 +29,39 @@ namespace {
 // whole vector inside the conditional-followup loop). Reuses the
 // existing `rank_weighted_events` for the country-loop bucket
 // build; followup recursion calls this per-followup.
-double event_weight_for_index(const core::GameState& state,
-                              std::size_t            event_index) {
+//
+// Post-M6.7 hardening: returns `Result<double>` because the
+// underlying `rank_weighted_events` now propagates a
+// malformed-modifier failure (non-finite weight delta, etc.)
+// instead of silently skipping it.
+core::Result<double>
+event_weight_for_index(const core::GameState& state,
+                       std::size_t            event_index) {
+    using R = core::Result<double>;
     if (event_index >= state.events.size()) {
-        return 0.0;
+        return R::failure(
+            "event_engine::event_weight_for_index: event_index " +
+            std::to_string(event_index) + " out of range (events.size = " +
+            std::to_string(state.events.size()) + ")");
     }
     // We rebuild via rank_weighted_events and pick. rank_weighted_events
     // is O(E * M) per call; for the small E we have, this is cheap
     // and avoids duplicating modifier-evaluation logic.
-    const auto ranked = event_evaluator::rank_weighted_events(state);
-    for (const auto& c : ranked) {
+    auto ranked_r = event_evaluator::rank_weighted_events(state);
+    if (!ranked_r) {
+        return R::failure(std::move(ranked_r.error()));
+    }
+    for (const auto& c : ranked_r.value()) {
         if (c.event_index == event_index) {
-            return c.weight;
+            return R::success(c.weight);
         }
     }
-    return 0.0;
+    // rank_weighted_events always returns one entry per state.events
+    // entry, so this is unreachable on valid input.
+    return R::failure(
+        "event_engine::event_weight_for_index: event_index " +
+        std::to_string(event_index) +
+        " not present in rank_weighted_events output (internal invariant)");
 }
 
 // Helper: apply a fired event's effects according to its option /
@@ -73,11 +91,17 @@ apply_for_ai(core::GameState&                state,
             "options but no country to score against (" +
             instance.event_id_code + ")");
     }
-    const auto* opt = event_effects::select_best_option_for_country(
+    auto opt_r = event_effects::select_best_option_for_country(
         state, *country_for_option_score, def);
+    if (!opt_r) {
+        return core::Result<event_effects::ApplyOutcome>::failure(
+            std::move(opt_r.error()));
+    }
+    const core::EventOption* opt = opt_r.value();
     if (opt == nullptr) {
-        // Should be unreachable: options non-empty ⇒ chooser
-        // returns a pointer. Defensive guard.
+        // Should be unreachable: options non-empty ⇒ chooser returns
+        // a pointer. Defensive guard preserved as success-with-0 so
+        // caller can detect "scorer agreed there's nothing to apply".
         return core::Result<event_effects::ApplyOutcome>::success(
             event_effects::ApplyOutcome{});
     }
@@ -155,8 +179,13 @@ recurse_followups_impl(core::GameState&                  state,
 
     for (std::size_t depth = 0; depth < kMaxFollowupDepth; ++depth) {
         const auto& current_def = state.events[current.definition_index];
-        const auto fids =
+        auto fids_r =
             event_effects::resolve_followup_ids(state, current_def);
+        if (!fids_r) {
+            return core::Result<FollowupOutcome>::failure(
+                std::move(fids_r.error()));
+        }
+        const auto& fids = fids_r.value();
         if (fids.empty()) {
             break;
         }
@@ -183,9 +212,14 @@ recurse_followups_impl(core::GameState&                  state,
                             // must match its own triggers AFTER
                             // parent effects applied.
             }
-            const double w = event_weight_for_index(state, fidx);
-            if (w > 0.0) {
-                pool.push_back(PoolEntry{fidx, w});
+            auto w_r = event_weight_for_index(state, fidx);
+            if (!w_r) {
+                return core::Result<FollowupOutcome>::failure(
+                    "tick_events: followup " + fdef.id_code + ": " +
+                    std::move(w_r.error()));
+            }
+            if (w_r.value() > 0.0) {
+                pool.push_back(PoolEntry{fidx, w_r.value()});
             }
         }
         if (pool.empty()) {
@@ -197,8 +231,14 @@ recurse_followups_impl(core::GameState&                  state,
         for (const auto& p : pool) { weights.push_back(p.weight); }
         const std::string tag = tag_prefix + ".followup." +
                                 current.event_id_code;
-        const std::size_t chosen_idx =
+        auto chosen_r =
             random::weighted_choice(state.rng, weights, tag);
+        if (!chosen_r) {
+            return core::Result<FollowupOutcome>::failure(
+                "tick_events: " + current.event_id_code +
+                " followup: " + std::move(chosen_r.error()));
+        }
+        const std::size_t chosen_idx = chosen_r.value();
         if (chosen_idx >= pool.size()) {
             // Defensive: weighted_choice contract guarantees
             // [0, weights.size()); never reached in practice.
@@ -323,9 +363,15 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
                         state.events[m.event_index].id_code) > 0) {
                     continue;
                 }
-                const double w = event_weight_for_index(state, m.event_index);
-                if (w > 0.0) {
-                    draw_pool.push_back(DrawEntry{m.event_index, w});
+                auto w_r = event_weight_for_index(state, m.event_index);
+                if (!w_r) {
+                    return core::Result<TickOutcome>::failure(
+                        "tick_events: country " + country.id_code +
+                        " category " + bucket.category + ": " +
+                        std::move(w_r.error()));
+                }
+                if (w_r.value() > 0.0) {
+                    draw_pool.push_back(DrawEntry{m.event_index, w_r.value()});
                 }
             }
             if (draw_pool.empty()) {
@@ -340,8 +386,15 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
             const std::string tag =
                 "event_engine.tick_events." + country.id_code +
                 "." + bucket.category;
-            const std::size_t chosen_idx =
+            auto chosen_r =
                 random::weighted_choice(state.rng, weights, tag);
+            if (!chosen_r) {
+                return core::Result<TickOutcome>::failure(
+                    "tick_events: country " + country.id_code +
+                    " category " + bucket.category + ": " +
+                    std::move(chosen_r.error()));
+            }
+            const std::size_t chosen_idx = chosen_r.value();
             if (chosen_idx >= draw_pool.size()) {
                 continue;   // defensive; weighted_choice guarantees in-range
             }

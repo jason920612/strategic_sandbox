@@ -315,23 +315,60 @@ match_events_for_country(const core::GameState& state,
     return out;
 }
 
-std::vector<WeightedEventCandidate>
+core::Result<std::vector<WeightedEventCandidate>>
 rank_weighted_events(const core::GameState& state) {
+    using R = core::Result<std::vector<WeightedEventCandidate>>;
     std::vector<WeightedEventCandidate> out;
     out.reserve(state.events.size());
+
+    // Post-M6.7 hardening (`feedback_no_silent_degradation`):
+    // every modifier is explicitly validated. The previous
+    // "trigger_matches returns false for unrecognised target
+    // / op / non-finite value, so the modifier contributes
+    // zero" silent-skip path is gone — author typos and
+    // runtime non-finite weight_delta now `Result::failure`
+    // loudly. The M5.1 / RCR-1 save layer still rejects
+    // malformed fixtures at load time; this is the runtime
+    // line of defence.
+    const auto valid_op = [](const std::string& op) {
+        return op == "lt" || op == "lte" || op == "gt" || op == "gte";
+    };
+    const auto valid_target = [](const std::string& target) {
+        return target_is_country_scope(target)
+            || target_is_interest_group_scope(target);
+    };
 
     for (std::size_t i = 0; i < state.events.size(); ++i) {
         const auto& def = state.events[i];
         double weight = kBaseWeight;
-        for (const auto& wm : def.weight_modifiers) {
-            // Reuse the trigger_matches machinery: treat the
-            // modifier as a transient EventTrigger with the same
-            // target / op / value. trigger_matches returns false
-            // for unrecognised target / op / non-finite value, so
-            // those modifiers contribute zero — author typos are
-            // silent here (same defensive-false convention as
-            // M5.2; the M5.1 / RCR-1 save layer rejects malformed
-            // fixtures at load time).
+        for (std::size_t mi = 0; mi < def.weight_modifiers.size(); ++mi) {
+            const auto& wm = def.weight_modifiers[mi];
+            if (!std::isfinite(wm.weight_delta)) {
+                return R::failure(
+                    "rank_weighted_events: event '" + def.id_code +
+                    "' weight_modifiers[" + std::to_string(mi) +
+                    "].weight_delta is not finite");
+            }
+            if (!std::isfinite(wm.value)) {
+                return R::failure(
+                    "rank_weighted_events: event '" + def.id_code +
+                    "' weight_modifiers[" + std::to_string(mi) +
+                    "].value is not finite");
+            }
+            if (!valid_target(wm.target)) {
+                return R::failure(
+                    "rank_weighted_events: event '" + def.id_code +
+                    "' weight_modifiers[" + std::to_string(mi) +
+                    "].target = '" + wm.target +
+                    "' is not in the country/interest_group allowlist");
+            }
+            if (!valid_op(wm.op)) {
+                return R::failure(
+                    "rank_weighted_events: event '" + def.id_code +
+                    "' weight_modifiers[" + std::to_string(mi) +
+                    "].op = '" + wm.op +
+                    "' is not in {lt, lte, gt, gte}");
+            }
             core::EventTrigger probe;
             probe.target = wm.target;
             probe.op     = wm.op;
@@ -339,6 +376,12 @@ rank_weighted_events(const core::GameState& state) {
             if (trigger_matches(state, probe)) {
                 weight += wm.weight_delta;
             }
+        }
+        if (!std::isfinite(weight)) {
+            return R::failure(
+                "rank_weighted_events: event '" + def.id_code +
+                "' accumulated weight is not finite (" +
+                std::to_string(weight) + ")");
         }
         WeightedEventCandidate c;
         c.event_index   = i;
@@ -355,29 +398,40 @@ rank_weighted_events(const core::GameState& state) {
                         const WeightedEventCandidate& b) {
                          return a.weight > b.weight;
                      });
-    return out;
+    return R::success(std::move(out));
 }
 
-std::optional<WeightedEventCandidate>
+core::Result<std::optional<WeightedEventCandidate>>
 select_weighted_event(const core::GameState& state) {
+    using R = core::Result<std::optional<WeightedEventCandidate>>;
     const auto matches = match_events(state);
     if (matches.empty()) {
-        return std::nullopt;
+        return R::success(std::nullopt);
     }
 
     // Build a small lookup of currently-matched event indices.
     // state.events is canonically small (~10 in RCR-1 fixtures),
     // so a linear scan per ranked candidate is cheaper than a
     // hash set allocation here.
-    const auto ranked = rank_weighted_events(state);
-    for (const auto& cand : ranked) {
+    //
+    // Post-M6.7 hardening: a `rank_weighted_events` failure
+    // (malformed weight modifier, non-finite weight, etc.)
+    // MUST propagate as a Result failure — the previous
+    // `return std::nullopt` shape silently swallowed the
+    // problem and is forbidden by
+    // `feedback_no_silent_degradation`.
+    auto ranked_r = rank_weighted_events(state);
+    if (!ranked_r) {
+        return R::failure(std::move(ranked_r.error()));
+    }
+    for (const auto& cand : ranked_r.value()) {
         for (const auto& m : matches) {
             if (m.event_index == cand.event_index) {
-                return cand;
+                return R::success(cand);
             }
         }
     }
-    return std::nullopt;
+    return R::success(std::nullopt);
 }
 
 }  // namespace leviathan::systems::event_evaluator

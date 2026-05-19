@@ -134,7 +134,8 @@ TEST_CASE("apply_pending: single EnactPolicy drains the queue and applies the po
     CHECK(q.pending.empty());
 
     // policy::apply_policy_effects added 0.05 to legal_tax_burden.
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    // Mechanical asymptotic-add: 0.20 + 0.05 * (1 - 0.20) = 0.24.
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
 }
 
 TEST_CASE("apply_pending: successful enact chains into active_policies (M1.15)") {
@@ -166,9 +167,13 @@ TEST_CASE("apply_pending: multiple commands apply in insertion order") {
     CHECK(r.value().commands_applied == 2);
     CHECK(q.pending.empty());
 
-    // Both effects landed.
-    CHECK(s.countries[0].legal_tax_burden    == doctest::Approx(0.25));
-    CHECK(s.countries[0].budget.education    == doctest::Approx(0.15));
+    // Both effects landed (per the test-local policy fixtures
+    // `raise_taxes_policy` / `increase_education_policy`).
+    // Mechanical asymptotic-add:
+    //   legal_tax_burden 0.20 + 0.05 * (1 - 0.20) = 0.24
+    //   budget.education 0.10 + 0.05 * (1 - 0.10) = 0.145
+    CHECK(s.countries[0].legal_tax_burden    == doctest::Approx(0.24));
+    CHECK(s.countries[0].budget.education    == doctest::Approx(0.145));
     REQUIRE(s.countries[0].active_policies.size() == 2);
     CHECK(s.countries[0].active_policies[0].policy_id_code == "raise_taxes");
     CHECK(s.countries[0].active_policies[1].policy_id_code == "increase_education");
@@ -232,7 +237,8 @@ TEST_CASE("apply_pending: unknown policy id_code stops at the failed command") {
     CHECK(q.pending[1].policy_id_code == "increase_education");
 
     // raise_taxes was applied; increase_education was NOT.
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    // Mechanical asymptotic-add: 0.20 + 0.05 * (1 - 0.20) = 0.24.
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
     CHECK(s.countries[0].budget.education == doctest::Approx(0.10));
 }
 
@@ -252,7 +258,8 @@ TEST_CASE("apply_pending: policy with bad effect target stops with M1.5 error") 
     // raise_taxes applied; bad_policy left at head for inspection.
     REQUIRE(q.pending.size() == 1u);
     CHECK(q.pending[0].policy_id_code == "bad_policy");
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    // Mechanical asymptotic-add: 0.20 + 0.05 * (1 - 0.20) = 0.24.
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
 }
 
 // =====================================================================
@@ -354,44 +361,57 @@ PlayerCommand make_adjust_budget(const std::string& category, double delta) {
 }  // namespace
 
 TEST_CASE("M2.5 apply_pending: AdjustBudget military += delta mutates the budget") {
+    // Mechanical asymptotic-add formula test:
+    //   military 0.35 + 0.05 * (1 - 0.35) = 0.3825
     GameState s = ger_state_with_player_selected();
     REQUIRE(s.countries[0].budget.military == doctest::Approx(0.35));
     cmd::CommandQueue q;
     q.pending.push_back(make_adjust_budget("military", 0.05));
 
     REQUIRE(cmd::apply_pending(s, q).ok());
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.40));
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.3825));
     CHECK(q.pending.empty());
 }
 
 TEST_CASE("M2.5 apply_pending: AdjustBudget negative delta shrinks the budget") {
+    // Mechanical asymptotic-add formula test (negative delta):
+    //   education 0.10 + (-0.05) * 0.10 = 0.095
     GameState s = ger_state_with_player_selected();
     cmd::CommandQueue q;
     q.pending.push_back(make_adjust_budget("education", -0.05));
 
     REQUIRE(cmd::apply_pending(s, q).ok());
-    // education started at 0.10; - 0.05 -> 0.05
-    CHECK(s.countries[0].budget.education == doctest::Approx(0.05));
+    CHECK(s.countries[0].budget.education == doctest::Approx(0.095));
 }
 
-TEST_CASE("M2.5 apply_pending: AdjustBudget clamps above 1.0") {
+TEST_CASE("Hardening: apply_pending AdjustBudget asymptotic-add never overshoots above 1.0") {
+    // Post-M6.7 hardening: AdjustBudget uses the same asymptotic
+    // ratio update as `policy_system::compute_candidate` — `new =
+    // old + delta * (1 - old)` for positive delta. A player
+    // command with a large positive delta produces a value
+    // strictly less than 1.0; overshoot is impossible by
+    // construction (Polity / V-Dem bounded-scale shape; the
+    // exact formula is a game-model choice).
     GameState s = ger_state_with_player_selected();
     cmd::CommandQueue q;
-    // military starts at 0.35; +1.0 overshoots, clamps to 1.0.
     q.pending.push_back(make_adjust_budget("military", 1.0));
 
     REQUIRE(cmd::apply_pending(s, q).ok());
+    // Asymptotic: 0.35 + 1.0 * (1 - 0.35) = 1.0
+    // (delta = 1.0 is the saturating case that lands exactly at the bound.)
     CHECK(s.countries[0].budget.military == doctest::Approx(1.0));
+    CHECK(s.countries[0].budget.military <= 1.0);
 }
 
-TEST_CASE("M2.5 apply_pending: AdjustBudget clamps below 0.0") {
+TEST_CASE("Hardening: apply_pending AdjustBudget asymptotic-add never undershoots below 0.0") {
+    // Asymptotic: 0.10 + (-1.0) * 0.10 = 0.0 (saturating negative case).
     GameState s = ger_state_with_player_selected();
     cmd::CommandQueue q;
-    // welfare starts at 0.10; -1.0 undershoots, clamps to 0.0.
     q.pending.push_back(make_adjust_budget("welfare", -1.0));
 
     REQUIRE(cmd::apply_pending(s, q).ok());
     CHECK(s.countries[0].budget.welfare == doctest::Approx(0.0));
+    CHECK(s.countries[0].budget.welfare >= 0.0);
 }
 
 TEST_CASE("M2.5 apply_pending: unknown budget_category is rejected with no mutation") {
@@ -437,6 +457,11 @@ TEST_CASE("M2.5 apply_pending: AdjustBudget appends correct log entry") {
 }
 
 TEST_CASE("M2.5 apply_pending: mixed-kind queue applies both in insertion order") {
+    // Mechanical asymptotic-add formula test:
+    //   raise_taxes adds +0.05 to legal_tax_burden=0.20:
+    //     0.20 + 0.05 * (1 - 0.20) = 0.24
+    //   AdjustBudget +0.02 on welfare=0.10:
+    //     0.10 + 0.02 * (1 - 0.10) = 0.118
     GameState s = ger_state_with_player_selected();
     cmd::CommandQueue q;
     q.pending.push_back({PlayerCommandKind::EnactPolicy, "raise_taxes"});
@@ -444,8 +469,8 @@ TEST_CASE("M2.5 apply_pending: mixed-kind queue applies both in insertion order"
 
     REQUIRE(cmd::apply_pending(s, q).ok());
     CHECK(q.pending.empty());
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
-    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.12));
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
+    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.118));
     REQUIRE(s.applied_commands.size() == 2u);
     CHECK(s.applied_commands[0].command.kind ==
           PlayerCommandKind::EnactPolicy);
@@ -478,7 +503,8 @@ TEST_CASE("M2.6 replay: single EnactPolicy entry replays and re-logs") {
     log.push_back(entry);
 
     REQUIRE(cmd::replay(s, log).ok());
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    // Mechanical asymptotic-add: 0.20 + 0.05 * (1 - 0.20) = 0.24.
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].applied_on            == GameDate(1930, 2, 15));
     CHECK(s.applied_commands[0].command.kind          ==
@@ -497,7 +523,8 @@ TEST_CASE("M2.6 replay: single AdjustBudget entry replays and re-logs") {
     log.push_back(entry);
 
     REQUIRE(cmd::replay(s, log).ok());
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.40));
+    // Mechanical asymptotic-add: 0.35 + 0.05 * (1 - 0.35) = 0.3825
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.3825));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].applied_on              == GameDate(1930, 3, 1));
     CHECK(s.applied_commands[0].command.budget_category == "military");
@@ -520,8 +547,11 @@ TEST_CASE("M2.6 replay: mixed-kind log replays in insertion order") {
     log.push_back(e2);
 
     REQUIRE(cmd::replay(s, log).ok());
-    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.25));
-    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.12));
+    // Mechanical asymptotic-add:
+    //   legal_tax_burden 0.20 + 0.05 * (1 - 0.20) = 0.24
+    //   budget.welfare   0.10 + 0.02 * (1 - 0.10) = 0.118
+    CHECK(s.countries[0].legal_tax_burden == doctest::Approx(0.24));
+    CHECK(s.countries[0].budget.welfare   == doctest::Approx(0.118));
     REQUIRE(s.applied_commands.size() == 2u);
     CHECK(s.applied_commands[0].command.kind == PlayerCommandKind::EnactPolicy);
     CHECK(s.applied_commands[1].command.kind == PlayerCommandKind::AdjustBudget);
@@ -703,7 +733,8 @@ TEST_CASE("M2.7 replay_with_time: command at start_date applies with no advance"
     REQUIRE(cmd::replay_with_time(b.state, b.opts, b.ctrl, log).ok());
     CHECK(b.ctrl.days_stepped == 0);
     CHECK(b.state.current_date == GameDate(1930, 1, 1));
-    CHECK(b.state.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    // Mechanical asymptotic-add: 0.20 + 0.05 * (1 - 0.20) = 0.24.
+    CHECK(b.state.countries[0].legal_tax_burden == doctest::Approx(0.24));
     REQUIRE(b.state.applied_commands.size() == 1u);
     CHECK(b.state.applied_commands[0].applied_on == GameDate(1930, 1, 1));
 }
@@ -729,7 +760,8 @@ TEST_CASE("M2.7 replay_with_time: command past month boundary fires monthly pipe
     CHECK(b.ctrl.days_stepped   == 45);
     CHECK(b.ctrl.monthly_ticks  == 1);
     CHECK(b.state.current_date  == GameDate(1930, 2, 15));
-    CHECK(b.state.countries[0].budget.military == doctest::Approx(0.40));
+    // Mechanical asymptotic-add: 0.35 + 0.05 * (1 - 0.35) = 0.3825.
+    CHECK(b.state.countries[0].budget.military == doctest::Approx(0.3825));
 }
 
 TEST_CASE("M2.7 replay_with_time: multiple commands at different dates each block advances") {
@@ -946,7 +978,8 @@ TEST_CASE("M2.18 apply_pending: rejected EnactPolicy stops a mid-list queue") {
     CHECK(r.error().find("raise_taxes") != std::string::npos);
 
     // AdjustBudget applied + popped + logged.
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.37));
+    // Mechanical asymptotic-add: 0.35 + 0.02 * (1 - 0.35) = 0.363
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.363));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].command.kind ==
           PlayerCommandKind::AdjustBudget);
@@ -979,8 +1012,9 @@ TEST_CASE("M2.19 apply_pending: AdjustBudget(military) low bureaucratic_complian
 
     const auto r = cmd::apply_pending(s, q);
     REQUIRE(r.ok());
+    // Mechanical asymptotic-add: mil_before + 0.03 * (1 - mil_before)
     CHECK(s.countries[0].budget.military ==
-          doctest::Approx(mil_before + 0.03));
+          doctest::Approx(mil_before + 0.03 * (1.0 - mil_before)));
     REQUIRE(s.applied_commands.size() == 1u);
 }
 
@@ -1052,8 +1086,9 @@ TEST_CASE("M2.19 apply_pending: AdjustBudget(military) accepted by high military
 
     const auto r = cmd::apply_pending(s, q);
     REQUIRE(r.ok());
+    // Mechanical asymptotic-add: mil_before + 0.02 * (1 - mil_before)
     CHECK(s.countries[0].budget.military ==
-          doctest::Approx(mil_before + 0.02));
+          doctest::Approx(mil_before + 0.02 * (1.0 - mil_before)));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].command.kind ==
           PlayerCommandKind::AdjustBudget);
@@ -1235,7 +1270,8 @@ TEST_CASE("M2.20 try_apply_pending: mid-list rejection preserves prior successfu
     CHECK(r.value().apply.commands_applied == 1);
 
     // Prior AdjustBudget(military) landed.
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    // Mechanical asymptotic-add: 0.35 + 0.03 * (1 - 0.35) = 0.3695
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.3695));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].command.kind ==
           PlayerCommandKind::AdjustBudget);
@@ -1295,7 +1331,8 @@ TEST_CASE("M2.19 apply_pending: rejected AdjustBudget stops a mid-list queue") {
     CHECK(r.error().find("welfare") != std::string::npos);
 
     // Military adjustment landed and logged.
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    // Mechanical asymptotic-add: 0.35 + 0.03 * (1 - 0.35) = 0.3695
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.3695));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].command.budget_category == "military");
 
@@ -1343,8 +1380,9 @@ TEST_CASE("M2.21 apply_command_script: full success script applies every command
 
     // Both effects landed.
     CHECK(s.countries[0].legal_tax_burden > tax_before);
+    // Mechanical asymptotic-add: mil_before + 0.02 * (1 - mil_before)
     CHECK(s.countries[0].budget.military ==
-          doctest::Approx(mil_before + 0.02));
+          doctest::Approx(mil_before + 0.02 * (1.0 - mil_before)));
     // Both commands logged in order.
     REQUIRE(s.applied_commands.size() == 2u);
     CHECK(s.applied_commands[0].command.kind ==
@@ -1425,7 +1463,8 @@ TEST_CASE("M2.21 apply_command_script: mid-script rejection preserves prior succ
     CHECK(r.value().apply.commands_applied == 1);
 
     // Prior AdjustBudget(military) applied + logged.
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.38));
+    // Mechanical asymptotic-add: 0.35 + 0.03 * (1 - 0.35) = 0.3695
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.3695));
     REQUIRE(s.applied_commands.size() == 1u);
     CHECK(s.applied_commands[0].command.kind ==
           PlayerCommandKind::AdjustBudget);

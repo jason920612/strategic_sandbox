@@ -1,0 +1,163 @@
+name: 70-year sim with random player intervention
+
+# What this does
+# ==============
+# Builds the project, runs a 70-year compliance simulation, then
+# RANDOMLY intervenes "on some day" by picking a random pending
+# player event and a random option, and re-runs the same scenario
+# with the choice applied through the production
+# `--commands` -> `ChooseEventOption` path.
+#
+# Why the indirect "re-run with commands" shape:
+#   The runner has no `--load STATE.json` flag for resuming a
+#   mid-day simulation. Player choices flow through the
+#   `state.applied_commands` log. So intervening "on a specific
+#   day" means: discover which events were pending at the
+#   player's queue (each pending entry carries the day it fired
+#   on, via `event_history[i].fired_on`), pick one randomly,
+#   then re-run the SAME deterministic scenario with a JSON
+#   command script that resolves that specific pending entry.
+#   This is the production gameplay path -- the same code that
+#   would run if a human player clicked the option in a UI.
+#
+# When this runs
+# ==============
+#   * `workflow_dispatch` -- manual trigger from the Actions tab.
+#     The `seed` input can be overridden for diagnostic
+#     reproducibility; otherwise a fresh seed is drawn per run.
+#   * `schedule` -- weekly cron at 04:17 UTC Monday. The
+#     non-round-number time keeps us off the on-the-hour GHA
+#     congestion peak.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Optional deterministic seed (int). Leave blank to draw a random seed.'
+        required: false
+        type: string
+      days:
+        description: 'Days to simulate (default 25567 = ~70 years).'
+        required: false
+        default: '25567'
+        type: string
+      player:
+        description: 'Optional player country id_code (CZE / CHN / POL / SOV / IND / ITA). Leave blank to pick randomly.'
+        required: false
+        type: string
+  schedule:
+    - cron: '17 4 * * 1'
+
+jobs:
+  intervention:
+    name: ${{ matrix.os }} / seed ${{ matrix.seed_label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows matches the project's primary developer environment.
+        # ubuntu-latest can be added once portability is confirmed (the
+        # tests have a handful of Windows-style paths today).
+        os: [windows-latest]
+        seed_label: [seed_a, seed_b, seed_c]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Configure CMake (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Resolve binary path
+        id: bin
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "path=build/bin/Release/leviathan.exe" >> $GITHUB_OUTPUT
+          else
+            # Single-config generators on Linux drop the binary in
+            # build/bin (no per-config subdir).
+            if [[ -f build/bin/leviathan ]]; then
+              echo "path=build/bin/leviathan" >> $GITHUB_OUTPUT
+            else
+              echo "path=build/bin/Release/leviathan" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Pick seed and player
+        id: pick
+        shell: bash
+        env:
+          INPUT_SEED: ${{ github.event.inputs.seed }}
+          INPUT_PLAYER: ${{ github.event.inputs.player }}
+          SEED_LABEL: ${{ matrix.seed_label }}
+        run: |
+          set -euo pipefail
+          # Derive a per-matrix-row seed when none is provided as
+          # input. We combine the seed_label, run id, and runner
+          # OS so each matrix slot picks a different scenario but
+          # the dispatcher can pin one for diagnostics.
+          if [[ -n "${INPUT_SEED:-}" ]]; then
+            SEED="${INPUT_SEED}"
+          else
+            # awk %2147483647 keeps it inside the runner's
+            # int32 seed range.
+            SEED=$(awk -v t="$(date +%s%N)" -v lbl="${SEED_LABEL}" -v os="${{ runner.os }}" -v rid="${{ github.run_id }}" 'BEGIN { srand(t + length(lbl) + length(os) + rid); print int(rand() * 2147483647) }')
+          fi
+          echo "seed=${SEED}" >> $GITHUB_OUTPUT
+          if [[ -n "${INPUT_PLAYER:-}" ]]; then
+            echo "player_arg=--player ${INPUT_PLAYER}" >> $GITHUB_OUTPUT
+          else
+            # No --player -> the orchestrator picks randomly from
+            # the stress-prone pool using its own RNG seeded by --seed.
+            echo "player_arg=" >> $GITHUB_OUTPUT
+          fi
+          echo "Resolved seed=${SEED}, player_arg='${INPUT_PLAYER:-<random>}'"
+
+      - name: Run 70-year intervention smoke
+        shell: bash
+        run: |
+          python tools/random_player_intervention.py \
+            --binary '${{ steps.bin.outputs.path }}' \
+            --scenario data/scenarios/1930_rfc_compliance.json \
+            --seed ${{ steps.pick.outputs.seed }} \
+            --days ${{ github.event.inputs.days || '25567' }} \
+            ${{ steps.pick.outputs.player_arg }} \
+            --output-dir out/intervention
+
+      - name: Show report
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f out/intervention/report.md ]]; then
+            cat out/intervention/report.md
+          else
+            echo "[note] no report.md produced (run failed before report stage)"
+          fi
+
+      - name: Upload simulation artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: random-intervention-${{ matrix.os }}-${{ matrix.seed_label }}-${{ steps.pick.outputs.seed }}
+          path: |
+            out/intervention/report.md
+            out/intervention/commands.json
+            out/intervention/stage1/save.json
+            out/intervention/stage1/events.jsonl
+            out/intervention/stage1/annual_world_stats.csv
+            out/intervention/stage1/summary.csv
+            out/intervention/stage2/save.json
+            out/intervention/stage2/events.jsonl
+            out/intervention/stage2/annual_world_stats.csv
+            out/intervention/stage2/summary.csv
+          if-no-files-found: warn
+          retention-days: 14

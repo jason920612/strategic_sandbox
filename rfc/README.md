@@ -142,7 +142,7 @@ sequence:
   affine
   `0.4 + 0.6 × (0.7 × intelligence_capability + 0.3 × budget.intelligence)`
   formula (range `[0.4, 1.0]`).
-- **M6.7** (RFC-090 §6.7 "加入腐敗影響", current PR)
+- **M6.7** (RFC-090 §6.7 "加入腐敗影響", PR #114)
   layers the RFC-080 §8 `-Corruption` term on top:
   `accuracy = m6_6_baseline - 0.4 × corruption`.
   Function-level range now `[0.0, 1.0]`. Whole
@@ -151,6 +151,32 @@ sequence:
   (out-of-range / non-finite ratios reject with
   `Result::failure` naming country `id_code` + field +
   numeric value; no silent clamping).
+- **Post-M6.7 hardening sweep (NOT an RFC milestone,
+  current PR)** — branch
+  `feature/hardening-strict-numeric-validation`.
+  Applies `feedback_no_silent_degradation` project-wide
+  (every silent `std::clamp` / NaN-tolerance / silent-
+  skip site now `Result::failure`-s with entity kind +
+  `id_code` + field + value). Migrates ratio-target
+  `add` from linear `old + delta` to asymptotic
+  `new = old + delta * (1 - old)` (positive delta) /
+  `new = old + delta * old` (negative delta) so the
+  strict validator passes by construction on long-
+  horizon AI policy application. The bounded /
+  diminishing-returns shape is literature-aligned
+  (Polity IV / V-Dem / Besley & Persson) but the exact
+  functional form is a game-model assumption, not
+  derived from any single paper. Non-ratio fields
+  (`country.gdp`, `country.budget_balance`,
+  `country.tax_revenue`, `faction.resources`) keep
+  linear `add`. **No new RFC-090 feature, no save
+  schema bump (still v18), no new artefact (still 11),
+  no new player-facing command, no M6 progression.**
+  Canonical numeric baselines deliberately rebaked
+  (asymptotic-`add` produces different post-values
+  than PR #114's linear-`add`); same-branch / same-
+  seed determinism preserved. Design note:
+  `docs/hardening-strict-numeric-validation.md`.
 
 `RCR` is **not** an RFC milestone number and does not
 consume M0–M9 numbering. **There is no RCR-2 track and no

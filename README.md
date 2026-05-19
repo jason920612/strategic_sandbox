@@ -219,6 +219,64 @@
   `docs/milestone-6-checkpoint.md`, no
   `docs/milestone-6-result.md`, no "M6 closed" wording.
   M6 remains in progress.
+- **Post-M6.7 hardening sweep (NOT a milestone)** —
+  `feature/hardening-strict-numeric-validation`.
+  Applies `feedback_no_silent_degradation` project-wide:
+  every silent `std::clamp` / NaN-tolerance / silent-skip
+  site in `policy_system`, `commands::AdjustBudget`,
+  `faction_system`, `stability_system`, `economy_system`,
+  `interest_group_system`, `effect_desire`, `ai_policy`,
+  `random_service`, `event_effects`, `event_engine`,
+  `annual_stats`, and the year-boundary runner now
+  surfaces as `Result::failure` naming the entity kind,
+  `id_code`, field path, and offending value. A new shared
+  header `include/leviathan/systems/internal/numeric_guards.hpp`
+  centralises the guard predicates. **Ratio-target `add`
+  migrated from linear to asymptotic:** for ratio fields
+  in `[0, 1]`, the `add` op now computes
+  `new = old + delta * (1 - old)` (positive delta) /
+  `new = old + delta * old` (negative delta). The
+  reshape makes the strict validator pass by construction
+  on long-horizon AI policy application; the bounded /
+  diminishing-returns shape is literature-aligned
+  (Polity / V-Dem / Besley & Persson) but the exact
+  functional form is a game-model assumption. Non-ratio
+  fields (`country.gdp`, `country.budget_balance`,
+  `country.tax_revenue`, `faction.resources`) keep linear
+  `add`. Helper signatures `effect_desire::for_country`,
+  `random_service::draw_bool`, `annual_stats::snapshot`,
+  `event_effects::resolve_followup_ids`,
+  `event_effects::select_best_option_for_country` now
+  return `Result<T>` and propagate failures up through
+  `ai_policy` / `event_engine` / `monthly_pipeline` /
+  `runner`. **No save schema bump.** Save format stays
+  at **v18**; artefact contract stays at **11**. **No new
+  RFC milestone feature, no new player-facing command,
+  no new save-layer surface, no M6 progression.**
+  Canonical numeric baselines are deliberately rebaked
+  (asymptotic-`add` produces different post-values than
+  linear-`add`); same-branch / same-seed determinism is
+  preserved (canonical `1930_minimal` 365-day produces
+  byte-identical output across repeated runs). Compliance
+  `1930_rfc_compliance` 25 567-day (1930→2000) sweep
+  completes with `Sanity issues : 0`. Test count
+  1 251 / 1 251 (95 876 assertions, 0 failed) including
+  4 new trajectory-shape tests in
+  `tests/systems/asymptotic_add_trajectory_test.cpp` plus
+  17 additional hardening cases pinning `weighted_choice` /
+  `rank_weighted_events` / `select_weighted_event` /
+  `tick_events` Result propagation (NaN / ±Inf / negative /
+  empty input rejected; `state.rng.counter` stable on every
+  failure path).
+  Design note:
+  [`docs/hardening-strict-numeric-validation.md`](docs/hardening-strict-numeric-validation.md).
+  Companion CI: `.github/workflows/random-player-intervention.yml`
+  runs a 70-year compliance simulation, randomly picks a pending
+  player event + option from the resulting `pending_player_events`,
+  and re-runs the same scenario with a `--commands` script
+  containing a `ChooseEventOption` entry — exercising the
+  production gameplay path. Local invocation:
+  `python tools/random_player_intervention.py --binary build/bin/Debug/leviathan.exe --seed N --days 25567`.
 - Previously shipped: **M6.6 — intelligence-
   budget influence on `information_accuracy`.** Sixth M6
   PR. Implements RFC-090 §6.6 (`6.6 加入情報預算影響`).
@@ -234,8 +292,20 @@
   accuracy    = 0.4 + 0.6 × intel_score
   ```
 
-  Both inputs are clamped to `[0, 1]` defensively before
-  the weighted sum. The result lives in
+  **M6.6 originally shipped with defensive clamping** of
+  both intelligence inputs to `[0, 1]` before the weighted
+  sum (PR #113 behaviour). **The post-M6.7 hardening sweep
+  (PR #115) upgrades current behaviour to strict
+  `Result::failure` for non-finite / out-of-range inputs** —
+  capability, budget, and corruption are all validated
+  through the same `numeric_guards` predicates and reject
+  loudly per `feedback_no_silent_degradation`. The wording
+  in this section that follows refers to the ORIGINAL M6.6
+  contract; the current branch's runtime contract is the
+  strict path documented in
+  `docs/hardening-strict-numeric-validation.md` and in the
+  "Post-M6.7 hardening sweep" block above.
+  The result lives in
   `[kMinInformationAccuracy=0.4, 1.0]`: a country with
   maxed intelligence on both axes returns the old
   no-distortion ceiling (1.0); a country with zero

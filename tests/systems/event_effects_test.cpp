@@ -119,10 +119,11 @@ TEST_CASE("M5.6 apply_event_effects: country.* effect lands on the first actor's
     EventInstance inst =
         hand_instance("unrest", "country", "GER", "GER");
 
+    // Mechanical asymptotic-add: 0.55 + (-0.02) * 0.55 = 0.539
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 1);
-    CHECK(s.countries[0].stability == doctest::Approx(0.53));
+    CHECK(s.countries[0].stability == doctest::Approx(0.539));
 }
 
 TEST_CASE("M5.6 apply_event_effects: IG-actor's owning country gets the effect") {
@@ -136,10 +137,11 @@ TEST_CASE("M5.6 apply_event_effects: IG-actor's owning country gets the effect")
         hand_instance("radical_warning", "interest_group",
                       "ger_bureau", "GER");
 
+    // Mechanical asymptotic-add: 0.45 + (-0.01) * 0.45 = 0.4455
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 1);
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.44));
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.4455));
 }
 
 TEST_CASE("M5.6 apply_event_effects: multiple effects all land on the first actor's country in def order") {
@@ -155,10 +157,11 @@ TEST_CASE("M5.6 apply_event_effects: multiple effects all land on the first acto
     EventInstance inst =
         hand_instance("compound", "country", "GER", "GER");
 
+    // Mechanical: asymptotic add -0.05 on 0.50 → 0.475; then set 0.30.
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 2);
-    CHECK(s.countries[0].stability  == doctest::Approx(0.45));
+    CHECK(s.countries[0].stability  == doctest::Approx(0.475));
     CHECK(s.countries[0].legitimacy == doctest::Approx(0.30));
 }
 
@@ -173,13 +176,18 @@ TEST_CASE("M5.6 apply_event_effects: budget category effect routes through count
     EventInstance inst =
         hand_instance("milboost", "country", "GER", "GER");
 
+    // Mechanical asymptotic-add: 0.20 + 0.10 * (1 - 0.20) = 0.28
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 1);
-    CHECK(s.countries[0].budget.military == doctest::Approx(0.30));
+    CHECK(s.countries[0].budget.military == doctest::Approx(0.28));
 }
 
-TEST_CASE("M5.6 apply_event_effects: ratio fields clamp to [0, 1] post-op (inherits M1.5 clamping)") {
+TEST_CASE("Hardening: asymptotic add never undershoots ratio bounds (event-effect path)") {
+    // Post-M6.7 hardening: ratio-target `add` uses asymptotic
+    // formula. Even a large negative delta only approaches 0,
+    // never crosses. (Polity/V-Dem bounded-scale shape; the
+    // exact formula is a game-model choice.)
     GameState s;
     s.countries.push_back(make_country(0, "GER", /*stab*/0.05));
     EventDefinition def = make_event_def(
@@ -191,7 +199,9 @@ TEST_CASE("M5.6 apply_event_effects: ratio fields clamp to [0, 1] post-op (inher
 
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
-    CHECK(s.countries[0].stability == doctest::Approx(0.0));
+    // Asymptotic: 0.05 + (-0.50) * 0.05 = 0.025
+    CHECK(s.countries[0].stability == doctest::Approx(0.025));
+    CHECK(s.countries[0].stability >= 0.0);
 }
 
 // =====================================================================
@@ -255,7 +265,11 @@ TEST_CASE("M5.6 apply_event_effects: unknown op rejected; state untouched") {
 // edge cases: empty actors / unresolvable country / empty effects
 // =====================================================================
 
-TEST_CASE("M5.6 apply_event_effects: empty actors -> no-op success") {
+TEST_CASE("Hardening: apply_event_effects REJECTS empty actors (strict-fallback)") {
+    // Post-M6.7 strict-fallback hardening: a structurally
+    // inconsistent EventInstance with no actors is no longer a
+    // silent vacuous success; it returns Result::failure with
+    // state untouched.
     GameState s;
     s.countries.push_back(make_country(0, "GER", 0.50));
     EventDefinition def = make_event_def(
@@ -266,9 +280,8 @@ TEST_CASE("M5.6 apply_event_effects: empty actors -> no-op success") {
     inst.fired_on      = GameDate(1930, 1, 1);
 
     const auto r = eex::apply_event_effects(s, inst, def);
-    REQUIRE(r);
-    CHECK(r.value().effects_applied == 0);
-    // Country unchanged.
+    REQUIRE(r.failed());
+    CHECK(r.error().find("no actors") != std::string::npos);
     CHECK(s.countries[0].stability == doctest::Approx(0.50));
 }
 
@@ -350,10 +363,11 @@ TEST_CASE("M5.6 apply_event_effects: with multiple actors, first actor's country
     inst.actors.push_back(a1);
     inst.actors.push_back(a2);
 
+    // Mechanical asymptotic-add: GER 0.50 + (-0.10) * 0.50 = 0.45
     const auto r = eex::apply_event_effects(s, inst, def);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 1);
-    CHECK(s.countries[0].stability == doctest::Approx(0.40));   // GER -0.10
+    CHECK(s.countries[0].stability == doctest::Approx(0.45));   // GER asymptotic
     CHECK(s.countries[1].stability == doctest::Approx(0.70));   // FRA untouched
 }
 
@@ -432,8 +446,11 @@ TEST_CASE("M5.6 end-to-end: match_events -> record_matches -> apply_event_effect
     REQUIRE(eex::apply_event_effects(s, s.event_history[0], def_a));
     REQUIRE(eex::apply_event_effects(s, s.event_history[1], def_b));
 
-    CHECK(s.countries[0].stability  == doctest::Approx(0.18));  // 0.20 - 0.02
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.49));  // 0.50 - 0.01
+    // Mechanical asymptotic-add:
+    //   stability  0.20 + (-0.02) * 0.20 = 0.196
+    //   legitimacy 0.50 + (-0.01) * 0.50 = 0.495
+    CHECK(s.countries[0].stability  == doctest::Approx(0.196));
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.495));
 }
 
 // =====================================================================
@@ -483,8 +500,9 @@ TEST_CASE("M5.6 policy::apply_effects_to_actor: does NOT append ActivePolicy ent
     std::vector<PolicyEffect> effects = {
         make_effect("country.stability", "add", -0.05),
     };
+    // Mechanical asymptotic-add: 0.50 + (-0.05) * 0.50 = 0.475
     REQUIRE(pol::apply_effects_to_actor(s, CountryId{0}, effects));
-    CHECK(s.countries[0].stability == doctest::Approx(0.45));
+    CHECK(s.countries[0].stability == doctest::Approx(0.475));
     CHECK(s.countries[0].active_policies.empty());
 }
 

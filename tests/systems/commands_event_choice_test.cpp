@@ -135,8 +135,9 @@ TEST_CASE("Issue #112: ChooseEventOption applies option effects + clears pending
     CHECK(r.value().apply.commands_applied == 1);
     CHECK(!r.value().rejection.has_value());
 
-    // Effects applied (legitimacy +0.25 → 0.35).
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.35));
+    // Effects applied via asymptotic-add:
+    //   legitimacy 0.10 + 0.25 * (1 - 0.10) = 0.325
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.325));
     // Pending entry cleared.
     CHECK(s.pending_player_events.empty());
     // applied_commands records the ChooseEventOption.
@@ -193,8 +194,9 @@ TEST_CASE("Issue #112: ChooseEventOption triggers conditional followup recursion
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[1].event_id_code == "followup");
     CHECK(s.pending_player_events.empty());
-    // Followup's effects also applied: stability -0.05 → 0.45.
-    CHECK(s.countries[0].stability == doctest::Approx(0.45));
+    // Followup's effects applied via asymptotic-add:
+    //   stability 0.50 + (-0.05) * 0.50 = 0.475
+    CHECK(s.countries[0].stability == doctest::Approx(0.475));
 }
 
 // =====================================================================

@@ -28,9 +28,12 @@
 //     inherits M1.5 pre-flight atomicity (a failing effect leaves
 //     THAT country untouched) and M1.15 active_policies bookkeeping
 //     (a successful apply appends one ActivePolicy entry).
-//     Fail-continue across countries: a per-country apply failure
-//     records into ApplyOutcome.failed_countries but does NOT abort
-//     remaining apply calls.
+//     Post-M6.7 hardening (`feedback_no_silent_degradation` +
+//     `feedback_api_signature_expresses_failure`): a per-country
+//     apply failure now surfaces as a hard `Result::failure` rather
+//     than being recorded into `failed_countries`. The latter field
+//     is retained for API compat but is always empty under the
+//     strict validation regime.
 //
 // Inputs the scorer reads (RFC-090 §3.5 / §3.6 / §3.7 / §3.8;
 // RFC-040 §4):
@@ -122,7 +125,11 @@ struct ApplyOutcome {
     // candidates stacked"). Sum:
     //   considered = applied_count_per_country + skipped + pressure_below_threshold_skipped
     std::size_t pressure_below_threshold_skipped = 0;
-    std::vector<core::CountryId> failed_countries;  // apply returned failure
+    // Vestigial under the post-M6.7 strict validation regime — a
+    // per-country apply failure now surfaces as a hard
+    // Result::failure from apply_selected_policies, so this vector
+    // is always empty. Retained for API compat with M3.5-era callers.
+    std::vector<core::CountryId> failed_countries;
 };
 
 core::Result<ApplyOutcome>

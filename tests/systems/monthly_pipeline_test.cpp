@@ -818,11 +818,10 @@ TEST_CASE("M5.8 tick_all_countries: matching event fires; event_history grows; c
     REQUIRE(state.event_history.size() == 1u);
     CHECK(state.event_history[0].event_id_code == "matched_event");
     // legitimacy was mutated by the event effect AFTER the M3.3
-    // country_feedback step ran on it. Pin that the legitimacy
-    // dropped by 0.05 from its pre-month value (faction/stability/
-    // economy/IG steps don't touch legitimacy in this fixture).
+    // country_feedback step ran on it. Mechanical asymptotic-add:
+    //   legit_before + (-0.05) * legit_before = legit_before * 0.95
     CHECK(state.countries[0].legitimacy ==
-          doctest::Approx(legit_before - 0.05));
+          doctest::Approx(legit_before * 0.95));
     // stability still touched by the other monthly systems; we
     // just pin the direction (not byte-exact) so the test stays
     // robust to M1.7/M1.12 rebalances.
@@ -1009,24 +1008,26 @@ TEST_CASE("Issue #108: AI auto-apply runs BEFORE event_engine::tick_events") {
     state.countries[0].legitimacy = 0.20;   // starts below the event threshold
 
     // A policy that LOWERS legitimacy further when applied — so post-AI
-    // state has legitimacy < 0.15 (the event's trigger).
+    // state has legitimacy < 0.19 (the event's trigger). Under
+    // asymptotic-add: 0.20 + (-0.07) * 0.20 = 0.186 < 0.19.
     leviathan::core::PolicyData policy;
     policy.id_code       = "drop_legitimacy";
     policy.duration_days = 30;
     policy.effects.push_back({"country.legitimacy", "add", -0.07});
     state.policies.push_back(policy);
 
-    // Event fires when legitimacy < 0.15 (so requires the AI-apply
-    // to have run first).
+    // Event fires when legitimacy < 0.19 (post-AI legitimacy ≈ 0.186
+    // satisfies it; pre-AI legitimacy 0.20 does NOT — so this pins
+    // step-7-before-step-8 ordering).
     state.events.push_back(m58_event(
         "legitimacy_collapse",
-        "country.legitimacy", "lt", 0.15,
+        "country.legitimacy", "lt", 0.19,
         "country.stability", "add", -0.05));
 
     const auto r = monthly::tick_all_countries(state);
     REQUIRE(r.ok());
     CHECK(r.value().ai_policies_applied == 1);
-    // Event saw post-AI legitimacy ≈ 0.13 (< 0.15) → fired.
+    // Event saw post-AI legitimacy 0.186 (< 0.19) → fired.
     CHECK(r.value().event_tick.events_recorded == 1);
     REQUIRE(state.event_history.size() == 1u);
     CHECK(state.event_history[0].event_id_code == "legitimacy_collapse");

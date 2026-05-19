@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <limits>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -102,7 +103,11 @@ TEST_CASE("tick: pulls stability up toward a higher target") {
     CHECK(state.countries[0].stability == doctest::Approx(0.345));
 }
 
-TEST_CASE("tick: pulls stability down toward a lower target") {
+TEST_CASE("Hardening: tick REJECTS when target formula produces below-zero candidate") {
+    // Post-M6.7 strict numeric validation: the previous
+    // `target = clamp(raw_target, 0, 1)` silent saturation is gone.
+    // Inputs in [0, 1] but combined produce raw_target = -0.05;
+    // strict rejects rather than clamping.
     GameState state;
     state.countries.push_back(country_with(0,
                                            /*stability=*/0.80,
@@ -111,17 +116,15 @@ TEST_CASE("tick: pulls stability down toward a lower target") {
     state.factions.push_back(faction_with(0, CountryId{0},
                                           /*support=*/0.20,
                                           /*radicalism=*/0.50));
+    const double original = state.countries[0].stability;
 
     // raw_target = 0.5*0.20 + 0.5*0.20 - 0.3*0.50 - 0.2*0.50
     //            = 0.10 + 0.10 - 0.15 - 0.10 = -0.05
-    // target = clamp(-0.05, 0, 1) = 0.0
-    // delta  = (0.0 - 0.80) * 0.10 = -0.08
-    // new    = 0.80 - 0.08 = 0.72
+    // -> escapes [0, 1] -> reject.
     const auto r = st_sys::tick(state, CountryId{0});
-    REQUIRE(r.ok());
-    CHECK(r.value().target_stability   == doctest::Approx(0.0));
-    CHECK(r.value().new_stability      == doctest::Approx(0.72));
-    CHECK(state.countries[0].stability == doctest::Approx(0.72));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("stability.target") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(original));
 }
 
 // =====================================================================
@@ -142,13 +145,11 @@ TEST_CASE("tick: rate / weight constants match the spec") {
 // Clamping
 // =====================================================================
 
-TEST_CASE("tick: stability clamps at the upper bound") {
+TEST_CASE("Hardening: tick REJECTS pathological out-of-range country.stability input") {
+    // Post-M6.7 strict numeric validation: the previous post-drift
+    // clamp is gone. Pre-existing out-of-range stability (e.g.
+    // 1.2) is rejected at input validation.
     GameState state;
-    // Perfect inputs: support=1, legitimacy=1, corruption=0, radicalism=0
-    // raw_target = 0.5*1 + 0.5*1 - 0 - 0 = 1.0
-    // stability already at 0.99, delta = (1.0 - 0.99)*0.10 = 0.001
-    // new = 0.991, still in [0, 1] - test the explicit clamp by
-    // pushing stability beyond 1.0 in the input.
     state.countries.push_back(country_with(0,
                                            /*stability=*/1.2,  // pathological
                                            /*legitimacy=*/1.0,
@@ -156,15 +157,15 @@ TEST_CASE("tick: stability clamps at the upper bound") {
     state.factions.push_back(faction_with(0, CountryId{0},
                                           /*support=*/1.0,
                                           /*radicalism=*/0.0));
+    const double original = state.countries[0].stability;
 
     const auto r = st_sys::tick(state, CountryId{0});
-    REQUIRE(r.ok());
-    // target = 1.0, delta = (1.0 - 1.2)*0.10 = -0.02, raw new = 1.18
-    // Post-clamp = 1.0.
-    CHECK(state.countries[0].stability == doctest::Approx(1.0));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.stability") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(original));
 }
 
-TEST_CASE("tick: stability clamps at the lower bound") {
+TEST_CASE("Hardening: tick REJECTS pathological below-zero country.stability input") {
     GameState state;
     state.countries.push_back(country_with(0,
                                            /*stability=*/-0.5,  // pathological
@@ -173,13 +174,12 @@ TEST_CASE("tick: stability clamps at the lower bound") {
     state.factions.push_back(faction_with(0, CountryId{0},
                                           /*support=*/0.0,
                                           /*radicalism=*/1.0));
+    const double original = state.countries[0].stability;
 
     const auto r = st_sys::tick(state, CountryId{0});
-    REQUIRE(r.ok());
-    // raw_target = 0 + 0 - 0.3 - 0.2 = -0.5 -> clamp 0.
-    // delta = (0 - -0.5)*0.10 = 0.05, raw new = -0.45
-    // Post-clamp = 0.0.
-    CHECK(state.countries[0].stability == doctest::Approx(0.0));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.stability") != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(original));
 }
 
 // =====================================================================
@@ -398,30 +398,52 @@ TEST_CASE("tick: zero last_gdp_growth_rate is identical to pre-M1.12 behaviour")
     CHECK(r.value().target_stability == doctest::Approx(0.50));
 }
 
-TEST_CASE("tick: pathological last_gdp_growth_rate is still clamped to [0,1]") {
-    // A wildly out-of-range growth value (e.g. caused by future
-    // economy bugs) should not break stability::tick's contract.
-    // target = clamp(0.5 + 2.0 * 1.0, 0, 1) = clamp(2.5, 0, 1) = 1.0.
+TEST_CASE("Hardening: tick REJECTS when last_gdp_growth_rate pushes target out of range") {
+    // Post-M6.7 strict numeric validation: a `last_gdp_growth_rate`
+    // value large enough to push the computed target outside
+    // [0, 1] is rejected (was previously silently clamped).
+    // `last_gdp_growth_rate` itself is signed (recession produces
+    // negative values), so the field-level check is "finite", not
+    // "ratio". The overshoot surfaces at the target candidate
+    // validation instead.
+    {
+        GameState state;
+        auto c = country_with(0, 0.50, 0.50, 0.0);
+        c.last_gdp_growth_rate = 1.0;   // pushes target to 2.5
+        state.countries.push_back(c);
+        state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+        const double original = state.countries[0].stability;
+
+        const auto r = st_sys::tick(state, CountryId{0});
+        REQUIRE(r.failed());
+        CHECK(r.error().find("stability.target") != std::string::npos);
+        CHECK(state.countries[0].stability == doctest::Approx(original));
+    }
+    {
+        GameState state;
+        auto c = country_with(0, 0.50, 0.50, 0.0);
+        c.last_gdp_growth_rate = -1.0;  // pushes target to -1.5
+        state.countries.push_back(c);
+        state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
+        const double original = state.countries[0].stability;
+
+        const auto r = st_sys::tick(state, CountryId{0});
+        REQUIRE(r.failed());
+        CHECK(r.error().find("stability.target") != std::string::npos);
+        CHECK(state.countries[0].stability == doctest::Approx(original));
+    }
+}
+
+TEST_CASE("Hardening: tick REJECTS non-finite last_gdp_growth_rate") {
     GameState state;
     auto c = country_with(0, 0.50, 0.50, 0.0);
-    c.last_gdp_growth_rate = 1.0;
+    c.last_gdp_growth_rate = std::numeric_limits<double>::quiet_NaN();
     state.countries.push_back(c);
     state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
 
     const auto r = st_sys::tick(state, CountryId{0});
-    REQUIRE(r.ok());
-    CHECK(r.value().target_stability == doctest::Approx(1.0));
-
-    // And on the negative end: target = clamp(0.5 + 2.0 * -1.0, 0, 1) = 0.0.
-    GameState state_neg;
-    auto c2 = country_with(0, 0.50, 0.50, 0.0);
-    c2.last_gdp_growth_rate = -1.0;
-    state_neg.countries.push_back(c2);
-    state_neg.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.0));
-
-    const auto r2 = st_sys::tick(state_neg, CountryId{0});
-    REQUIRE(r2.ok());
-    CHECK(r2.value().target_stability == doctest::Approx(0.0));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("last_gdp_growth_rate") != std::string::npos);
 }
 
 TEST_CASE("tick: stability::tick does NOT modify last_gdp_growth_rate") {

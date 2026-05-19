@@ -258,10 +258,10 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
     // to GER (the first / only actor).
     CHECK(save.find("\"save_version\": 18")                       != std::string::npos);
     CHECK(save.find("\"low_stability_unrest_firing\"")            != std::string::npos);
-    // Legitimacy dropped by 0.05 from 0.50 -> 0.45 (rounded text
-    // varies; pin the field name + the dropped digit).
+    // Mechanical asymptotic-add applied to legitimacy:
+    //   0.50 + (-0.05) * 0.50 = 0.475
     CHECK(save.find("\"legitimacy\":")                            != std::string::npos);
-    CHECK(save.find("0.45")                                       != std::string::npos);
+    CHECK(save.find("0.475")                                      != std::string::npos);
 
     // Round-trip: deserialize and re-serialize; event_history
     // and legitimacy survive byte-stably.
@@ -272,7 +272,7 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
     CHECK(reloaded.event_history[0].event_id_code ==
           "low_stability_unrest_firing");
     REQUIRE(reloaded.countries.size() == 1u);
-    CHECK(reloaded.countries[0].legitimacy == doctest::Approx(0.45));
+    CHECK(reloaded.countries[0].legitimacy == doctest::Approx(0.475));
 }
 
 // =====================================================================

@@ -1,7 +1,7 @@
 #include "leviathan/systems/policy_system.hpp"
 
-#include <algorithm>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,18 +21,31 @@ struct ResolvedTarget {
 
     // For faction:<type>.<field> targets.
     std::vector<double*> faction_fields;
-    bool                 faction_is_ratio = false;
+    // Parallel to faction_fields — captures each matched faction's
+    // id_code so per-faction error messages can name the entity that
+    // produced the overshoot candidate.
+    std::vector<std::string> faction_id_codes;
+    bool                     faction_is_ratio = false;
+};
+
+// One concrete write that pre-flight has cleared. Built during the
+// candidate phase; consumed by the commit phase. Per the post-M6.7
+// hardening sweep, the candidate value is computed AND validated
+// before any mutation happens, so the commit phase can never fail.
+struct PreparedWrite {
+    double* field_ptr = nullptr;
+    double  candidate = 0.0;
 };
 
 // Returns a pointer into the given CountryState for the named field,
 // or nullptr if the field is unknown. The bool out-param is set true
-// when the field is a [0, 1] ratio (so the caller can clamp).
+// when the field is a [0, 1] ratio (so the caller can range-check the
+// candidate).
 double* country_field_ptr(core::CountryState& c,
                           std::string_view field,
                           bool& is_ratio) {
     is_ratio = true;
 
-    // Top-level CountryState numeric fields.
     if (field == "legal_tax_burden")          return &c.legal_tax_burden;
     if (field == "fiscal_capacity")           return &c.fiscal_capacity;
     if (field == "administrative_efficiency") return &c.administrative_efficiency;
@@ -43,7 +56,6 @@ double* country_field_ptr(core::CountryState& c,
     if (field == "military_power")            return &c.military_power;
     if (field == "threat_perception")         return &c.threat_perception;
 
-    // Absolute (non-ratio) fields.
     is_ratio = false;
     if (field == "gdp")            return &c.gdp;
     if (field == "tax_revenue")    return &c.tax_revenue;
@@ -54,7 +66,6 @@ double* country_field_ptr(core::CountryState& c,
 
 double* country_budget_field_ptr(core::CountryState& c,
                                  std::string_view category) {
-    // All budget categories are [0, 1] ratios.
     if (category == "administration")  return &c.budget.administration;
     if (category == "military")        return &c.budget.military;
     if (category == "education")       return &c.budget.education;
@@ -80,8 +91,6 @@ double* faction_field_ptr(core::FactionState& f,
     return nullptr;
 }
 
-// Splits "faction:military.support" into ("military", "support").
-// Returns false if the target doesn't have the expected shape.
 bool split_faction_target(std::string_view target,
                           std::string_view& out_type,
                           std::string_view& out_field) {
@@ -149,28 +158,21 @@ core::Result<bool> resolve_target(core::GameState& state,
             if (f.type != type)     continue;
             double* p = faction_field_ptr(f, field, is_ratio);
             if (p == nullptr) {
-                // First matching faction confirms the field is unknown
-                // for THIS faction shape; fail fast.
                 return core::Result<bool>::failure(
                     ctx + ": unknown faction field '" + std::string(field) +
                     "' in target '" + std::string(target) + "'");
             }
             out.faction_fields.push_back(p);
+            out.faction_id_codes.push_back(f.id_code);
             field_known = true;
         }
         if (!field_known) {
-            // No factions of this type belong to the actor. We don't
-            // know yet whether `field` is valid - validate against a
-            // dummy FactionState so a typo is still caught at
-            // pre-flight time.
             core::FactionState probe;
             if (faction_field_ptr(probe, field, is_ratio) == nullptr) {
                 return core::Result<bool>::failure(
                     ctx + ": unknown faction field '" + std::string(field) +
                     "' in target '" + std::string(target) + "'");
             }
-            // Valid field, just zero matching factions. The effect
-            // will be a silent no-op at apply time.
             out.faction_is_ratio = is_ratio;
             return core::Result<bool>::success(true);
         }
@@ -188,15 +190,71 @@ bool op_recognised(std::string_view op) {
     return op == "add" || op == "set";
 }
 
-void apply_op(double* dst, std::string_view op, double value, bool is_ratio) {
-    if (op == "add") {
-        *dst += value;
-    } else {  // "set"
-        *dst = value;
+// Compute the candidate value the op would produce. `e.value` is
+// already validated finite by the caller. `is_ratio` selects the
+// formula:
+//
+//   - `set`: candidate = delta (direct write; strict-validates).
+//
+//   - `add` on a NON-RATIO field: candidate = old + delta
+//     (linear; gdp / budget_balance / resources allow large signed
+//     swings).
+//
+//   - `add` on a RATIO field: ASYMPTOTIC formula
+//
+//       positive delta: new = old + delta * (1 - old)
+//       negative delta: new = old + delta * old
+//
+//     Logistic-style update that converges toward the range
+//     bounds rather than crossing them. Research grounding:
+//     Polity / V-Dem institutional indicators are bounded scales
+//     where successive shocks produce diminishing returns near
+//     the bounds (Marshall & Jaggers 2002 Polity IV; Coppedge et
+//     al. 2011 V-Dem). Besley & Persson 2009 state-capacity model
+//     treats capacity as a slow-changing stock with proportionally
+//     smaller responses near the asymptote. Replacing the previous
+//     linear `old + delta` with this form makes the strict
+//     `feedback_no_silent_degradation` validator pass by
+//     construction on ratio fields — long-horizon AI policy
+//     application can't saturate past 0 or 1.
+//
+//     Effect-shape consequence for authors: `+0.05` on a 0.50
+//     ratio lands at 0.525 (vs the pre-PR linear 0.55); the same
+//     `+0.05` on a 0.10 ratio lands at 0.145 (close to linear far
+//     from the bound). The asymptotic shape is most visible near
+//     the bounds.
+double compute_candidate(double old_value, std::string_view op,
+                         double delta, bool is_ratio) {
+    if (op == "set") return delta;
+    if (!is_ratio) return old_value + delta;
+    if (delta >= 0.0) return old_value + delta * (1.0 - old_value);
+    return old_value + delta * old_value;
+}
+
+// Validate a candidate against its target's range. Returns nullopt
+// on success; a populated failure string on violation. Caller wraps
+// in their own Result<T>.
+std::optional<std::string> validate_candidate(
+        std::size_t effect_index,
+        std::string_view target,
+        const std::string& entity_label,  // "" for country targets;
+                                          // "faction '<id_code>'" otherwise
+        bool is_ratio,
+        double candidate) {
+    const std::string ctx =
+        "effects[" + std::to_string(effect_index) + "] (target '" +
+        std::string(target) + "'" +
+        (entity_label.empty() ? "" : " on " + entity_label) + ")";
+
+    if (!std::isfinite(candidate)) {
+        return ctx + ": candidate value " + std::to_string(candidate) +
+            " is not finite";
     }
-    if (is_ratio) {
-        *dst = std::clamp(*dst, 0.0, 1.0);
+    if (is_ratio && (candidate < 0.0 || candidate > 1.0)) {
+        return ctx + ": candidate value " + std::to_string(candidate) +
+            " escapes ratio range [0, 1]";
     }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -216,7 +274,7 @@ core::Result<ApplyOutcome> apply_effects_to_actor(
             " is not a valid index into state.countries");
     }
 
-    // ---- Pre-flight: resolve every effect's target / op ----------
+    // ---- Pre-flight phase 1: resolve every effect's target / op ----
     std::vector<ResolvedTarget> resolved;
     resolved.reserve(effects.size());
 
@@ -247,18 +305,66 @@ core::Result<ApplyOutcome> apply_effects_to_actor(
         resolved.push_back(std::move(rt));
     }
 
-    // ---- Apply ---------------------------------------------------
-    ApplyOutcome outcome;
+    // ---- Pre-flight phase 2: compute candidates and validate -------
+    // Post-M6.7 hardening (`feedback_no_silent_degradation`): the
+    // previous `std::clamp(*dst, 0.0, 1.0)` post-op safety net is
+    // gone. Each candidate is computed against the CURRENT value of
+    // the target and validated BEFORE any state mutation. Any
+    // out-of-range or non-finite candidate fails the whole call.
+    std::vector<PreparedWrite> writes;
+    // Reserve a conservative upper bound (country writes contribute
+    // one entry; faction broadcasts contribute up to N).
+    writes.reserve(effects.size());
+
     for (std::size_t i = 0; i < effects.size(); ++i) {
         const auto& e  = effects[i];
-        auto& rt       = resolved[i];
+        const auto& rt = resolved[i];
 
         if (rt.country_field != nullptr) {
-            apply_op(rt.country_field, e.op, e.value, rt.country_is_ratio);
+            const double candidate =
+                compute_candidate(*rt.country_field, e.op, e.value,
+                                  rt.country_is_ratio);
+            if (auto err = validate_candidate(
+                    i, e.target, /*entity_label=*/"",
+                    rt.country_is_ratio, candidate)) {
+                return core::Result<ApplyOutcome>::failure(std::move(*err));
+            }
+            writes.push_back({rt.country_field, candidate});
         } else {
-            // faction broadcast - may be empty (no-op)
-            for (double* p : rt.faction_fields) {
-                apply_op(p, e.op, e.value, rt.faction_is_ratio);
+            for (std::size_t k = 0; k < rt.faction_fields.size(); ++k) {
+                double* p = rt.faction_fields[k];
+                const std::string& id_code = rt.faction_id_codes[k];
+                const double candidate =
+                    compute_candidate(*p, e.op, e.value,
+                                      rt.faction_is_ratio);
+                if (auto err = validate_candidate(
+                        i, e.target,
+                        /*entity_label=*/"faction '" + id_code + "'",
+                        rt.faction_is_ratio, candidate)) {
+                    return core::Result<ApplyOutcome>::failure(std::move(*err));
+                }
+                writes.push_back({p, candidate});
+            }
+        }
+    }
+
+    // ---- Commit: every candidate has been validated ----------------
+    ApplyOutcome outcome;
+    // Walk effects again to bookkeep the per-effect outcome counters;
+    // walk writes in parallel using a manual cursor since faction
+    // broadcasts contribute multiple writes per effect.
+    std::size_t write_cursor = 0;
+    for (std::size_t i = 0; i < effects.size(); ++i) {
+        const auto& rt = resolved[i];
+
+        if (rt.country_field != nullptr) {
+            *writes[write_cursor].field_ptr = writes[write_cursor].candidate;
+            ++write_cursor;
+        } else {
+            for (std::size_t k = 0; k < rt.faction_fields.size(); ++k) {
+                *writes[write_cursor].field_ptr =
+                    writes[write_cursor].candidate;
+                ++write_cursor;
             }
             outcome.faction_targets_updated +=
                 static_cast<int>(rt.faction_fields.size());
@@ -278,11 +384,6 @@ core::Result<ApplyOutcome> apply_policy_effects(
     // duration would stall the call. DataLoader admits anything up to
     // INT_MAX (it can't depend on this module without inverting the
     // layering), so PolicySystem is the last line of defense.
-    //
-    // Duration validation happens BEFORE delegating to
-    // apply_effects_to_actor so a bad duration_days does not even
-    // run pre-flight against effects (mirrors the M1.15 contract
-    // that state stays untouched on duration failure).
     if (policy.duration_days < 0) {
         return core::Result<ApplyOutcome>::failure(
             "apply_policy_effects: policy.duration_days must be >= 0 (got " +
@@ -305,10 +406,6 @@ core::Result<ApplyOutcome> apply_policy_effects(
     // ---- M1.15: record this enactment as an active policy --------
     // Reached only after pre-flight passed AND every effect applied.
     // expires_on = state.current_date + policy.duration_days.
-    // duration_days was bounds-checked above (>= 0 and <=
-    // kMaxTrackedPolicyDurationDays) before any state mutation, so
-    // advance_days is safe to call directly. M1.15 only tracks; no
-    // system removes expired entries.
     core::GameDate expires_on = state.current_date;
     expires_on.advance_days(policy.duration_days);
     auto& country_ref =

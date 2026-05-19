@@ -110,24 +110,35 @@ TEST_CASE("react: loyalty above target moves DOWN toward it") {
     CHECK(state.factions[0].loyalty == doctest::Approx(0.74));
 }
 
-TEST_CASE("react: clamps loyalty at the upper bound") {
+TEST_CASE("Hardening: react REJECTS pathological out-of-range country.stability") {
+    // Post-M6.7 strict numeric validation: the previous post-drift
+    // clamp is gone. An out-of-range `country.stability` (e.g. 10.0)
+    // is rejected at input validation; no faction is mutated.
     GameState state;
     state.countries.push_back(country_with(/*stability=*/10.0, 0.5));   // pathological
     state.factions.push_back(faction_with(0, CountryId{0}, 0.99, 0.50));
+    const double original = state.factions[0].loyalty;
 
-    REQUIRE(fs_sys::react(state, CountryId{0}).ok());
-    // delta = (10.0 - 0.99) * 0.10 = 0.901 -> 0.99 + 0.901 = 1.891 -> clamp to 1.0
-    CHECK(state.factions[0].loyalty == doctest::Approx(1.0));
+    const auto r = fs_sys::react(state, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.stability") != std::string::npos);
+    CHECK(r.error().find("not a finite ratio in [0, 1]")
+          != std::string::npos);
+    CHECK(state.factions[0].loyalty == doctest::Approx(original));
 }
 
-TEST_CASE("react: clamps support at the lower bound") {
+TEST_CASE("Hardening: react REJECTS pathological out-of-range country.legitimacy") {
     GameState state;
     state.countries.push_back(country_with(0.5, /*legitimacy=*/-2.0));  // pathological
     state.factions.push_back(faction_with(0, CountryId{0}, 0.50, 0.01));
+    const double original = state.factions[0].support;
 
-    REQUIRE(fs_sys::react(state, CountryId{0}).ok());
-    // delta = (-2.0 - 0.01) * 0.05 = -0.1005 -> 0.01 - 0.1005 = -0.0905 -> clamp to 0.0
-    CHECK(state.factions[0].support == doctest::Approx(0.0));
+    const auto r = fs_sys::react(state, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.legitimacy") != std::string::npos);
+    CHECK(r.error().find("not a finite ratio in [0, 1]")
+          != std::string::npos);
+    CHECK(state.factions[0].support == doctest::Approx(original));
 }
 
 // =====================================================================

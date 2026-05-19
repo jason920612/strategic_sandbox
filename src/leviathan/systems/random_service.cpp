@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <utility>
 
 namespace leviathan::systems::random {
 
@@ -101,38 +103,75 @@ double draw_double(core::RandomState& rng,
     return min_inclusive + u * (max_exclusive - min_inclusive);
 }
 
-bool draw_bool(core::RandomState& rng, double probability,
-               std::string_view tag) {
-    // std::clamp's contract: returns hi if v > hi, lo if v < lo, else v.
-    // For NaN: NaN < lo is false and lo < NaN is false, so the chain
-    // returns NaN. Use a NaN check up front so callers do not need to
-    // worry about NaN propagation through downstream comparisons.
-    if (std::isnan(probability)) {
-        probability = 0.0;
+core::Result<bool> draw_bool(core::RandomState& rng, double probability,
+                             std::string_view tag) {
+    // Post-M6.7 hardening (`feedback_no_silent_degradation` +
+    // `feedback_api_signature_expresses_failure`): the previous
+    // "NaN clamps to 0; out-of-range clamps to nearest bound"
+    // silent-fallback shape is gone. Validate first; reject
+    // loudly; consume NO draw on rejection so the rng.counter
+    // doesn't advance on a malformed call.
+    if (!std::isfinite(probability) ||
+        probability < 0.0 || probability > 1.0) {
+        std::string err =
+            "draw_bool: probability is not a finite ratio in [0, 1] "
+            "(got ";
+        if (std::isnan(probability)) {
+            err += "NaN)";
+        } else if (probability > 0.0 && std::isinf(probability)) {
+            err += "+Inf)";
+        } else if (probability < 0.0 && std::isinf(probability)) {
+            err += "-Inf)";
+        } else {
+            err += std::to_string(probability) + ")";
+        }
+        return core::Result<bool>::failure(std::move(err));
     }
-    const double clamped = std::clamp(probability, 0.0, 1.0);
-    return draw_unit(rng, tag) < clamped;
+    const double u = draw_unit(rng, tag);
+    return core::Result<bool>::success(u < probability);
 }
 
-std::size_t weighted_choice(core::RandomState& rng,
-                            const std::vector<double>& weights,
-                            std::string_view tag) {
-    assert(!weights.empty() &&
-           "weighted_choice: weights must not be empty");
-
+core::Result<std::size_t>
+weighted_choice(core::RandomState&         rng,
+                const std::vector<double>& weights,
+                std::string_view           tag) {
+    // Post-M6.7 hardening (`feedback_no_silent_degradation` +
+    // `feedback_api_signature_expresses_failure`): assert-only
+    // validation is gone. Validate everything first; reject loudly
+    // and consume NO draw on failure so rng.counter stays put on
+    // any malformed call.
+    using R = core::Result<std::size_t>;
+    if (weights.empty()) {
+        return R::failure(
+            "weighted_choice: weights vector must not be empty");
+    }
     double total = 0.0;
-    for (double w : weights) {
-        assert(std::isfinite(w) &&
-               "weighted_choice: weights must be finite");
-        assert(w >= 0.0 &&
-               "weighted_choice: weights must be non-negative");
+    for (std::size_t i = 0; i < weights.size(); ++i) {
+        const double w = weights[i];
+        if (!std::isfinite(w)) {
+            std::string err =
+                "weighted_choice: weights[" + std::to_string(i) +
+                "] is not finite (got ";
+            if (std::isnan(w))               err += "NaN)";
+            else if (w > 0.0)                err += "+Inf)";
+            else                             err += "-Inf)";
+            return R::failure(std::move(err));
+        }
+        if (w < 0.0) {
+            return R::failure(
+                "weighted_choice: weights[" + std::to_string(i) +
+                "] = " + std::to_string(w) +
+                " is negative");
+        }
         total += w;
     }
-    // Even if every individual weight is finite, the sum can saturate to
-    // +inf if the caller hands us a vector of enormous values. Catch that
-    // up front rather than producing a meaningless choice. (PR #5 review.)
-    assert(std::isfinite(total) &&
-           "weighted_choice: sum of weights overflowed to non-finite");
+    if (!std::isfinite(total)) {
+        // Even if every individual weight was finite the sum can
+        // saturate to ±Inf or fold to NaN under exotic mixes.
+        return R::failure(
+            "weighted_choice: sum of weights = " +
+            std::to_string(total) + " is not finite");
+    }
 
     if (total <= 0.0) {
         // All-zero case. Still consume exactly one draw so the caller's
@@ -141,7 +180,7 @@ std::size_t weighted_choice(core::RandomState& rng,
         // weights while another (with a slightly different state)
         // hits the normal path.
         (void) draw_unit(rng, tag);
-        return 0;
+        return R::success(0);
     }
 
     const double r = draw_unit(rng, tag) * total;
@@ -150,10 +189,10 @@ std::size_t weighted_choice(core::RandomState& rng,
     for (std::size_t i = 0; i + 1 < weights.size(); ++i) {
         cumulative += weights[i];
         if (r < cumulative) {
-            return i;
+            return R::success(i);
         }
     }
-    return weights.size() - 1;
+    return R::success(weights.size() - 1);
 }
 
 }  // namespace leviathan::systems::random

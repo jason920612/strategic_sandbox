@@ -284,11 +284,10 @@ TEST_CASE("Issue #112: AI option chooser picks state-best option, NOT options[0]
         EventOptionEffectMode::OptionOnly));
 
     REQUIRE(eng::tick_events(s));
-    // anti_corruption picked: corruption-axis desire is -0.80 (high
-    // bad axis), effect value is -0.05; score = -0.05 * -0.80 = +0.04
-    // > do_nothing's stability -0.01 * 0.50 = -0.005. So corruption
-    // drops to 0.75.
-    CHECK(s.countries[0].corruption == doctest::Approx(0.75));
+    // anti_corruption picked: corruption-axis desire is -0.80, effect
+    // value -0.05; score = -0.05 * -0.80 = +0.04 wins over do_nothing.
+    // Mechanical asymptotic-add: 0.80 + (-0.05) * 0.80 = 0.76.
+    CHECK(s.countries[0].corruption == doctest::Approx(0.76));
 }
 
 TEST_CASE("Issue #112: option_effect_mode = OptionOnly applies only option effects") {
@@ -308,8 +307,9 @@ TEST_CASE("Issue #112: option_effect_mode = OptionOnly applies only option effec
         EventOptionEffectMode::OptionOnly));
 
     REQUIRE(eng::tick_events(s));
-    // Option only ran: 0.50 + 0.10 = 0.60 (base -0.99 ignored).
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.60));
+    // Option only ran (base -0.99 ignored). Mechanical asymptotic-add:
+    //   0.50 + 0.10 * (1 - 0.50) = 0.55
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.55));
 }
 
 TEST_CASE("Issue #112: option_effect_mode = BaseThenOption applies both, base first") {
@@ -329,8 +329,10 @@ TEST_CASE("Issue #112: option_effect_mode = BaseThenOption applies both, base fi
         EventOptionEffectMode::BaseThenOption));
 
     REQUIRE(eng::tick_events(s));
-    // base -0.10 then option +0.20 → 0.50 - 0.10 + 0.20 = 0.60.
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.60));
+    // Mechanical asymptotic-add (base then option):
+    //   base   -0.10 on 0.50:        0.50 + (-0.10) * 0.50 = 0.45
+    //   option +0.20 on 0.45:        0.45 + 0.20 * (1 - 0.45) = 0.56
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.56));
 }
 
 TEST_CASE("Issue #112: option_effect_mode = OptionThenBase applies both, option first") {
@@ -350,10 +352,12 @@ TEST_CASE("Issue #112: option_effect_mode = OptionThenBase applies both, option 
         EventOptionEffectMode::OptionThenBase));
 
     REQUIRE(eng::tick_events(s));
-    // Same net result (commutative for these effects) but the
-    // ordering pin is the load-bearing thing; the calculated
-    // delta is identical 0.10 either way. 0.50 + 0.20 - 0.10 = 0.60.
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.60));
+    // Mechanical asymptotic-add (option then base):
+    //   option +0.20 on 0.50:        0.50 + 0.20 * (1 - 0.50) = 0.60
+    //   base   -0.10 on 0.60:        0.60 + (-0.10) * 0.60   = 0.54
+    // The ordering pin is the load-bearing thing; under asymptotic-add
+    // the result IS sensitive to order (was commutative under linear).
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.54));
     CHECK(s.event_history.size() == 1u);
 }
 
@@ -415,8 +419,10 @@ TEST_CASE("Issue #112: followup whose triggers DO match post-parent-apply record
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[0].event_id_code == "parent");
     CHECK(s.event_history[1].event_id_code == "followup");
-    // Parent dropped 0.50 → 0.45 then followup added 0.03 → 0.48.
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.48));
+    // Mechanical asymptotic-add (sequential):
+    //   parent   -0.05 on 0.50:  0.50 + (-0.05) * 0.50 = 0.475
+    //   followup +0.03 on 0.475: 0.475 + 0.03 * (1 - 0.475) = 0.49075
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.49075));
 }
 
 TEST_CASE("Issue #112: followup chain immediate-predecessor `followup_of` metadata") {
@@ -428,13 +434,19 @@ TEST_CASE("Issue #112: followup chain immediate-predecessor `followup_of` metada
     GameState s;
     s.countries.push_back(make_country(0, "GER", /*stab*/0.10, /*leg*/0.50));
 
+    // Asymptotic-add trajectory under repeated -0.10 from leg=0.50:
+    //   after a: 0.50 + (-0.10) * 0.50  = 0.45
+    //   after b: 0.45 + (-0.10) * 0.45  = 0.405
+    // Trigger thresholds chosen above the post-apply value but
+    // below the predecessor's post-apply value, so the conditional
+    // followup chain proceeds.
     s.events.push_back(make_event(
         "c", "tail",
-        { trig("country.legitimacy", "lt", 0.35) },   // matches after b applies (0.30)
+        { trig("country.legitimacy", "lt", 0.42) },   // matches after b applies (0.405)
         { peff("country.legitimacy", "add", -0.10) }));
     s.events.push_back(make_event(
         "b", "mid",
-        { trig("country.legitimacy", "lt", 0.45) },   // matches after a applies (0.40)
+        { trig("country.legitimacy", "lt", 0.48) },   // matches after a applies (0.45)
         { peff("country.legitimacy", "add", -0.10) },
         /*weights=*/{},
         /*options=*/{},
@@ -509,15 +521,17 @@ TEST_CASE("Issue #112: followup max-depth guard stops at kMaxFollowupDepth = 5")
     s.countries.push_back(make_country(0, "GER", /*stab*/0.10,
                                        /*leg*/0.50));
 
-    // Build the chain bottom-up so vector order matches chain order:
-    //   a (trigger stab<0.20)
-    //   b (trigger leg<0.46 — matches after a applied -0.05 → 0.45)
-    //   c (trigger leg<0.41 — matches after b applied → 0.40)
-    //   d (trigger leg<0.36)
-    //   e (trigger leg<0.31)
-    //   f (trigger leg<0.26)
-    //   g (trigger leg<0.21) — would match if reached, but depth
-    //                          5 stops the chain at f.
+    // Asymptotic-add trajectory under repeated -0.05 from leg=0.50:
+    //   after a: 0.50 + (-0.05) * 0.50  ≈ 0.475
+    //   after b: 0.475 + (-0.05) * 0.475 ≈ 0.45125
+    //   after c: 0.45125 + (-0.05) * 0.45125 ≈ 0.4287
+    //   after d: 0.4287 + (-0.05) * 0.4287 ≈ 0.4072
+    //   after e: 0.4072 + (-0.05) * 0.4072 ≈ 0.3869
+    //   after f: 0.3869 + (-0.05) * 0.3869 ≈ 0.3676
+    // Each chain step's trigger threshold is set above the
+    // post-apply value but below the predecessor's post-apply
+    // value, so the conditional followup chain proceeds AND
+    // only 'a' matches the initial-snapshot per-category bucket.
     auto chain_event = [](const std::string& id,
                           double leg_trig,
                           const std::string& followup_id) {
@@ -531,19 +545,19 @@ TEST_CASE("Issue #112: followup max-depth guard stops at kMaxFollowupDepth = 5")
     };
     // First event uses a stability-trigger so it matches the initial
     // state (legitimacy=0.50 does NOT satisfy any of the chain
-    // legit-triggers).
+    // legit-triggers below).
     s.events.push_back(make_event(
         "a", "chain",
         { trig("country.stability", "lt", 0.20) },
         { peff("country.legitimacy", "add", -0.05) },
         /*weights=*/{}, /*options=*/{},
         /*followups=*/{"b"}));
-    s.events.push_back(chain_event("b", 0.46, "c"));
-    s.events.push_back(chain_event("c", 0.41, "d"));
-    s.events.push_back(chain_event("d", 0.36, "e"));
-    s.events.push_back(chain_event("e", 0.31, "f"));
-    s.events.push_back(chain_event("f", 0.26, "g"));
-    s.events.push_back(chain_event("g", 0.21, ""));
+    s.events.push_back(chain_event("b", 0.48, "c"));
+    s.events.push_back(chain_event("c", 0.46, "d"));
+    s.events.push_back(chain_event("d", 0.44, "e"));
+    s.events.push_back(chain_event("e", 0.42, "f"));
+    s.events.push_back(chain_event("f", 0.40, "g"));
+    s.events.push_back(chain_event("g", 0.38, ""));
 
     REQUIRE(eng::tick_events(s));
     // a + 5 followups before max-depth guard stops = 6 entries.

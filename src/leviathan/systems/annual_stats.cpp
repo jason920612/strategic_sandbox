@@ -4,9 +4,15 @@
 #include <sstream>
 #include <string>
 
+#include "internal/numeric_guards.hpp"
+
 namespace leviathan::systems::annual_stats {
 
+namespace ng = leviathan::systems::detail;
+
 namespace {
+
+constexpr const char* kModule = "annual_stats::snapshot";
 
 std::string format_double(double v) {
     std::ostringstream oss;
@@ -16,14 +22,23 @@ std::string format_double(double v) {
 
 }  // namespace
 
-AnnualRow snapshot(const core::GameState& state, int year) {
+core::Result<AnnualRow> snapshot(const core::GameState& state, int year) {
     AnnualRow row;
     row.year                = year;
     row.country_count       = state.countries.size();
     row.event_history_count = state.event_history.size();
 
+    // Post-M6.7 strict-fallback hardening: empty state.countries is
+    // now a hard failure rather than a zero-row success. The runner
+    // gates the year-boundary call so empty-world simulations skip
+    // emission entirely.
     if (state.countries.empty()) {
-        return row;
+        return core::Result<AnnualRow>::failure(
+            std::string(kModule) +
+            ": state.countries is empty (year " +
+            std::to_string(year) +
+            ") — empty-world simulations should not emit annual"
+            " stats; the runner is expected to skip the call");
     }
 
     double sum_stability  = 0.0;
@@ -31,6 +46,26 @@ AnnualRow snapshot(const core::GameState& state, int year) {
     double sum_gdp        = 0.0;
     double sum_corruption = 0.0;
     for (const auto& c : state.countries) {
+        if (auto err = ng::require_unit_ratio<AnnualRow>(
+                kModule, "country", c.id_code,
+                "country.stability", c.stability)) {
+            return *err;
+        }
+        if (auto err = ng::require_unit_ratio<AnnualRow>(
+                kModule, "country", c.id_code,
+                "country.legitimacy", c.legitimacy)) {
+            return *err;
+        }
+        if (auto err = ng::require_unit_ratio<AnnualRow>(
+                kModule, "country", c.id_code,
+                "country.corruption", c.corruption)) {
+            return *err;
+        }
+        if (auto err = ng::require_finite_double<AnnualRow>(
+                kModule, "country", c.id_code,
+                "country.gdp", c.gdp)) {
+            return *err;
+        }
         sum_stability  += c.stability;
         sum_legitimacy += c.legitimacy;
         sum_gdp        += c.gdp;
@@ -42,7 +77,7 @@ AnnualRow snapshot(const core::GameState& state, int year) {
     row.avg_gdp         = sum_gdp        / n;
     row.avg_corruption  = sum_corruption / n;
     row.total_gdp       = sum_gdp;
-    return row;
+    return core::Result<AnnualRow>::success(row);
 }
 
 std::string write_csv_header() {

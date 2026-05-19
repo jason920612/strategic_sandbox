@@ -269,9 +269,12 @@ TEST_CASE("Issue #112 residual: stronger friendly neighbour does NOT create mili
     state.relationships.push_back(friendly);
     state.player_country = CountryId{1};
 
-    CHECK(desire::for_country(state.countries[0],
-                              "country.military_power",
-                              state) == doctest::Approx(0.0));
+    {
+        auto d = desire::for_country(state.countries[0],
+                                     "country.military_power", state);
+        REQUIRE(d);
+        CHECK(d.value() == doctest::Approx(0.0));
+    }
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
@@ -279,9 +282,12 @@ TEST_CASE("Issue #112 residual: stronger friendly neighbour does NOT create mili
 
     friendly.relationship = -0.20;
     state.relationships[0] = friendly;
-    CHECK(desire::for_country(state.countries[0],
-                              "country.military_power",
-                              state) == doctest::Approx(0.4));
+    {
+        auto d = desire::for_country(state.countries[0],
+                                     "country.military_power", state);
+        REQUIRE(d);
+        CHECK(d.value() == doctest::Approx(0.4));
+    }
     const auto hostile = ai::select_policies(state);
     REQUIRE(hostile);
     REQUIRE(hostile.value().size() >= 1u);
