@@ -562,3 +562,98 @@ TEST_CASE("M7.1 save deserialize: missing required faction_demands field rejecte
     CHECK(r.error().find("faction_demands") != std::string::npos);
     CHECK(r.error().find("missing required field") != std::string::npos);
 }
+
+// =====================================================================
+// Atomicity (PR #119 review fix)
+//
+// `tick_generate` must be ALL-OR-NONE: if any candidate fails
+// validation, NO demand is appended. Previous implementation
+// appended each eligible candidate as it walked
+// `state.factions`, so a later malformed candidate could leave
+// the vector partially mutated.
+// =====================================================================
+
+TEST_CASE("M7.1 atomicity: first eligible faction valid, second eligible faction has unresolved country_id_code → no demand appended") {
+    GameState s;
+    s.countries.push_back(make_country(0, "X"));
+    // 1st eligible: passes validation.
+    s.factions.push_back(make_faction(
+        0, 0, "X_m", "X", "military", 0.90));
+    // 2nd eligible: type in §7 allowlist + radicalism above
+    // threshold (so validation would proceed), but
+    // country_id_code does NOT resolve.
+    s.factions.push_back(make_faction(
+        1, 0, "X_w", "GHOST_COUNTRY", "workers", 0.90));
+
+    const auto r = fd::tick_generate(s, GameDate(1930, 4, 1));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("GHOST_COUNTRY")        != std::string::npos);
+    CHECK(r.error().find("does not match any")   != std::string::npos);
+    // ATOMIC: no demand from the FIRST eligible faction either.
+    CHECK(s.faction_demands.empty());
+}
+
+TEST_CASE("M7.1 atomicity: first eligible faction valid, second eligible faction has NaN loyalty → no demand appended") {
+    GameState s;
+    s.countries.push_back(make_country(0, "X"));
+    s.factions.push_back(make_faction(
+        0, 0, "X_m", "X", "military", 0.90));
+    auto bad = make_faction(1, 0, "X_w", "X", "workers", 0.90);
+    bad.loyalty = std::numeric_limits<double>::quiet_NaN();
+    s.factions.push_back(bad);
+
+    const auto r = fd::tick_generate(s, GameDate(1930, 4, 1));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("X_w")        != std::string::npos);
+    CHECK(r.error().find("loyalty")    != std::string::npos);
+    CHECK(s.faction_demands.empty());
+}
+
+TEST_CASE("M7.1 atomicity: first eligible faction valid, second eligible faction has empty id_code → no demand appended") {
+    GameState s;
+    s.countries.push_back(make_country(0, "X"));
+    s.factions.push_back(make_faction(
+        0, 0, "X_m", "X", "military", 0.90));
+    auto bad = make_faction(1, 0, "", "X", "workers", 0.90);
+    s.factions.push_back(bad);
+
+    const auto r = fd::tick_generate(s, GameDate(1930, 4, 1));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("empty id_code") != std::string::npos);
+    CHECK(s.faction_demands.empty());
+}
+
+TEST_CASE("M7.1 atomicity: pre-existing Pending demand survives a failed tick_generate") {
+    // Seed state with an EXISTING Pending demand. A failed
+    // generate call must not corrupt that record either.
+    GameState s;
+    s.countries.push_back(make_country(0, "X"));
+    s.factions.push_back(make_faction(
+        0, 0, "X_m", "X", "military", 0.90));
+    // Seed: pretend a prior tick already generated for the
+    // military faction.
+    REQUIRE(fd::tick_generate(s, GameDate(1930, 4, 1)));
+    REQUIRE(s.faction_demands.size() == 1u);
+    const std::string before = ss::serialize(s);
+
+    // Now add a second eligible-but-malformed faction; the
+    // generate call must fail loudly and the existing Pending
+    // demand must remain byte-identical.
+    s.factions.push_back(make_faction(
+        1, 0, "X_w", "GHOST_COUNTRY", "workers", 0.90));
+    const auto r = fd::tick_generate(s, GameDate(1930, 5, 1));
+    REQUIRE(r.failed());
+    // Vector size unchanged; pre-existing record bytes unchanged.
+    CHECK(s.faction_demands.size() == 1u);
+    // serialize/deserialize the pre-call snapshot; the only
+    // delta from `before` should be the SECOND faction record
+    // (which was added before the failed call).
+    // We cannot directly compare serialize(s) == before because
+    // the second faction is now in state.factions. Instead,
+    // verify the seeded demand is unchanged.
+    CHECK(s.faction_demands[0].faction_id_code == "X_m");
+    CHECK(s.faction_demands[0].status ==
+          FactionDemandStatus::Pending);
+    CHECK(s.faction_demands[0].created_on == GameDate(1930, 4, 1));
+    (void)before;
+}

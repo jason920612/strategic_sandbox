@@ -163,6 +163,27 @@ core::Result<GenerateOutcome> tick_generate(
 
     out.factions_considered = static_cast<int>(state.factions.size());
 
+    // Atomicity contract (PR #119 review fix): tick_generate must
+    // be ALL-OR-NONE. The previous implementation appended each
+    // eligible demand to `state.faction_demands` as it walked the
+    // factions vector, so a later candidate failing validation
+    // would return `Result::failure` AFTER one or more earlier
+    // candidates had already mutated state — violating
+    // `feedback_no_silent_degradation` / candidate-validate-commit.
+    //
+    // The implementation below splits the work into three passes:
+    //
+    //   1. Collect the (faction_id_code, kind) pairs already
+    //      Pending in `state.faction_demands`.
+    //   2. Walk every faction; validate fully against the §7
+    //      allowlist + invariants; STAGE the resulting demand in
+    //      a local vector. Any validation failure returns
+    //      Result::failure BEFORE any mutation of
+    //      state.faction_demands.
+    //   3. Only after pass 2 succeeds for ALL eligible factions,
+    //      commit the staged demands to `state.faction_demands`
+    //      in a single sweep.
+
     // ---- Pass 1: collect (faction_id_code, kind) pairs that
     //              already have a Pending demand. -------------------
     std::unordered_set<std::string> pending_pairs;
@@ -173,11 +194,9 @@ core::Result<GenerateOutcome> tick_generate(
         }
     }
 
-    // ---- Pass 2: walk factions; for each candidate
-    //              (type in RFC-020 §7 allowlist AND
-    //               radicalism > threshold AND
-    //               no matching Pending demand already), validate
-    //              the faction's invariants BEFORE appending.
+    // ---- Pass 2: validate every candidate; STAGE staged demands
+    //              in a local vector. No state mutation in this
+    //              pass.
     //
     // Pre-flight only validates factions that WOULD generate a
     // demand: per `feedback_no_silent_degradation`, a malformed
@@ -193,6 +212,7 @@ core::Result<GenerateOutcome> tick_generate(
     // actually mutate.
     //
     // Insertion order = state.factions order (deterministic).
+    std::vector<core::FactionDemand> staged;
     for (const auto& f : state.factions) {
         auto map_r = map_faction_type_to_demand_kind(f.type);
         if (!map_r) {
@@ -217,7 +237,7 @@ core::Result<GenerateOutcome> tick_generate(
         if (f.radicalism <= kFactionDemandGenerateRadicalismThreshold) {
             continue;
         }
-        // Below this point we will append a demand for this
+        // Below this point we WOULD stage a demand for this
         // faction. The remaining invariants must hold.
         if (f.id_code.empty()) {
             return core::Result<GenerateOutcome>::failure(
@@ -269,9 +289,25 @@ core::Result<GenerateOutcome> tick_generate(
         demand.id_code         = compose_demand_id_code(
             f.id_code, kind, current_date);
 
-        state.faction_demands.push_back(std::move(demand));
+        // STAGE — do not mutate state.faction_demands yet.
+        // pending_pairs is updated locally so an unlikely
+        // duplicate (e.g. two factions with the same id_code,
+        // which save / loader already rejects, but defensively
+        // here) does not stage two demands for the same
+        // (id_code, kind) pair in one tick.
         pending_pairs.insert(pair_key);
-        ++out.demands_generated;
+        staged.push_back(std::move(demand));
+    }
+
+    // ---- Pass 3: commit. All validation passed; append the
+    //              staged demands in deterministic insertion order.
+    //              On failure paths above, `state.faction_demands`
+    //              is byte-identical to its pre-call value.
+    out.demands_generated = static_cast<int>(staged.size());
+    state.faction_demands.reserve(
+        state.faction_demands.size() + staged.size());
+    for (auto& d : staged) {
+        state.faction_demands.push_back(std::move(d));
     }
 
     return core::Result<GenerateOutcome>::success(out);
