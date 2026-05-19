@@ -20,16 +20,17 @@ docs cross-link here rather than re-litigating the gap.
 ## 1. Status
 
 Current implementation milestones **M0 – M5 are closed as
-implementation milestones**. M6 is in progress at **M6.8**
-(`--debug` runner flag reveals each fired event's
-`EventDefinition.true_cause` (M6.1) on the events.jsonl
-artefact — see §1.3 below; the truth is recorded in
-`state.logs` unconditionally so `save.json` is byte-identical
-across the debug toggle). Predecessor: **M6.7** (corruption
-influence on `information_accuracy`), followed by a
-**post-M6.7 hardening sweep (NOT a milestone)** that applies
-`feedback_no_silent_degradation` project-wide and migrates
-ratio-target `add` from linear to asymptotic — see §1.2.
+implementation milestones**. M6 is in progress at **M6.9**
+(`event_firer` now composes `information_accuracy` +
+`reported_value` + `bias_noise` to emit `visible_report` +
+distortion numerics on every `event_fired` LogEntry — see
+§1.4 below; RFC-060 §3 `EventLogEntry { publicText;
+debugTruth }` is now complete: M6.8 shipped `debugTruth`,
+M6.9 ships `publicText`). Predecessor: **M6.8** (debug
+mode reveals truth — see §1.3); before that, the post-M6.7
+hardening sweep applied `feedback_no_silent_degradation`
+project-wide and migrated ratio-target `add` from linear to
+asymptotic — see §1.2.
 The `information_accuracy::compute_for_country` body now
 implements an RFC-080 §8 subset:
 
@@ -385,6 +386,78 @@ non-debug mode — the first downstream consumer of the
 
 Design note:
 [`m6-8-debug-mode-reveals-truth.md`](m6-8-debug-mode-reveals-truth.md).
+
+### 1.4 M6.9 non-debug mode hides the truth (RFC-090 §6.9)
+
+After M6.8 landed, M-numbered work resumed with **M6.9**
+(`6.9 非 debug 模式隱藏真相`). The change composes the three
+M6 read-only helpers into `event_firer::record_match` /
+`record_followup`:
+
+1. `information_accuracy::compute_for_country(state, country)`
+   → `accuracy ∈ [0, 1]` per the M6.3 / M6.6 / M6.7 formula
+   (`BaseAccuracy + IntelligenceCapacity − Corruption`).
+2. `reported_value::from_true_value(1.0, accuracy)` →
+   `reported_intensity = 1.0 × accuracy = accuracy` per the
+   M6.4 multiplicative formula. The M6.9 `TrueValue = 1.0`
+   anchor is documented in `docs/m6-9-non-debug-mode-distortion.md`
+   §2; it means "this event happened with intensity 1.0".
+3. `bias_noise::sample_for_event(event_id_code, country_id_code, fired_on, 1 - accuracy)`
+   → `noise_sample ∈ [-(1-accuracy), +(1-accuracy)]` per the
+   M6.5 deterministic-hash formula. `state.rng` is NEVER
+   consumed.
+
+The composition emits four new metadata keys per
+`event_fired` LogEntry: `visible_report` (M6.2 string
+verbatim — the **publicText** side of RFC-060 §3
+`EventLogEntry`), `information_accuracy`, `reported_intensity`,
+`noise_sample`. The keys are emitted in **both debug and
+non-debug modes**; only the M6.8 `true_cause` key remains
+`--debug`-gated. RFC-060 §3 `EventLogEntry { publicText;
+debugTruth }` is now structurally complete.
+
+RFC-080 §8 anchor: `ReportedValue = TrueValue + Bias + Noise`
+with `Noise = RandomNormal(0, 1 - InformationAccuracy)`.
+M6.9 ships Noise; the `Bias` term
+(`FactionInterestBias + BureaucraticSelfProtection +
+PropagandaBias`) and the remaining accuracy modifiers
+(`-FactionCapture` / `-LeaderIsolation` /
+`-LocalAutonomyOpacity` / `+MediaFreedomSignal` /
+`+BureaucraticProfessionalism` / `+AuditCapacity`) are
+RFC-090 backlog with no §6.x task today.
+
+Per-event atomicity preserved: `event_firer::record_match`
+and `record_followup` are promoted to `Result<bool>` (per
+`feedback_api_signature_expresses_failure`). On failure
+from any of the three helpers, the LogEntry is NOT appended
+and the EventInstance is NOT appended to
+`state.event_history`. `event_engine::tick_events` and
+`recurse_followups_impl` propagate the Result with the
+event id_code in the error context.
+
+Determinism contract:
+
+- **Canonical `1930_minimal` 365-day events.jsonl** is
+  BYTE-IDENTICAL to the PR #116 (M6.8) baseline. No events
+  fire on the canonical scenario (M5 invariant preserved),
+  so no `event_fired` LogEntries land, so no M6.9 keys are
+  appended.
+- **Compliance `1930_rfc_compliance` 25 567-day** events.jsonl
+  gains the four M6.9 keys per fired event line (41 events
+  × 4 keys = 164 new metadata entries). `Sanity issues : 0`
+  on both debug and non-debug runs.
+- **Same seed → byte-identical artefacts.** `bias_noise` is
+  pure hash; no `state.rng` consumption means same-input
+  same-output across runs. Pinned by a new integration test
+  (`M6.9 integration: same seed produces deterministic
+  distorted publicText`).
+
+No save schema bump (still v18); no artefact contract
+change (still 11); no new player-facing command; no new
+save-layer surface; no new gameplay system module.
+
+Design note:
+[`m6-9-non-debug-mode-distortion.md`](m6-9-non-debug-mode-distortion.md).
 
 ## 2. Finding 1 — RFC-090 original M3 drift (issue #105 baseline; see §6.1 for post-RCR-1 + #108 state)
 

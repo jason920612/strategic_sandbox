@@ -128,6 +128,7 @@
 
 #include "leviathan/core/game_date.hpp"
 #include "leviathan/core/game_state.hpp"
+#include "leviathan/core/result.hpp"
 #include "leviathan/systems/event_evaluator.hpp"
 
 namespace leviathan::systems::event_firer {
@@ -145,22 +146,74 @@ struct FireOutcome {
 // the firer does not consult state.current_date because firing
 // cadence is a runner-policy decision (not a firer-policy one).
 //
-// Always succeeds: even if an interest_group actor's owning-
-// country lookup fails (state internally inconsistent), the
-// resulting EventInstanceActor.country_id_code is left empty
-// and the save layer's validation will catch it on the next
-// round-trip. No exception, no Result type.
-void record_match(core::GameState&                                 state,
-                  const event_evaluator::EventMatch&               match,
-                  const core::GameDate&                            fired_on);
+// M6.8 (RFC-090 §6.8 "debug 模式顯示真相") additionally records
+// the matching `EventDefinition.true_cause` (M6.1) as a
+// `true_cause` metadata key on the emitted LogEntry; the
+// events.jsonl writer (`logging::export_jsonl`) filters that
+// key out unless `RunnerOptions::debug_mode == true`.
+//
+// M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") additionally
+// composes the M6.3 / M6.6 / M6.7 `information_accuracy`
+// helper with the M6.4 `reported_value` helper and the M6.5
+// `bias_noise` helper to emit four extra metadata keys per
+// `event_fired` LogEntry — `visible_report` (verbatim M6.2
+// string), `information_accuracy`, `reported_intensity`, and
+// `noise_sample`. The numeric anchor is `TrueValue = 1.0` per
+// fired event ("the event happened with intensity 1.0"); the
+// reported_intensity is `1.0 × accuracy` and the noise sample
+// is drawn from `bias_noise::sample_for_event(..., 1 - accuracy)`
+// so distortion magnitude grows as accuracy shrinks (RFC-080
+// §8 `ReportedValue = TrueValue + Bias + Noise` with `Noise =
+// RandomNormal(0, 1 - InformationAccuracy)`). The four M6.9
+// keys are emitted in BOTH debug and non-debug modes — only
+// the M6.8 `true_cause` key is debug-gated. The truth side
+// (true_cause) and the player-facing side (visible_report +
+// distortion numerics) sit alongside each other in
+// `state.logs`.
+//
+// Failure cases (M6.9):
+//   - `information_accuracy::compute_for_country` rejects a
+//     non-finite or out-of-range ratio input
+//     (intelligence_capability / budget.intelligence /
+//     corruption). M6.7 strict validation surfaces here.
+//   - `reported_value::from_true_value` rejects a non-finite
+//     accuracy or true_value (cannot happen in M6.9's
+//     `(1.0, accuracy)` call as long as accuracy is valid).
+//   - `bias_noise::sample_for_event` rejects an empty
+//     event_id_code or country_id_code, or a non-finite /
+//     out-of-range amplitude.
+// Per `feedback_no_silent_degradation` +
+// `feedback_api_signature_expresses_failure`, any failure
+// from those helpers propagates as `Result::failure` from
+// record_match itself; no silent fallback is applied. On
+// success returns `Result::success(true)`. On failure, the
+// EventInstance is NOT appended to state.event_history and
+// the LogEntry is NOT appended to state.logs — the call is
+// atomic on the per-event scope.
+//
+// Edge case: vacuous-actor match (empty `match.triggers`).
+// In that case there is no first-actor country to compute
+// accuracy against. M6.9 omits all four distortion keys and
+// the call still succeeds — vacuous events are degenerate,
+// not malformed.
+core::Result<bool> record_match(
+    core::GameState&                                 state,
+    const event_evaluator::EventMatch&               match,
+    const core::GameDate&                            fired_on);
 
 // Batch form of record_match. Walks `matches` in input order;
 // each successful record bumps FireOutcome::recorded. Empty
 // input is a no-op (returns FireOutcome{0}). Calling twice with
 // the same input appends twice — the firer does not dedup.
-FireOutcome record_matches(core::GameState&                                  state,
-                           const std::vector<event_evaluator::EventMatch>&   matches,
-                           const core::GameDate&                             fired_on);
+//
+// M6.9: returns `Result::failure` if any record_match in the
+// batch fails. Per-event atomicity is preserved (the failing
+// match leaves state untouched); prior matches in the same
+// batch may have already mutated state.
+core::Result<FireOutcome> record_matches(
+    core::GameState&                                  state,
+    const std::vector<event_evaluator::EventMatch>&   matches,
+    const core::GameDate&                             fired_on);
 
 // RCR-1: RFC-090 §5.12 — followup-event-chain firing primitive.
 //
@@ -191,10 +244,15 @@ FireOutcome record_matches(core::GameState&                                  sta
 // auto-cascade-wiring is intentionally out of scope to
 // preserve M5.7 snapshot-evaluation semantics in
 // `event_engine::tick_events`.
-void record_followup(core::GameState&             state,
-                     const core::EventInstance&   parent_instance,
-                     const core::EventDefinition& followup_definition,
-                     const core::GameDate&        fired_on);
+// M6.9: same Result-bearing shape and same distortion-key
+// emission as record_match (using the followup
+// EventDefinition's own true_cause + visible_report, and the
+// parent's first-actor country for accuracy / noise).
+core::Result<bool> record_followup(
+    core::GameState&             state,
+    const core::EventInstance&   parent_instance,
+    const core::EventDefinition& followup_definition,
+    const core::GameDate&        fired_on);
 
 }  // namespace leviathan::systems::event_firer
 

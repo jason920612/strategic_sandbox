@@ -497,3 +497,126 @@ TEST_CASE("M6.8 integration: --debug does NOT advance state.rng.counter or chang
     CHECK(s_nodbg.event_history[0].event_id_code ==
           s_dbg.event_history[0].event_id_code);
 }
+
+// =====================================================================
+// M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") — end-to-end
+// integration. The non-debug events.jsonl artefact emits a
+// distorted player-facing surface (visible_report +
+// information_accuracy + reported_intensity + noise_sample);
+// the truth (true_cause) is filtered. In debug mode all five
+// keys appear. The save.json `logs` array is byte-identical
+// across the debug toggle because state.logs is identical
+// either way — only the events.jsonl writer branches.
+// =====================================================================
+
+TEST_CASE("M6.9 integration: non-debug events.jsonl emits distorted publicText; --debug additionally reveals true_cause") {
+    TempDir td_nodbg("leviathan_m6_9_nodbg");
+    TempDir td_dbg  ("leviathan_m6_9_dbg");
+
+    auto build_state = []() {
+        GameState s = make_m5_firing_state();
+        s.events[0].true_cause     = "M6.9 SECRET TRUTH";
+        s.events[0].visible_report = "M6.9 PUBLIC REPORT";
+        // Use distinctive intelligence settings so distortion is
+        // observable. GER (the firing country) gets cap=0.5,
+        // budget.intelligence=0.0, corruption=0.0 from
+        // make_m5_firing_state's defaults; that maps to accuracy
+        // ≈ 0.61. We pin THAT below as a regression marker.
+        return s;
+    };
+
+    rn::RunnerOptions opts;
+    opts.days       = 31;     // crosses one month boundary; event fires
+    opts.output_dir = td_nodbg.path;
+    opts.debug_mode = false;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+
+    opts.output_dir = td_dbg.path;
+    opts.debug_mode = true;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+
+    const std::string log_nodbg = read_file(td_nodbg.path / "events.jsonl");
+    const std::string log_dbg   = read_file(td_dbg.path   / "events.jsonl");
+    const std::string save_nodbg = read_file(td_nodbg.path / "save.json");
+    const std::string save_dbg   = read_file(td_dbg.path   / "save.json");
+
+    // M6.8 carry-over: save.json byte-identical across debug
+    // toggle (the truth + distortion ALL live in state.logs;
+    // events.jsonl is the only artefact that differs).
+    CHECK(save_nodbg == save_dbg);
+
+    // M6.9 NEW: visible_report appears in BOTH modes (the
+    // public-facing text — the M6.2 string verbatim).
+    CHECK(log_nodbg.find("\"visible_report\":\"M6.9 PUBLIC REPORT\"")
+          != std::string::npos);
+    CHECK(log_dbg.find("\"visible_report\":\"M6.9 PUBLIC REPORT\"")
+          != std::string::npos);
+
+    // M6.9 NEW: distortion numerics appear in BOTH modes.
+    CHECK(log_nodbg.find("\"information_accuracy\"") != std::string::npos);
+    CHECK(log_nodbg.find("\"reported_intensity\"")   != std::string::npos);
+    CHECK(log_nodbg.find("\"noise_sample\"")         != std::string::npos);
+    CHECK(log_dbg.find("\"information_accuracy\"")   != std::string::npos);
+    CHECK(log_dbg.find("\"reported_intensity\"")     != std::string::npos);
+    CHECK(log_dbg.find("\"noise_sample\"")           != std::string::npos);
+
+    // M6.8 carry-over: true_cause appears only in debug mode.
+    CHECK(log_nodbg.find("M6.9 SECRET TRUTH") == std::string::npos);
+    CHECK(log_dbg.find("M6.9 SECRET TRUTH")   != std::string::npos);
+    CHECK(log_nodbg.find("\"true_cause\"")    == std::string::npos);
+    CHECK(log_dbg.find("\"true_cause\"")      != std::string::npos);
+}
+
+TEST_CASE("M6.9 integration: same seed produces deterministic distorted publicText") {
+    TempDir td_a("leviathan_m6_9_det_a");
+    TempDir td_b("leviathan_m6_9_det_b");
+
+    auto build_state = []() {
+        GameState s = make_m5_firing_state();
+        s.events[0].true_cause     = "deterministic truth";
+        s.events[0].visible_report = "deterministic public";
+        return s;
+    };
+
+    rn::RunnerOptions opts;
+    opts.days       = 31;
+    opts.debug_mode = false;
+
+    opts.output_dir = td_a.path;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+    opts.output_dir = td_b.path;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+
+    const std::string log_a = read_file(td_a.path / "events.jsonl");
+    const std::string log_b = read_file(td_b.path / "events.jsonl");
+    CHECK(log_a == log_b);   // same noise_sample across runs
+
+    const std::string save_a = read_file(td_a.path / "save.json");
+    const std::string save_b = read_file(td_b.path / "save.json");
+    CHECK(save_a == save_b);
+}
+
+TEST_CASE("M6.9 integration: save format stays at v18 (no schema bump)") {
+    TempDir td("leviathan_m6_9_save_version");
+    GameState s = make_m5_firing_state();
+    rn::RunnerOptions opts;
+    opts.days       = 31;
+    opts.output_dir = td.path;
+    REQUIRE(rn::run_state(s, opts).ok());
+
+    const std::string save = read_file(td.path / "save.json");
+    CHECK(save.find("\"save_version\": 18") != std::string::npos);
+    CHECK(save.find("\"save_version\": 19") == std::string::npos);
+}

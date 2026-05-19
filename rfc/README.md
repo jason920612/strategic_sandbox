@@ -151,7 +151,37 @@ sequence:
   (out-of-range / non-finite ratios reject with
   `Result::failure` naming country `id_code` + field +
   numeric value; no silent clamping).
-- **M6.8** (RFC-090 §6.8 "debug 模式顯示真相", current PR)
+- **M6.9** (RFC-090 §6.9 "非 debug 模式隱藏真相", current
+  PR) composes the M6.3 / M6.6 / M6.7
+  `information_accuracy::compute_for_country` helper with
+  the M6.4 `reported_value::from_true_value` helper and
+  the M6.5 `bias_noise::sample_for_event` helper inside
+  `event_firer::record_match` / `record_followup`. Every
+  `event_fired` LogEntry now carries four new metadata
+  keys: `visible_report` (M6.2 string verbatim — the
+  public-facing text per RFC-050 §5's "government
+  report" layer), `information_accuracy`,
+  `reported_intensity` (= `1 × accuracy` under the M6.9
+  `TrueValue = 1.0` anchor), and `noise_sample` (in
+  `[-(1-accuracy), +(1-accuracy)]`). RFC-080 §8
+  `ReportedValue = TrueValue + Bias + Noise` with
+  `Noise = RandomNormal(0, 1 - InformationAccuracy)` —
+  M6.9 ships Noise; Bias remains backlog. RFC-060 §3
+  `EventLogEntry { publicText; debugTruth }` is now
+  complete: M6.8 shipped `debugTruth`; M6.9 ships
+  `publicText`. The four M6.9 keys are emitted in BOTH
+  debug and non-debug modes; only the M6.8 `true_cause`
+  remains `--debug`-gated. `event_firer::record_match`
+  and `record_followup` promoted to `Result<bool>` with
+  per-event atomicity (LogEntry NOT appended on failure
+  per `feedback_no_silent_degradation` +
+  `feedback_api_signature_expresses_failure`). No save
+  bump (still v18); no artefact contract change (still
+  11); no `state.rng` consumption (bias_noise is
+  hash-deterministic per M6.5); canonical
+  `1930_minimal` events.jsonl byte-identical to the
+  PR #116 baseline (no events fire on canonical).
+- **M6.8** (RFC-090 §6.8 "debug 模式顯示真相", prior PR)
   adds a `--debug` runner flag plus the matching
   `RunnerOptions::debug_mode` field. When the flag is on,
   every `event_fired` LogEntry in events.jsonl gains a
@@ -163,7 +193,7 @@ sequence:
   `save.json` regardless of the flag — two same-seed
   runs are byte-identical in save.json across the
   `--debug` toggle). Implements the `debugTruth` side
-  of RFC-060 §3's `EventLogEntry`; M6.9 will add the
+  of RFC-060 §3's `EventLogEntry`; M6.9 adds the
   `publicText` (M6.2 `visible_report`) flow with the
   M6.4 `reported_value` and M6.5 `bias_noise`
   distortion. No save bump (still v18); no artefact
@@ -458,7 +488,50 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.8
+  information distortion）** — **M6.9
+  （非 debug 模式隱藏真相）** 是 M6 的第九個
+  sub-milestone（也是 RFC-090 §6.x 列表中目前已知的
+  最後一個）。完全照 RFC-090 §6.9
+  （`6.9 非 debug 模式隱藏真相`）實作：在
+  `event_firer::record_match` / `record_followup` 內
+  把 M6.3 / M6.6 / M6.7 的
+  `information_accuracy::compute_for_country` 與 M6.4
+  的 `reported_value::from_true_value` 與 M6.5 的
+  `bias_noise::sample_for_event` 三個 helper 組起來，
+  讓每筆 `event_fired` LogEntry 多帶四個 metadata key：
+  `visible_report`（M6.2 字串逐字 — RFC-050 §5
+  「政府報告」層 / RFC-060 §3 `publicText`）、
+  `information_accuracy`、`reported_intensity`
+  （= `reported_value::from_true_value(1.0, accuracy)`
+  = `accuracy`，採用 `TrueValue = 1.0` 的事件 anchor）、
+  `noise_sample`（在 `[-(1-accuracy), +(1-accuracy)]`，
+  amplitude 隨 accuracy 反向縮放，符合 RFC-080 §8
+  `Noise = RandomNormal(0, 1 - InformationAccuracy)`）。
+  M6.8 的 `true_cause` reveal 仍由 `--debug` 控制；
+  M6.9 的四個 key 在 debug / 非 debug 都 emit
+  （他們是 player-facing surface，不是 debug 側 truth）。
+  RFC-060 §3 `EventLogEntry { publicText; debugTruth }`
+  在 M6.9 後完整：M6.8 ship `debugTruth`，M6.9 ship
+  `publicText`。**`event_firer::record_match` 與
+  `record_followup` 升級成 `Result<bool>`**；任一
+  helper 失敗（per-country 非有限 ratio / 空 id_code /
+  非有限 amplitude）會以 per-event atomicity 傳回
+  `Result::failure` — LogEntry 與 EventInstance 都不會
+  append，event_engine 的 `tick_events` /
+  `recurse_followups_impl` 兩個呼叫點都會 propagate。
+  **沒有 save schema bump（仍 v18）**：M6.9 加的是
+  `state.logs.metadata` 的 kv 條目，不是新的
+  persistent struct field。artefact contract 仍 11。
+  **沒有 `state.rng` 消耗**（bias_noise 是 hash
+  deterministic per M6.5）。Canonical
+  `1930_minimal` 365-day events.jsonl 與 PR #116
+  (M6.8) baseline byte-identical（canonical 不會 fire
+  任何 event，所以零 `event_fired` LogEntry、零 M6.9
+  key emission）。Compliance `1930_rfc_compliance`
+  25 567-day 在 debug / 非 debug 兩種模式下都
+  `Sanity issues : 0`。設計筆記：
+  `docs/m6-9-non-debug-mode-distortion.md`。
+- **M6.8
   （debug 模式顯示真相）** 是 M6 的第八個
   sub-milestone。完全照 RFC-090 §6.8
   （`6.8 debug 模式顯示真相`）實作：新增

@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -176,13 +179,23 @@ TEST_CASE("M5.5 record_match: fired_on is whatever caller passes — firer does 
 TEST_CASE("M5.5 record_match: empty-triggers match becomes EventInstance with empty actors") {
     // Vacuously-true case (M5.1 loader rejects empty triggers; this
     // is reachable only via hand-built defs / synthesised matches,
-    // but the firer is still total over it).
+    // but the firer is still total over the actor-list side).
+    //
+    // M6.8 / M6.9 update: `record_match` now requires
+    // `match.event_index` to be a valid index into `state.events`
+    // (so it can look up the M6.1 true_cause and the M6.2
+    // visible_report). The vacuously-true ACTOR side is preserved;
+    // we just need a corresponding EventDefinition in state.events.
     GameState s;
+    s.events.push_back(make_event("vacuous", {
+        make_trigger("country.stability", "lt", 0.30),
+    }));
     ee::EventMatch m;
     m.event_index   = 0;
     m.event_id_code = "vacuous";
     // m.triggers stays empty.
-    ef::record_match(s, m, GameDate(1930, 1, 1));
+    const auto r = ef::record_match(s, m, GameDate(1930, 1, 1));
+    REQUIRE(r);
     REQUIRE(s.event_history.size() == 1u);
     CHECK(s.event_history[0].event_id_code == "vacuous");
     CHECK(s.event_history[0].actors.empty());
@@ -202,6 +215,11 @@ TEST_CASE("M5.5 record_match: IG actor with broken owning-country handle leaves 
     // its actor data straight from the EventMatch we pass in.
     GameState s;
     s.countries.push_back(make_country(0, "GER"));
+    // M6.8 / M6.9 update: record_match needs the EventDefinition
+    // to source true_cause + visible_report; supply one.
+    s.events.push_back(make_event("x", {
+        make_trigger("country.stability", "lt", 0.30),
+    }));
 
     ee::EventMatch m;
     m.event_index   = 0;
@@ -214,7 +232,8 @@ TEST_CASE("M5.5 record_match: IG actor with broken owning-country handle leaves 
     te.actor.index      = 0;
     m.triggers.push_back(te);
 
-    ef::record_match(s, m, GameDate(1930, 1, 1));
+    const auto fired = ef::record_match(s, m, GameDate(1930, 1, 1));
+    REQUIRE(fired);
     REQUIRE(s.event_history.size() == 1u);
     REQUIRE(s.event_history[0].actors.size() == 1u);
     CHECK(s.event_history[0].actors[0].kind            == "interest_group");
@@ -223,9 +242,9 @@ TEST_CASE("M5.5 record_match: IG actor with broken owning-country handle leaves 
 
     // And the save layer rejects it loudly on the next round-trip.
     const std::string text = ss::serialize(s);
-    const auto r = ss::deserialize(text);
-    REQUIRE(r.failed());
-    CHECK(r.error().find("country_id_code") != std::string::npos);
+    const auto rt = ss::deserialize(text);
+    REQUIRE(rt.failed());
+    CHECK(rt.error().find("country_id_code") != std::string::npos);
 }
 
 // =====================================================================
@@ -236,8 +255,9 @@ TEST_CASE("M5.5 record_matches: empty input is a no-op") {
     GameState s;
     s.countries.push_back(make_country(0, "GER"));
     const std::vector<ee::EventMatch> none;
-    const auto out = ef::record_matches(s, none, GameDate(1930, 1, 1));
-    CHECK(out.recorded == 0u);
+    const auto r = ef::record_matches(s, none, GameDate(1930, 1, 1));
+    REQUIRE(r);
+    CHECK(r.value().recorded == 0u);
     CHECK(s.event_history.empty());
 }
 
@@ -254,8 +274,9 @@ TEST_CASE("M5.5 record_matches: preserves input order") {
     const auto matches = ee::match_events(s);
     REQUIRE(matches.size() == 2u);
 
-    const auto out = ef::record_matches(s, matches, GameDate(1930, 6, 1));
-    CHECK(out.recorded == 2u);
+    const auto r = ef::record_matches(s, matches, GameDate(1930, 6, 1));
+    REQUIRE(r);
+    CHECK(r.value().recorded == 2u);
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[0].event_id_code == "a_low_stab");
     CHECK(s.event_history[1].event_id_code == "b_radical");
@@ -300,9 +321,10 @@ TEST_CASE("M5.5 record_matches: end-to-end with match_events on canonical-shape 
     const auto matches = ee::match_events(s);
     REQUIRE(matches.size() == 2u);
 
-    const auto out =
+    const auto r =
         ef::record_matches(s, matches, GameDate(1930, 4, 1));
-    CHECK(out.recorded == 2u);
+    REQUIRE(r);
+    CHECK(r.value().recorded == 2u);
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[0].event_id_code == "low_stability_unrest");
     CHECK(s.event_history[0].actors[0].kind == "country");
@@ -497,7 +519,7 @@ TEST_CASE("M6.8 record_followup: appends `true_cause` metadata key sourced from 
     CHECK(*fu == "parent");
 }
 
-TEST_CASE("M6.8 record_match: `true_cause` is appended LAST so existing metadata insertion order is preserved") {
+TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insertion order") {
     GameState s;
     s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
     s.events.push_back(make_event("low_stab",
@@ -505,16 +527,251 @@ TEST_CASE("M6.8 record_match: `true_cause` is appended LAST so existing metadata
 
     const auto matches = ee::match_events(s);
     REQUIRE(matches.size() == 1u);
-    ef::record_match(s, matches[0], GameDate(1930, 4, 1));
+    REQUIRE(ef::record_match(s, matches[0], GameDate(1930, 4, 1)));
 
     const auto* entry = find_event_fired_log(s);
     REQUIRE(entry != nullptr);
-    // Stable order: event_id_code, actor_kind, actor_id_code,
-    // country_id_code, true_cause.
-    REQUIRE(entry->metadata.size() == 5u);
+    // Stable insertion order (post-M6.9):
+    //   event_id_code, actor_kind, actor_id_code, country_id_code,
+    //   true_cause (M6.8),
+    //   visible_report, information_accuracy, reported_intensity,
+    //   noise_sample (M6.9).
+    REQUIRE(entry->metadata.size() == 9u);
     CHECK(entry->metadata[0].first == "event_id_code");
     CHECK(entry->metadata[1].first == "actor_kind");
     CHECK(entry->metadata[2].first == "actor_id_code");
     CHECK(entry->metadata[3].first == "country_id_code");
     CHECK(entry->metadata[4].first == "true_cause");
+    CHECK(entry->metadata[5].first == "visible_report");
+    CHECK(entry->metadata[6].first == "information_accuracy");
+    CHECK(entry->metadata[7].first == "reported_intensity");
+    CHECK(entry->metadata[8].first == "noise_sample");
+}
+
+// =====================================================================
+// M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") — record_match emits
+// the player-facing distortion fields sourced from the M6.3 / M6.6
+// / M6.7 information_accuracy + M6.4 reported_value + M6.5
+// bias_noise composition. The fields are emitted UNCONDITIONALLY
+// in state.logs; logging::write_jsonl_line filters only the M6.8
+// true_cause key out of the events.jsonl artefact in non-debug
+// mode. RFC-060 §3 EventLogEntry.publicText is the
+// visible_report; RFC-080 §8 ReportedValue = TrueValue + Bias +
+// Noise lives in (information_accuracy, reported_intensity,
+// noise_sample).
+// =====================================================================
+
+namespace {
+
+CountryState make_m69_country(int id, const std::string& code,
+                              double intelligence_capability,
+                              double budget_intelligence,
+                              double corruption) {
+    CountryState c;
+    c.id      = CountryId{id};
+    c.id_code = code;
+    c.name    = code;
+    c.stability  = 0.20;   // below threshold so the event fires
+    c.legitimacy = 0.50;
+    c.corruption = corruption;
+    c.government_authority.intelligence_capability = intelligence_capability;
+    c.budget.intelligence                          = budget_intelligence;
+    return c;
+}
+
+}  // namespace
+
+TEST_CASE("M6.9 record_match: visible_report metadata mirrors EventDefinition.visible_report verbatim") {
+    GameState s;
+    s.countries.push_back(
+        make_m69_country(0, "GER", /*cap*/0.5, /*bud*/0.0, /*corr*/0.0));
+    auto def = make_event("ev_v",
+        { make_trigger("country.stability", "lt", 0.30) });
+    def.visible_report =
+        "Reports describe a stability concern in the capital district.";
+    s.events.push_back(std::move(def));
+
+    const auto matches = ee::match_events(s);
+    REQUIRE(matches.size() == 1u);
+    REQUIRE(ef::record_match(s, matches[0], GameDate(1930, 4, 1)));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* vr = metadata_value(*entry, "visible_report");
+    REQUIRE(vr != nullptr);
+    CHECK(*vr ==
+          "Reports describe a stability concern in the capital district.");
+}
+
+TEST_CASE("M6.9 record_match: high accuracy -> reported_intensity close to 1.0 and small noise envelope") {
+    // intelligence_capability = 1.0, budget.intelligence = 1.0,
+    // corruption = 0.0 -> accuracy = 1.0 (maxed). Reported intensity
+    // = 1.0 * accuracy = 1.0. amplitude = 1 - 1 = 0; bias_noise
+    // returns 0 verbatim at amplitude 0. Player sees the truth.
+    GameState s;
+    s.countries.push_back(
+        make_m69_country(0, "MAX", /*cap*/1.0, /*bud*/1.0, /*corr*/0.0));
+    s.events.push_back(make_event("ev_hi",
+        { make_trigger("country.stability", "lt", 0.30) }));
+
+    const auto matches = ee::match_events(s);
+    REQUIRE(matches.size() == 1u);
+    REQUIRE(ef::record_match(s, matches[0], GameDate(1930, 4, 1)));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* acc = metadata_value(*entry, "information_accuracy");
+    const auto* ri  = metadata_value(*entry, "reported_intensity");
+    const auto* ns  = metadata_value(*entry, "noise_sample");
+    REQUIRE(acc != nullptr);
+    REQUIRE(ri  != nullptr);
+    REQUIRE(ns  != nullptr);
+    CHECK(std::stod(*acc) == doctest::Approx(1.0));
+    CHECK(std::stod(*ri)  == doctest::Approx(1.0));
+    // amplitude = 0 -> bias_noise returns 0 verbatim.
+    CHECK(std::stod(*ns)  == doctest::Approx(0.0));
+}
+
+TEST_CASE("M6.9 record_match: low accuracy + high corruption -> larger distortion envelope (noise amplitude rises)") {
+    // intelligence_capability = 0.0, budget.intelligence = 0.0,
+    // corruption = 1.0 -> accuracy = 0.4 - 0.4 = 0.0 (full
+    // blackout). amplitude = 1 - 0 = 1.0; bias_noise spans
+    // [-1, +1]; |noise| can be large.
+    GameState s_lo;
+    s_lo.countries.push_back(
+        make_m69_country(0, "LOW", /*cap*/0.0, /*bud*/0.0, /*corr*/1.0));
+    s_lo.events.push_back(make_event("ev_lo",
+        { make_trigger("country.stability", "lt", 0.30) }));
+
+    const auto matches_lo = ee::match_events(s_lo);
+    REQUIRE(matches_lo.size() == 1u);
+    REQUIRE(ef::record_match(s_lo, matches_lo[0], GameDate(1930, 4, 1)));
+
+    const auto* entry_lo = find_event_fired_log(s_lo);
+    REQUIRE(entry_lo != nullptr);
+    const double acc_lo =
+        std::stod(*metadata_value(*entry_lo, "information_accuracy"));
+    const double ns_lo  =
+        std::stod(*metadata_value(*entry_lo, "noise_sample"));
+    CHECK(acc_lo == doctest::Approx(0.0));
+    // noise envelope = 1.0; pin |noise| <= 1.0 mechanically.
+    CHECK(std::abs(ns_lo) <= 1.0);
+
+    // Now compare against a high-accuracy country firing the same
+    // event id_code / country_id_code. The noise amplitudes differ
+    // (1.0 vs 0.0), so the noise SAMPLES MUST differ as well.
+    GameState s_hi;
+    s_hi.countries.push_back(
+        make_m69_country(0, "LOW", /*cap*/1.0, /*bud*/1.0, /*corr*/0.0));
+    s_hi.events.push_back(make_event("ev_lo",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    const auto matches_hi = ee::match_events(s_hi);
+    REQUIRE(matches_hi.size() == 1u);
+    REQUIRE(ef::record_match(s_hi, matches_hi[0], GameDate(1930, 4, 1)));
+
+    const auto* entry_hi = find_event_fired_log(s_hi);
+    REQUIRE(entry_hi != nullptr);
+    const double ns_hi  =
+        std::stod(*metadata_value(*entry_hi, "noise_sample"));
+    // Distortion shape: high accuracy -> noise = 0; low accuracy ->
+    // |noise| can be non-zero. Pin that the low-accuracy noise
+    // envelope is wider than the high-accuracy one.
+    CHECK(std::abs(ns_lo) >= std::abs(ns_hi));
+    CHECK(std::abs(ns_hi) == doctest::Approx(0.0));
+}
+
+TEST_CASE("M6.9 record_match: same inputs -> deterministic distortion sample") {
+    // Two independent runs with same event_id_code +
+    // country_id_code + fired_on + accuracy MUST produce
+    // byte-identical noise (bias_noise is hash-deterministic per
+    // its M6.5 contract; no state.rng consumption).
+    GameState s_a;
+    s_a.countries.push_back(
+        make_m69_country(0, "DET", /*cap*/0.3, /*bud*/0.2, /*corr*/0.4));
+    s_a.events.push_back(make_event("ev_det",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    const auto matches_a = ee::match_events(s_a);
+    REQUIRE(matches_a.size() == 1u);
+    REQUIRE(ef::record_match(s_a, matches_a[0], GameDate(1930, 4, 1)));
+
+    GameState s_b;
+    s_b.countries.push_back(
+        make_m69_country(0, "DET", /*cap*/0.3, /*bud*/0.2, /*corr*/0.4));
+    s_b.events.push_back(make_event("ev_det",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    const auto matches_b = ee::match_events(s_b);
+    REQUIRE(matches_b.size() == 1u);
+    REQUIRE(ef::record_match(s_b, matches_b[0], GameDate(1930, 4, 1)));
+
+    const auto* entry_a = find_event_fired_log(s_a);
+    const auto* entry_b = find_event_fired_log(s_b);
+    REQUIRE(entry_a != nullptr);
+    REQUIRE(entry_b != nullptr);
+    CHECK(*metadata_value(*entry_a, "information_accuracy") ==
+          *metadata_value(*entry_b, "information_accuracy"));
+    CHECK(*metadata_value(*entry_a, "reported_intensity") ==
+          *metadata_value(*entry_b, "reported_intensity"));
+    CHECK(*metadata_value(*entry_a, "noise_sample") ==
+          *metadata_value(*entry_b, "noise_sample"));
+}
+
+TEST_CASE("M6.9 record_match: non-finite country.intelligence_capability FAILS LOUDLY (no LogEntry / EventInstance appended)") {
+    GameState s;
+    auto c = make_m69_country(0, "BAD", /*cap*/0.5, /*bud*/0.0, /*corr*/0.0);
+    c.government_authority.intelligence_capability =
+        std::numeric_limits<double>::quiet_NaN();
+    s.countries.push_back(c);
+    s.events.push_back(make_event("ev_bad",
+        { make_trigger("country.stability", "lt", 0.30) }));
+
+    const auto matches = ee::match_events(s);
+    REQUIRE(matches.size() == 1u);
+    const auto r = ef::record_match(s, matches[0], GameDate(1930, 4, 1));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("information_accuracy") != std::string::npos);
+    // Per-event atomicity: nothing was appended.
+    CHECK(s.event_history.empty());
+    bool found_fired = false;
+    for (const auto& e : s.logs) {
+        if (e.category == "event_fired") {
+            found_fired = true;
+            break;
+        }
+    }
+    CHECK_FALSE(found_fired);
+}
+
+TEST_CASE("M6.9 record_followup: distortion uses parent's first-actor country") {
+    GameState s;
+    s.countries.push_back(
+        make_m69_country(0, "GER", /*cap*/0.5, /*bud*/0.0, /*corr*/0.0));
+    s.events.push_back(make_event("p", {
+        make_trigger("country.stability", "lt", 0.30)}));
+    s.events.push_back(make_event("c", {
+        make_trigger("country.stability", "lt", 0.30)}));
+    s.events.back().visible_report =
+        "Follow-up report on the original disturbance.";
+
+    EventInstance parent;
+    parent.event_id_code = "p";
+    parent.fired_on      = GameDate(1930, 4, 1);
+    EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    parent.actors.push_back(a);
+
+    REQUIRE(ef::record_followup(s, parent, s.events[1], GameDate(1930, 5, 1)));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* vr  = metadata_value(*entry, "visible_report");
+    const auto* acc = metadata_value(*entry, "information_accuracy");
+    REQUIRE(vr  != nullptr);
+    REQUIRE(acc != nullptr);
+    CHECK(*vr == "Follow-up report on the original disturbance.");
+    // Same accuracy as the parent country (GER's cap=0.5 / bud=0
+    // / corr=0 -> 0.4 + 0.6×0.35 = 0.61).
+    CHECK(std::stod(*acc) == doctest::Approx(0.61));
 }
