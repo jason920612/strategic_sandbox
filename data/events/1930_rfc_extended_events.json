@@ -254,7 +254,7 @@
       "name": "Faction Radicalism Crisis",
       "description": "A faction's radicalism has climbed to a politically dangerous level.",
       "visible_report": "Reports describe an organised faction agitating openly against the current direction of policy.",
-      "true_cause": "A FactionState.radicalism has crossed the faction-radicalism-crisis threshold (M7.2, RFC-090 §7.2).",
+      "true_cause": "A FactionState.radicalism has crossed the faction-radicalism-crisis threshold (M7.2, RFC-090 §7.2). M7.3 (RFC-090 §7.3) weights the crisis up when a powerful faction is in play.",
       "category": "political",
       "triggers": [
         {
@@ -263,9 +263,39 @@
           "value": 0.85
         }
       ],
+      "weight_modifiers": [
+        {
+          "target": "faction.influence",
+          "op": "gt",
+          "value": 0.60,
+          "weight_delta": 0.5
+        }
+      ],
       "effects": [
         {
           "target": "country.stability",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
+    },
+    {
+      "id": "influential_faction_pressure",
+      "name": "Influential Faction Pressure",
+      "description": "A high-influence faction is leveraging its political clout to redirect policy.",
+      "visible_report": "Reports describe an organised faction wielding outsized influence in the corridors of power.",
+      "true_cause": "A FactionState.influence has crossed the influential-faction threshold (M7.3, RFC-090 §7.3).",
+      "category": "political",
+      "triggers": [
+        {
+          "target": "faction.influence",
+          "op": "gt",
+          "value": 0.80
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
           "op": "add",
           "value": -0.01
         }

@@ -52,15 +52,34 @@ double pick_interest_group_value(const std::string&              target,
     return std::nan("");
 }
 
-// M7.2 (RFC-090 §7.2): project a target string + a faction
-// into the faction-side double it names. Returns nan for
-// non-faction targets. Only `faction.radicalism` is in the
-// M7.2 allowlist; `faction.loyalty` / `faction.support` /
-// `faction.influence` remain unreachable until a future
-// sub-milestone widens the allowlist.
+// Project a target string + a faction into the faction-side
+// double it names. Returns nan for non-faction targets. Two
+// fields are now in the allowlist:
+//
+//   M7.2 (RFC-090 §7.2 `加入派系激進度事件`)
+//     `faction.radicalism`  — faction radicalism, used as
+//                             the trigger surface that fires
+//                             event_fired entries when the
+//                             faction is agitated.
+//   M7.3 (RFC-090 §7.3 `加入派系影響力權重`)
+//     `faction.influence`   — faction influence. Primarily a
+//                             WeightModifier target
+//                             ("influence AS a weight" per
+//                             the §7.3 wording) — modifiers
+//                             raise an event's firing weight
+//                             when a sufficiently influential
+//                             faction exists. The trigger
+//                             surface shares the same
+//                             allowlist so the field is also
+//                             usable as a primary trigger.
+//
+// `faction.loyalty` / `faction.support` remain UNREACHABLE
+// under M7.3's strict scope until a future sub-milestone
+// authorises them.
 double pick_faction_value(const std::string&        target,
                           const core::FactionState& f) {
     if (target == "faction.radicalism") { return f.radicalism; }
+    if (target == "faction.influence")  { return f.influence;  }
     return std::nan("");
 }
 
@@ -75,12 +94,14 @@ bool target_is_interest_group_scope(const std::string& target) {
         || target == "interest_group.loyalty";
 }
 
-// M7.2 (RFC-090 §7.2): faction.* targets bind to
-// `state.factions`. Only one field is in the M7.2 allowlist;
-// the predicate is small but documented as a separate function
-// for parity with the country / interest_group scope predicates.
+// M7.2 + M7.3: faction.* targets bind to `state.factions`.
+// M7.2 added `faction.radicalism`; M7.3 (RFC-090 §7.3
+// `加入派系影響力權重`) adds `faction.influence`. The
+// predicate is documented as a separate function for parity
+// with the country / interest_group scope predicates.
 bool target_is_faction_scope(const std::string& target) {
-    return target == "faction.radicalism";
+    return target == "faction.radicalism"
+        || target == "faction.influence";   // M7.3
 }
 
 // M5.3: find the index of the first country (in vector order)

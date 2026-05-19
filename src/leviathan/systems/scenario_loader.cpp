@@ -190,13 +190,14 @@ parse_event_file(std::string_view json_text,
     }
 
     // Trigger-target allowlist. M5.1 seeded five targets;
-    // M7.2 (RFC-090 §7.2 `加入派系激進度事件`, RFC-020 §6 / §7)
-    // adds `faction.radicalism` so events can fire on
-    // `FactionState.radicalism` crossings directly — the
-    // `interest_group.*` targets cover the M3 political-actor
-    // surface but factions are a distinct M1-era data layer
-    // and event-engine triggers must be able to key off them
-    // per §7.2's strict reading.
+    // M7.2 (RFC-090 §7.2) added `faction.radicalism`;
+    // M7.3 (RFC-090 §7.3 `加入派系影響力權重`) adds
+    // `faction.influence` so weight modifiers can weight
+    // events by faction influence (and so events keyed
+    // strictly off influence — a strong faction silently
+    // gaining clout — become authorable). RFC-020 §6 lists
+    // `influence` as a first-class faction field; the §7.3
+    // wiring makes it observable to the event engine.
     static const std::vector<std::string> kTriggerTargets = {
         "country.stability",
         "country.legitimacy",
@@ -204,6 +205,7 @@ parse_event_file(std::string_view json_text,
         "interest_group.radicalism",
         "interest_group.loyalty",
         "faction.radicalism",  // M7.2 (RFC-090 §7.2)
+        "faction.influence",   // M7.3 (RFC-090 §7.3)
     };
     static const std::vector<std::string> kTriggerOps = {
         "lt", "lte", "gt", "gte",
@@ -341,7 +343,8 @@ parse_event_file(std::string_view json_text,
                             ".bureaucratic_compliance,"
                             " interest_group.radicalism,"
                             " interest_group.loyalty,"
-                            " faction.radicalism)"));
+                            " faction.radicalism,"
+                            " faction.influence)"));
             }
             // op: required string, allowlisted.
             if (!t.contains("op") || !t.at("op").is_string()) {
