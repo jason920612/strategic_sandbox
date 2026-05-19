@@ -76,60 +76,90 @@ under issue #105's audit umbrella:
 
 1. **RCR-1** (PR #107) shipped the data layer + helpers:
    20-country / 20-policy / 10-event compliance fixture,
-   save v17 schema bump, ai_policy module, weight ranker,
-   option-default helper, followup resolver, annual_world_stats.
-2. **Issue #108 fix** (PR #109) wired ai_policy into
-   `monthly::tick_all_countries`, authored military_strength
-   on every compliance country, and authored 10 relationships
-   on the compliance scenario.
-3. **Issue #110 strict-RFC fix** (this corrective PR) replaced
-   the first-policy stub with a deterministic scorer
-   (RFC-090 §3.5 / RFC-040 §4 inputs), wired the
-   event-engine helpers into `tick_events` (descending-weight
-   firing, option-default dispatch, depth-1 followup chains),
-   widened `scenario_loader::load_into_state`'s empty-state
-   preflight from 3 to all 7 loader-populated containers,
-   and refreshed audit-doc claim text so `[X]` marks
-   describe wired behaviour rather than callable helpers.
+   save v17 schema bump, `ai_policy` module, weight ranker
+   (`event_evaluator::rank_weighted_events`),
+   `annual_world_stats.csv`. RCR-1 also shipped two
+   "early" helpers — `event_effects::select_default_option`
+   and `event_effects::resolve_followup_ids` — that issue
+   #112 later superseded with the full RFC semantics
+   (see step 4 below). The early helpers are retained for
+   tests and diagnostic callers but are NOT the engine
+   path.
+2. **Issue #108 fix** (PR #109) wired `ai_policy` into
+   `monthly::tick_all_countries`, authored
+   `military_strength` on every compliance country, and
+   authored 10 relationships on the compliance scenario.
+3. **Issue #110 strict-RFC fix** (the first commit of
+   PR #111) replaced the first-policy stub with a
+   deterministic scorer (RFC-090 §3.5 / RFC-040 §4
+   inputs), wired the event-engine helpers into
+   `tick_events`, widened `scenario_loader::load_into_state`'s
+   empty-state preflight from 3 to all 7 loader-populated
+   containers, and refreshed audit-doc claim text so `[X]`
+   marks describe wired behaviour rather than callable
+   helpers. Issue #110's wiring was a *first pass* —
+   issue #112 audited it and replaced the carve-outs.
 4. **Issue #112 strict-RFC fix** (same PR #111, extended)
    replaced the issue-#110 carve-outs with the literal RFC
-   semantics the reviewer audit demanded:
-   - per-country / per-category weighted-random draw using
-     `state.rng` (RFC-090 §5.7 "事件抽選"),
-   - recursive CONDITIONAL followup chain with cycle guard
-     + `kMaxFollowupDepth = 5` depth guard (RFC-050 §3
-     "條件連鎖"),
-   - author-controlled `EventOptionEffectMode` (OptionOnly
-     / BaseThenOption / OptionThenBase) plus a state-based
-     AI option chooser AND a player command surface
-     (`PlayerCommandKind::ChooseEventOption` reachable via
-     the existing `--commands` script path; player choices
-     are satisfied through the COMMAND LAYER — a graphical
-     UI prompt remains a future UI milestone),
-   - pressure-gated + capacity-bounded AI policy selection
-     (`kPressureThreshold=0.80`; capacity returns 1/2/3
-     picks based on administrative_efficiency / bcomp /
-     budget headroom),
+   semantics the reviewer audit demanded — these are the
+   current engine path (the RCR-1 helpers above are not
+   the final semantics):
+   - **Weighted RNG draw, not fire-all-matched**:
+     per-country / per-category weighted-random draw via
+     `random::weighted_choice(state.rng, …)`
+     (RFC-090 §5.7 "事件抽選"). ONE event fires per
+     (country, category) per tick.
+   - **Recursive conditional followups, not unconditional
+     depth-1**: each followup must satisfy its own
+     triggers AFTER the parent applies; weighted draw
+     picks one when multiple match; cycle guard +
+     `kMaxFollowupDepth = 5` depth guard
+     (RFC-050 §3 "條件連鎖").
+   - **Command-layer player options, not options[0]
+     default**: author-controlled `EventOptionEffectMode`
+     (OptionOnly / BaseThenOption / OptionThenBase) plus
+     a state-based AI option chooser; player-country
+     events defer effects until
+     `PlayerCommandKind::ChooseEventOption` resolves the
+     pending entry (reachable through the existing
+     `--commands` script path).
+   - Pressure-gated + capacity-bounded AI policy
+     selection (`kPressureThreshold=0.80`; capacity
+     returns 1/2/3 picks based on
+     administrative_efficiency / bureaucratic_compliance
+     / budget headroom).
    - 9-container scenario-load-clean preflight (adds
-     `pending_player_events` + `event_history`),
-   - save schema bump v17 → v18.
+     `pending_player_events` + `event_history`).
+   - Save schema bump v17 → v18.
 
 Issue #112 has now landed (PR #111 squash-merged) and
 execution has returned to the M-numbered milestone
-sequence. **M6.6** (RFC-090 §6.6 "加入情報預算影響") then
-shipped the
-`information_accuracy::compute_for_country` body that reads
-`government_authority.intelligence_capability` and
-`budget.intelligence`, replacing the M6.3 constant-1.0
-placeholder with the affine
-`accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability +
-0.3 × budget.intelligence)` formula in range `[0.4, 1.0]`.
+sequence:
+
+- **M6.6** (RFC-090 §6.6 "加入情報預算影響", PR #113)
+  replaced the M6.3 constant-1.0 placeholder body of
+  `information_accuracy::compute_for_country` with the
+  affine
+  `0.4 + 0.6 × (0.7 × intelligence_capability + 0.3 × budget.intelligence)`
+  formula (range `[0.4, 1.0]`).
+- **M6.7** (RFC-090 §6.7 "加入腐敗影響", current PR)
+  layers the RFC-080 §8 `-Corruption` term on top:
+  `accuracy = m6_6_baseline - 0.4 × corruption`.
+  Function-level range now `[0.0, 1.0]`. Whole
+  `compute_for_country` body now strictly validates
+  inputs per `feedback_no_silent_degradation`
+  (out-of-range / non-finite ratios reject with
+  `Result::failure` naming country `id_code` + field +
+  numeric value; no silent clamping).
+
 `RCR` is **not** an RFC milestone number and does not
 consume M0–M9 numbering. **There is no RCR-2 track and no
 planned recovery follow-up.** Issues #105 / #108 / #110 /
 #112 stay open until the reviewer confirms strict compliance.
 
-What RCR-1 shipped:
+What RCR-1 shipped (NOTE: some early helpers below were
+later superseded by issue #112 — see the recovery
+sequence above):
 
 - 20-country / 20-policy / 10-event / 10-cross-country-IG
   floors via new `data/scenarios/1930_rfc_compliance.json`
@@ -140,19 +170,41 @@ What RCR-1 shipped:
   `apply_selected_policies`); apply reuses
   `policy::apply_policy_effects` so events inherit M1.5
   pre-flight atomicity and M1.15 active_policies bookkeeping.
+  *Issue #112 later replaced the first-policy stub inside
+  `select_policies` with a pressure-gated + capacity-
+  bounded deterministic scorer.*
 - Save schema bump **v16 → v17** in one batched migration:
   `CountryState.military_strength`,
   `EventDefinition.weight_modifiers`,
   `EventDefinition.options`,
   `EventDefinition.followup_event_ids`,
-  `GameState.relationships`.
+  `GameState.relationships`. *Issue #112 later bumped
+  v17 → v18 for `EventDefinition.category`,
+  `EventDefinition.option_effect_mode`, and
+  `GameState.pending_player_events`.*
 - New artefact `annual_world_stats.csv` (artefact contract
   10 → 11) emitted per year boundary by the new
   `leviathan::systems::annual_stats` module.
 - `event_evaluator::rank_weighted_events` — RNG-free
-  deterministic weighted ranker (RFC-090 §5.3 / §5.6 / §5.7).
+  deterministic weighted ranker (RFC-090 §5.3 / §5.6).
+  *RFC-090 §5.7's actual weighted DRAW is wired in
+  `event_engine::tick_events` per issue #112 via
+  `random::weighted_choice(state.rng, …)`.
+  `rank_weighted_events` produces the weight vector;
+  it is not the §5.7 implementation.*
 - `event_effects::select_default_option` +
   `resolve_followup_ids` (RFC-090 §5.8 / §5.12).
+  *Issue #112 superseded these as the engine path:
+  `event_effects::select_best_option_for_country` is
+  the state-based AI option chooser;
+  `event_effects::apply_option_effects_with_mode`
+  applies effects per `EventOptionEffectMode`;
+  player-country events go through
+  `PlayerCommandKind::ChooseEventOption`;
+  followups are resolved through a recursive
+  conditional chain with cycle + depth guards. The
+  RCR-1 helpers stay callable for tests / diagnostics
+  but are not the production engine path.*
 - `event_firer::record_match` now emits one `event_fired`
   LogEntry per fired event so `events.jsonl` records
   firings (RFC-090 §5.9). Canonical scenarios at M5 stay
@@ -164,7 +216,7 @@ What RCR-1 shipped:
 
 See [`../docs/rfc-090-010-compliance-audit.md`](../docs/rfc-090-010-compliance-audit.md)
 for the per-item audit-doc status (every actionable bullet
-is `[X]` after RCR-1).
+is `[X]` after issue #112; M6.6 + M6.7 land on top).
 
 ## 實作進度（與 RFC 對應）
 
@@ -360,7 +412,100 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.6
+  information distortion）** — **M6.7
+  （corruption influence on
+  `information_accuracy`）** 是 M6 的第七個
+  sub-milestone。完全照 RFC-090 §6.7
+  （`6.7 加入腐敗影響`）實作：在 M6.6 的
+  intelligence-budget baseline 上再疊上 RFC-080 §8
+  的 `-Corruption` 項：
+
+  ```
+  intel_score    = 0.7 × intelligence_capability
+                 + 0.3 × budget.intelligence
+  m6_6_baseline  = 0.4 + 0.6 × intel_score
+  accuracy       = m6_6_baseline - 0.4 × corruption
+  ```
+
+  函式層級的 **range** 從 M6.6 的 `[0.4, 1.0]`
+  擴張到 `[0.0, 1.0]`。角落值：滿情報 + 零腐敗 →
+  1.0（no-distortion ceiling）；滿情報 + 滿腐敗 →
+  0.6；零情報 + 零腐敗 → 0.4（M6.6 contribution
+  floor）；零情報 + 滿腐敗 → 0.0（full blackout）。
+  **新增 public header 常數**
+  `kInformationAccuracyCorruptionWeight = 0.4`，
+  刻意對稱於 `kMinInformationAccuracy = 0.4` 讓
+  「零情報 + 滿腐敗」角落剛好到 0.0。
+  **`kMinInformationAccuracy` 的語意升級** 從
+  「函式層級下界」(M6.6) 升級到「M6.6 contribution
+  alone 的下界」(M6.7+)；M6.7 的 corruption 減項
+  可以把函式總值壓到此 floor 以下。
+  **嚴格輸入驗證，不做 silent degradation**（per
+  `feedback_no_silent_degradation`，於 M6.7 kick-off
+  2026-05-19 確立）：三個 ratio 輸入
+  （`government_authority.intelligence_capability`、
+  `budget.intelligence`、`corruption`）必須是
+  finite 且在 `[0, 1]`。NaN / ±Inf / 越界都以
+  `Result::failure` 拒絕，錯誤訊息帶出違規 country
+  `id_code`、違規欄位、違規數值 ── 不再 silent
+  clamp。這把整個 `compute_for_country` body 帶進
+  同一條紀律；M6.6 對情報輸入的 finite 越界
+  defensive clamp 也升級為 reject。輸出端的
+  single-ULP `std::clamp` 只剩浮點 rounding 安全網
+  的角色，不是 input-validation fallback。
+  **沒有 save schema bump** ── `country.corruption`
+  從 M1.1 起就在 CountryState 上；M6.6 兩個情報輸入
+  也已存在。Save format 保持 **v18**；artefact
+  contract 保持 **11**。**沒有 production caller** ──
+  `compute_for_country` 仍未被任何 production code
+  path 呼叫；`event_evaluator` / `event_firer` /
+  `event_effects` / `event_engine` /
+  `monthly_pipeline` / `runner` 全部不動。Canonical
+  `1930_minimal` 365 天 run 對 PR #111 與 PR #113
+  baseline 都產出 byte-identical 的 save.json
+  （以 `diff` 驗證）；M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baseline 全部維持。
+  **沒有 `state.rng` 消耗** ── helper 是純讀。
+  **13 個新 doctest case（1229 total，64274
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：零腐敗
+  保留 M6.6 baseline；滿腐敗 + 零情報 = 0.0；滿
+  腐敗 + 滿情報 = 0.6；七組
+  `(cap, bud, corruption)` sample 釘公式；隨
+  corruption 單調非遞增；corruption-delta 等於
+  `kCorruptionWeight × Δcorruption`；M6.6 floor
+  在 M6.7 中不再是函式下界；finite 越界
+  capability / budget / corruption 全部 reject
+  （不 clamp）；NaN / +Inf / -Inf 三個輸入都
+  reject；deterministic short-circuit 順序
+  capability → budget → corruption；失敗 call
+  不改 state；新常數穩定。七個 M6.6 baseline
+  test（capability DOES consult / budget DOES
+  consult / capability dominates / monotonicity 等）
+  以 `corruption = 0` 完整保留。新
+  `docs/m6-7-corruption-influence.md` design note。
+  **沒有 save format bump（仍 v18）/ 新 state
+  field / 新 artefact（仍 11）/ 新 `RunnerOptions`
+  field / CLI flag / 新 `PlayerCommandKind` /
+  scenario_loader 變動 / event-module /
+  monthly_pipeline / runner 程式變動 /
+  `random_service` 消耗 / canonical fixture 變動 /
+  任何系統消費此 helper / `compute_for_event` 變體
+  / debug 模式 bypass（RFC-090 §6.8 scope）/
+  非 debug 隱藏（RFC-090 §6.9 scope）/ 其餘
+  RFC-080 §8 項（`-FactionCapture` /
+  `-LeaderIsolation` / `-LocalAutonomyOpacity` /
+  `+MediaFreedomSignal` /
+  `+BureaucraticProfessionalism` / `+AuditCapacity`
+  ── 皆無 RFC-090 任務）/ `bias_noise` body 變動
+  / `reported_value` body 變動 / EventReport
+  類型或 artefact / events.jsonl 語意變動 / UI /
+  map 整合 / balance pass / 對 M1.17 / M2 / M3 /
+  M4 / M5 byte-identical determinism baseline
+  的變動 / `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` /「M6 closed」
+  字樣**。M6 remains in progress。
+- **M6（歷史進行中）** — **M6.6
   （intelligence-budget influence on
   `information_accuracy`）** 是 M6 的第六個
   sub-milestone。完全照 RFC-090 §6.6
