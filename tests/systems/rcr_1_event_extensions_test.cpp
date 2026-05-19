@@ -57,6 +57,7 @@ EventDefinition make_event(std::string id_code,
     d.name               = d.id_code;
     d.visible_report     = "vr";
     d.true_cause         = "tc";
+    d.category           = "test";   // issue #112: required non-empty
     d.triggers           = std::move(triggers);
     d.weight_modifiers   = std::move(weight_modifiers);
     d.options            = std::move(options);
@@ -549,6 +550,7 @@ TEST_CASE("RCR-1 fixture round-trip: non-empty weight_modifiers / options / foll
     d.description    = "An event exercising every RCR-1 schema field.";
     d.visible_report = "public report";
     d.true_cause     = "private cause";
+    d.category       = "political";   // issue #112: required non-empty
     d.triggers.push_back({"country.stability", "lt", 0.30});
     d.effects.push_back({"country.legitimacy", "add", -0.01});
     d.weight_modifiers.push_back({"country.stability", "lt", 0.20, 1.5});
@@ -558,6 +560,8 @@ TEST_CASE("RCR-1 fixture round-trip: non-empty weight_modifiers / options / foll
     d.options.push_back({"crackdown", "Crackdown",
                          {{"country.central_control", "add", 0.03},
                           {"country.legitimacy", "add", -0.02}}});
+    d.option_effect_mode =
+        leviathan::core::EventOptionEffectMode::OptionOnly;  // issue #112
     d.followup_event_ids = {"escalation", "diplomatic_fallout"};
     state.events.push_back(d);
 

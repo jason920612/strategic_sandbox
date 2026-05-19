@@ -29,9 +29,42 @@
 > per-fire `event_fired` LogEntries into `events.jsonl`;
 > integration tests pin a deterministic byte-identical
 > 1930–2000 sweep on the 20-country compliance scenario
-> plus a 10-year event stress run. After RCR-1, execution
-> returns to the M-numbered milestone sequence — **M6.6
-> resumes per RFC-090 §6.6 on explicit go-ahead**.
+> plus a 10-year event stress run.
+>
+> Two follow-up corrective PRs closed the gap between
+> RCR-1 helpers and ordinary-simulation RFC behaviour:
+>
+> 1. **Issue #108 fix** (PR #109) wired
+>    `ai_policy::apply_selected_policies` into
+>    `monthly::tick_all_countries` as step 7, authored
+>    `military_strength` on every compliance country fixture,
+>    and authored 10 pairwise relationship/threat entries
+>    in `1930_rfc_compliance.json`. Still used a first-policy
+>    stub for AI.
+> 2. **Issue #110 + #112 strict-RFC corrective** (PR #111)
+>    replaces the first-policy stub with a deterministic
+>    pressure-gated, capacity-bounded scorer; rewires the
+>    event engine to do per-country / per-category weighted-
+>    random draw via `state.rng` (RFC-090 §5.7 "事件抽選"),
+>    recursive CONDITIONAL followup chains with cycle +
+>    depth-5 guards (RFC-050 §3 "條件連鎖"), author-controlled
+>    `EventOptionEffectMode` plus a state-based AI option
+>    chooser; and adds a player command surface
+>    (`PlayerCommandKind::ChooseEventOption`) for player-
+>    country events with options — reachable through the
+>    existing `--commands` script path. Player choices are
+>    satisfied via the COMMAND LAYER; a graphical UI prompt
+>    remains a future UI milestone if/when interactive UI
+>    lands. Save schema bumps v17 → v18; artefact contract
+>    unchanged (11); 9-container scenario-loader empty-state
+>    contract.
+>
+> After issue #112 lands, execution returns to the
+> M-numbered milestone sequence — **M6.6 resumes per
+> RFC-090 §6.6 on explicit go-ahead**. **There is no
+> RCR-2 track.** Issues #105 / #108 / #110 / #112 stay
+> open until the reviewer confirms strict compliance on
+> PR #111.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
@@ -496,9 +529,10 @@
   change, no new artefact (still 10), no new
   `RunnerOptions` field / CLI flag, no new
   `PlayerCommandKind`, no new state field beyond
-  `EventDefinition.true_cause`, no RNG draws from
-  the event pipeline (M5-era RNG-free property
-  preserved), no rebake of M1.17 / M2 / M3 / M4 /
+  `EventDefinition.true_cause`, no RNG draws added
+  by the M6.1 schema-only PR (PR #111 later adds
+  RFC-090 §5.7 weighted event-engine draws), no
+  rebake of M1.17 / M2 / M3 / M4 /
   M5 byte-identical determinism baselines (canonical
   events still don't fire — `true_cause` is
   narrative metadata, not behaviour), no M6.2 work

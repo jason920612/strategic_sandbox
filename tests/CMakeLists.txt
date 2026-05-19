@@ -67,6 +67,10 @@ add_executable(leviathan_tests
     integration/m4_dom_contract_test.cpp
     integration/m5_event_pipeline_test.cpp
     integration/rcr_1_rfc_compliance_test.cpp
+    integration/issue_110_ai_scorer_test.cpp
+    systems/event_engine_issue_112_test.cpp
+    systems/commands_event_choice_test.cpp
+    integration/issue_112_player_choice_runner_test.cpp
 )
 
 target_compile_definitions(leviathan_tests PRIVATE

@@ -6,6 +6,7 @@
       "description": "Bureaucratic compliance has slipped, signalling administrative drift.",
       "visible_report": "Ministry reports describe delays in routine compliance and weakening enforcement.",
       "true_cause": "country.government_authority.bureaucratic_compliance has fallen below the warning threshold.",
+      "category": "administrative",
       "triggers": [
         {
           "target": "country.government_authority.bureaucratic_compliance",
@@ -36,6 +37,8 @@
       "description": "A sustained drop in legitimacy provokes a public-confidence crisis.",
       "visible_report": "Editorials and polling lines describe a country losing public confidence in its leadership.",
       "true_cause": "country.legitimacy has fallen below the legitimacy-crisis threshold.",
+      "category": "political",
+      "option_effect_mode": "option_only",
       "triggers": [
         {
           "target": "country.legitimacy",
@@ -80,6 +83,7 @@
       "description": "Stability decline coincides with a flagged budget shortfall warning.",
       "visible_report": "Finance briefings warn that revenue is failing to keep up with planned expenditure.",
       "true_cause": "Stability has slipped far enough that fiscal stress signals appear in the public reports.",
+      "category": "fiscal",
       "triggers": [
         {
           "target": "country.stability",
@@ -109,6 +113,8 @@
       "description": "A bureaucracy-tied interest group's loyalty has slumped to a politically dangerous low.",
       "visible_report": "Press exposés describe a scandal damaging confidence in the bureaucracy.",
       "true_cause": "An interest group's loyalty has fallen below the corruption-scandal threshold.",
+      "category": "political",
+      "option_effect_mode": "option_only",
       "triggers": [
         {
           "target": "interest_group.loyalty",
@@ -148,6 +154,7 @@
       "description": "Legitimacy has fallen to a level that exposes weak intelligence coverage.",
       "visible_report": "Intelligence reviewers note thin coverage in domestic affairs.",
       "true_cause": "Legitimacy has dropped far enough that intelligence shortcomings surface in public discussion.",
+      "category": "intelligence",
       "triggers": [
         {
           "target": "country.legitimacy",
@@ -169,6 +176,7 @@
       "description": "Heavy-handed information control sparks a backlash among interest groups.",
       "visible_report": "Independent commentary describes a chilling effect; an interest group reacts with high radicalism.",
       "true_cause": "An interest group's radicalism has crossed the backlash threshold.",
+      "category": "media",
       "triggers": [
         {
           "target": "interest_group.radicalism",
@@ -190,6 +198,7 @@
       "description": "A flagged dip in central-government compliance prompts loyalty concerns.",
       "visible_report": "Defence-ministry summaries describe officers questioning current directives.",
       "true_cause": "Bureaucratic compliance has dropped far enough that loyalty concerns appear in military briefings.",
+      "category": "military",
       "triggers": [
         {
           "target": "country.government_authority.bureaucratic_compliance",
@@ -219,6 +228,7 @@
       "description": "A combined stability + legitimacy slip signals economic confidence loss.",
       "visible_report": "Treasury notes describe a sluggish quarter and fragile investor sentiment.",
       "true_cause": "Both stability and legitimacy have declined enough to flag the economic-slowdown warning.",
+      "category": "economic",
       "triggers": [
         {
           "target": "country.stability",

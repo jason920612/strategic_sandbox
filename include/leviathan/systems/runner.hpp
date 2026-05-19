@@ -97,6 +97,18 @@ struct RunnerOptions {
     bool                                 verify_strict = false; // M2.12: --verify-strict; requires --verify; informational in run(), main() exits non-zero on mismatches
     std::optional<double>                verify_tolerance;     // M2.13: --verify-tolerance N; requires --verify; overrides CompareOptions::double_tolerance (default 1e-9)
     std::optional<core::GameDate>        target_date;          // M2.14: --target-date YYYY-MM-DD; requires --replay; stop replay at this date and advance the time system to it
+    // Issue #112: --commands PATH — JSON command script applied
+    // AFTER the day-loop and BEFORE end_tick. Used to drive
+    // player commands (EnactPolicy, AdjustBudget,
+    // ChooseEventOption) from a deterministic test / scripted
+    // input. Each command in the script flows through the same
+    // `commands::dispatch_one` pipeline as the rest of the M2
+    // surface — successful commands land in
+    // `state.applied_commands`. The script JSON shape mirrors
+    // save_system's applied_commands serialisation (kind +
+    // per-kind payload), minus the `applied_on` date which is
+    // auto-stamped to the post-tick `state.current_date`.
+    std::optional<std::filesystem::path> commands_path;
     bool                                 show_help   = false;
 };
 

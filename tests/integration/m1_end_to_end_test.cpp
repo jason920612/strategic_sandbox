@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -52,6 +53,7 @@
 
 namespace fs = std::filesystem;
 using leviathan::core::CountryId;
+using leviathan::core::CountryState;
 using leviathan::core::GameDate;
 using leviathan::core::GameState;
 namespace rn = leviathan::systems::runner;
@@ -161,16 +163,56 @@ TEST_CASE("M1 end-to-end: scenario load -> day-0 enactment -> 365-day tick -> sa
     // The starting-policies scenario enacts:
     //   raise_taxes              on GER (duration_days = 60)
     //   increase_military_budget on GER (duration_days = 30)
-    // in that order, on day 0 (1930-01-01). Each enactment records an
-    // ActivePolicy entry on GER; FRA and JPN should have empty lists.
+    // in that order, on day 0 (1930-01-01).
+    //
+    // Issue #112 strict RFC compliance: the monthly pipeline invokes
+    // `ai_policy::apply_selected_policies` every month boundary. Over
+    // a 365-day run, 12 month boundaries are crossed. The AI
+    // selection rule has TWO new gates (RFC-090 §3.5 + RFC-040 §4):
+    //   1. PRESSURE gate: only countries whose `compute_total_pressure`
+    //      exceeds `kPressureThreshold` (0.80) emit selections that
+    //      month.
+    //   2. CAPACITY bound: countries above the gate emit 1/2/3 picks
+    //      per month based on administrative_efficiency / bureaucratic_
+    //      compliance / budget headroom.
+    // So a country's `active_policies` count is no longer a fixed
+    // function of how many monthly ticks ran — it depends on how
+    // many of those ticks the country's pressure cleared the gate
+    // AND on its capacity each time. Day-0 starting_policies are
+    // unchanged.
     const auto& ger = reloaded.countries[0];
-    REQUIRE(ger.active_policies.size() == 2u);
+    REQUIRE(ger.active_policies.size() >= 2u);
     CHECK(ger.active_policies[0].policy_id_code == "raise_taxes");
     CHECK(ger.active_policies[0].expires_on     == GameDate(1930, 3, 2));
     CHECK(ger.active_policies[1].policy_id_code == "increase_military_budget");
     CHECK(ger.active_policies[1].expires_on     == GameDate(1930, 1, 31));
-    CHECK(reloaded.countries[1].active_policies.empty());
-    CHECK(reloaded.countries[2].active_policies.empty());
+
+    // Build the set of valid policy id_codes for invariant checks.
+    std::set<std::string> valid_ids;
+    for (const auto& p : reloaded.policies) {
+        valid_ids.insert(p.id_code);
+    }
+
+    // Per-country invariant checks for the monthly AI-applied
+    // entries:
+    //   (a) the id_code is a real policy from state.policies
+    //       (no garbage / null / unknown ids)
+    //   (b) each entry's expires_on is set (non-default GameDate)
+    auto monthly_entries_pass_invariants = [&](const CountryState& c,
+                                               std::size_t          start) {
+        std::set<std::string> distinct_ids;
+        for (std::size_t i = start; i < c.active_policies.size(); ++i) {
+            const auto& ap = c.active_policies[i];
+            CHECK(valid_ids.count(ap.policy_id_code) == 1u);
+            CHECK(ap.expires_on != GameDate{});
+            distinct_ids.insert(ap.policy_id_code);
+        }
+        return distinct_ids;
+    };
+
+    (void)monthly_entries_pass_invariants(ger, 2u);
+    (void)monthly_entries_pass_invariants(reloaded.countries[1], 0u);
+    (void)monthly_entries_pass_invariants(reloaded.countries[2], 0u);
 
     // ---- Step 4: M1.12 coupling produced a non-zero growth signal --------
     // After 12 economy ticks the GDP and last_gdp_growth_rate must

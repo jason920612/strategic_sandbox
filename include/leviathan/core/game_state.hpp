@@ -67,13 +67,34 @@ struct GameState {
     // format v11).
     std::vector<InterestGroupState> interest_groups;
 
-    // M5.4: append-only history of fired events. Each entry records
-    // the event that fired, the date it fired, and the per-trigger
-    // actor binding at fire time. M5.4 is DATA only — no system
-    // creates these records (the future M5.x firer will). Hand-built
-    // entries round-trip through the save layer (save format v14).
-    // Loader does not populate this from the scenario manifest;
-    // history is a runtime accumulation, not a scenario input.
+    // Append-only history of fired events. Each entry records the
+    // event that fired, the date it fired, and the per-trigger
+    // actor binding at fire time. Round-trips through the save
+    // layer (current save format v18). Loader does not populate
+    // this from the scenario manifest; history is a runtime
+    // accumulation, not a scenario input. Scenario_loader rejects
+    // a pre-populated event_history at load_into_state entry
+    // (9-container "scenario-load-clean GameState" contract per
+    // issue #112 §7).
+    //
+    // Producers (issue #112 wired flow):
+    //   - event_firer::record_match — every parent event drawn
+    //     by event_engine::tick_events appends here.
+    //   - event_firer::record_followup — every followup picked
+    //     by event_engine::recurse_followups_from_event (the
+    //     conditional recursive chain inside tick_events AND
+    //     the post-ChooseEventOption recursion inside
+    //     commands::dispatch_one) appends here, with the
+    //     immediate predecessor written into the `followup_of`
+    //     log metadata.
+    //
+    // Consumers:
+    //   - state.pending_player_events[i].event_history_index
+    //     references a parent EventInstance whose effects were
+    //     deferred for the player country.
+    //   - save_system serialises every entry into save.json.
+    //   - events.jsonl is the per-fire LogEntry trail emitted
+    //     alongside each record_match / record_followup.
     std::vector<EventInstance> event_history;
 
     // RCR-1: RFC-090 §3.6 / §3.7 — pairwise inter-country
@@ -83,9 +104,21 @@ struct GameState {
     // author entries via the optional `relationships` block
     // (vector of `{from, to, relationship, threat}`). Save
     // format v17 makes the block required at the save layer.
-    // No system drives these values yet — RCR-1 ships the data
-    // layer + round-trip only.
+    // Issue #112 wires the AI scorer to READ these values so
+    // they finally feed simulation behaviour. The diplomacy-AI
+    // *driver* of these values stays M8 / RFC-040 scope.
     std::vector<CountryRelation> relationships;
+
+    // Issue #112: pending player-country event option choices.
+    // Populated by `event_engine::tick_events` when a player-country
+    // event with `options` non-empty fires. Effects are NOT applied
+    // for these events until the player issues a
+    // `PlayerCommandKind::ChooseEventOption` command. Save v18
+    // persists this vector; scenario_loader rejects a pre-populated
+    // entry on entry (9-container preflight). Order is the natural
+    // append-order from tick_events; the command handler resolves
+    // by `event_history_index` so order is informational only.
+    std::vector<PendingPlayerEvent> pending_player_events;
 };
 
 // Builds a fresh GameState from `config`:

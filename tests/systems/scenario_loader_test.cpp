@@ -311,7 +311,130 @@ TEST_CASE("load_into_state: pre-populated state is rejected") {
 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("requires an empty GameState") != std::string::npos);
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
+    CHECK(r.error().find("countries") != std::string::npos);
+}
+
+// =====================================================================
+// Issue #110 §4: empty-state preflight covers ALL 7 loader-populated
+// containers (countries / provinces / factions / policies / events /
+// interest_groups / relationships), not just the original three.
+// =====================================================================
+
+namespace {
+
+// Build a minimal valid manifest that the loader can otherwise load
+// cleanly — the only failure mode under test in this block is the
+// caller pre-populating one of the GameState containers.
+fs::path write_minimal_manifest(const TempDir& td) {
+    write_file(td.path / "data" / "countries" / "ger.json", country_json("GER"));
+    const auto manifest_path = td.path / "data" / "scenarios" / "m.json";
+    write_file(manifest_path,
+               R"({"scenario":{"countries":["countries/ger.json"],"factions":[],"policies":[]}})");
+    return manifest_path;
+}
+
+}  // namespace
+
+TEST_CASE("Issue #110: pre-populated state.provinces is rejected") {
+    TempDir td("scen_loader_prepop_provinces");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    leviathan::core::ProvinceNode node;
+    node.id_code = "STALE";
+    state.provinces.push_back(node);
+
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
+    CHECK(r.error().find("provinces") != std::string::npos);
+}
+
+TEST_CASE("Issue #110: pre-populated state.events is rejected") {
+    TempDir td("scen_loader_prepop_events");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    leviathan::core::EventDefinition def;
+    def.id_code = "stale_event";
+    def.name    = "Stale Event";
+    def.visible_report = "x";
+    def.true_cause     = "x";
+    state.events.push_back(def);
+
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
+    CHECK(r.error().find("events") != std::string::npos);
+}
+
+TEST_CASE("Issue #110: pre-populated state.interest_groups is rejected") {
+    TempDir td("scen_loader_prepop_igs");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    leviathan::core::InterestGroupState ig;
+    ig.id_code = "stale_ig";
+    ig.country = CountryId{0};
+    state.interest_groups.push_back(ig);
+
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
+    CHECK(r.error().find("interest_groups") != std::string::npos);
+}
+
+TEST_CASE("Issue #110: pre-populated state.relationships is rejected") {
+    TempDir td("scen_loader_prepop_relationships");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    leviathan::core::CountryRelation rel;
+    rel.from         = CountryId{0};
+    rel.to           = CountryId{1};
+    rel.relationship = -0.5;
+    rel.threat       = 0.5;
+    state.relationships.push_back(rel);
+
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("requires a scenario-load-clean GameState") != std::string::npos);
+    CHECK(r.error().find("relationships") != std::string::npos);
+}
+
+TEST_CASE("Issue #110: error message names every non-empty container "
+          "when multiple are pre-populated") {
+    TempDir td("scen_loader_prepop_multi");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    leviathan::core::CountryRelation rel;
+    rel.from = CountryId{0};
+    rel.to   = CountryId{1};
+    state.relationships.push_back(rel);
+    leviathan::core::InterestGroupState ig;
+    ig.id_code = "stale_ig";
+    state.interest_groups.push_back(ig);
+
+    const auto r = sl::load_into_state(state, manifest_path);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("interest_groups") != std::string::npos);
+    CHECK(r.error().find("relationships")   != std::string::npos);
+}
+
+TEST_CASE("Issue #110: calling load_into_state twice on the same state fails "
+          "(regression for silent-append behaviour issue #110 §4 flagged)") {
+    TempDir td("scen_loader_double_load");
+    const auto manifest_path = write_minimal_manifest(td);
+
+    GameState state;
+    REQUIRE(sl::load_into_state(state, manifest_path).ok());
+    // Second call must fail — preflight now catches all 7 containers,
+    // including the one (countries) populated by the first call.
+    const auto r2 = sl::load_into_state(state, manifest_path);
+    REQUIRE(r2.failed());
+    CHECK(r2.error().find("requires a scenario-load-clean GameState") != std::string::npos);
 }
 
 TEST_CASE("load_into_state: missing manifest file is reported with path") {
@@ -1002,6 +1125,7 @@ std::string canonical_two_event_file() {
       "description": "Low stability creates unrest pressure.",
       "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
       "true_cause": "The country's actual stability has fallen below the unrest threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         { "target": "country.stability", "op": "lt", "value": 0.30 }
       ],
@@ -1015,6 +1139,7 @@ std::string canonical_two_event_file() {
       "description": "A highly radical interest group signals political risk.",
       "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
       "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         { "target": "interest_group.radicalism", "op": "gt", "value": 0.75 }
       ],
@@ -1158,7 +1283,7 @@ TEST_CASE("M5.1 load_into_state: empty 'triggers' rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [],
             "effects": [] }
         ]
@@ -1180,7 +1305,7 @@ TEST_CASE("M5.1 load_into_state: trigger target not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.gdp", "op": "lt", "value": 100.0 }
             ],
@@ -1204,7 +1329,7 @@ TEST_CASE("M5.1 load_into_state: trigger op not in allowlist rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "eq", "value": 0.5 }
             ],
@@ -1228,7 +1353,7 @@ TEST_CASE("M5.1 load_into_state: trigger value wrong-type rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt",
                 "value": "not a number" }
@@ -1253,7 +1378,7 @@ TEST_CASE("M5.1 load_into_state: effect missing 'op' rejected (matches policy-ef
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "bad.json", R"({
         "events": [
-          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause",
+          { "id": "x", "name": "X", "description": "", "visible_report": "test report", "true_cause": "test cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1279,7 +1404,7 @@ TEST_CASE("M5.1 load_into_state: empty 'effects' is allowed (warning-only events
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "warning.json", R"({
         "events": [
-          { "id": "warn", "name": "Warning Event", "description": "", "visible_report": "warn report", "true_cause": "warn cause",
+          { "id": "warn", "name": "Warning Event", "description": "", "visible_report": "warn report", "true_cause": "warn cause", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.20 }
             ],
@@ -1304,7 +1429,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     write_file(td.path / "data" / "countries" / "b.json", country_json("BBB"));
     write_file(td.path / "data" / "events" / "one.json", R"({
         "events": [
-          { "id": "shared", "name": "First", "description": "", "visible_report": "shared report 1", "true_cause": "shared 1",
+          { "id": "shared", "name": "First", "description": "", "visible_report": "shared report 1", "true_cause": "shared 1", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "lt", "value": 0.5 }
             ],
@@ -1313,7 +1438,7 @@ TEST_CASE("M5.1 load_into_state: duplicate event id across files is rejected") {
     })");
     write_file(td.path / "data" / "events" / "two.json", R"({
         "events": [
-          { "id": "shared", "name": "Second", "description": "", "visible_report": "shared report 2", "true_cause": "shared 2",
+          { "id": "shared", "name": "Second", "description": "", "visible_report": "shared report 2", "true_cause": "shared 2", "category": "test",
             "triggers": [
               { "target": "country.stability", "op": "gt", "value": 0.8 }
             ],

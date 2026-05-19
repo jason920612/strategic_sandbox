@@ -1,71 +1,72 @@
-// RCR-1: AI policy selection + apply.
+// Issue #110: AI policy selection driven by country / interest-group /
+// relationship state — not the previous RCR-1 first-policy stub.
 //
-// Clears RFC-090 §3.5 ("AI policy selection") AND
-// RFC-010 §2.2 ("AI countries can auto-select policy") with
-// both a deterministic selection helper and a per-country
-// apply path that reuses the existing M1.5 policy machinery.
-//
-// RCR-1 is a one-time corrective PR (NOT a long-running
-// recovery track and NOT an M-milestone number); see
-// docs/rfc-090-010-compliance-audit.md §5.1 for the framing
-// rule. M6.6 resumes per RFC-090 §6.6 after this PR lands.
+// Wired into `monthly::tick_all_countries` (see monthly_pipeline.hpp).
 //
 // Module surface:
 //
 //   select_policies(state) -> Result<vector<Selection>>
-//     Read-only / mutation-free. One Selection per
-//     non-player country in state.countries vector order
-//     (player skipped when state.player_country is a valid
-//     index). When state.policies is empty, returns an empty
-//     vector. Selection rule for RCR-1 is "first policy in
-//     state.policies (vector order)" — deliberately minimal,
-//     deterministic, RNG-free. A future refinement can swap
-//     in a fit-scoring routine without changing the API.
+//     Read-only / mutation-free. Returns one Selection per non-player
+//     country that has at least one eligible (non-stacked) policy.
+//     The selection rule is the deterministic scorer defined in
+//     ai_policy.cpp: for each candidate policy, sum
+//
+//        score = Σ_effect (effect.value × target_desire(country, effect.target))
+//              + IG-aggregate term (radicalism / loyalty pressure)
+//              + category baseline (intelligence/media/anti-corruption)
+//
+//     The highest-scoring policy wins; on a tie, the lower vector index
+//     wins (stable tie-break). Policies whose `id_code` is already
+//     present in `country.active_policies` with an unexpired
+//     `expires_on` are excluded (no-stacking rule). If every policy is
+//     stacked, the country emits no Selection that month (counted via
+//     ApplyOutcome.skipped).
 //
 //   apply_selected_policies(state) -> Result<ApplyOutcome>
-//     Calls select_policies, then dispatches every Selection
-//     through policy::apply_policy_effects(state, country,
-//     policy). Apply inherits M1.5 pre-flight atomicity
-//     (a failing effect leaves THAT country untouched) and
-//     M1.15 active_policies bookkeeping (a successful apply
-//     appends one ActivePolicy entry to country.active_policies
-//     via the existing policy path). Fail-continue across
-//     countries: a failure on country i records into
-//     ApplyOutcome.failed_countries but does NOT abort the
-//     remaining apply calls — mirrors the M5.6 applicator
-//     "broken event for country X doesn't block country Y"
-//     convention.
+//     Calls select_policies, then dispatches every Selection through
+//     `policy::apply_policy_effects(state, country, policy)`. Apply
+//     inherits M1.5 pre-flight atomicity (a failing effect leaves
+//     THAT country untouched) and M1.15 active_policies bookkeeping
+//     (a successful apply appends one ActivePolicy entry).
+//     Fail-continue across countries: a per-country apply failure
+//     records into ApplyOutcome.failed_countries but does NOT abort
+//     remaining apply calls.
+//
+// Inputs the scorer reads (RFC-090 §3.5 / §3.6 / §3.7 / §3.8;
+// RFC-040 §4):
+//   - CountryState: stability / legitimacy / corruption /
+//     administrative_efficiency / fiscal_capacity / central_control /
+//     budget_balance / gdp / legal_tax_burden / threat_perception /
+//     military_strength
+//   - GameState::relationships (CountryRelation): inbound threat to
+//     this country and source country's military_strength for the
+//     military-gap term
+//   - GameState::interest_groups (InterestGroupState):
+//     influence-weighted radicalism + mean loyalty over IGs whose
+//     `country` is this country
+//   - PolicyData: category + per-effect target / op / value
 //
 // Determinism guarantees (both functions):
-//
-//   - RNG-free          (state.rng untouched)
-//   - vector order      (state.countries[i] -> Selection[i]
-//                        when neither i is the player nor
-//                        state.policies is empty)
-//   - apply atomicity   (per-country, via M1.5 pre-flight)
-//   - no time-based input
+//   - RNG-free (state.rng untouched)
+//   - vector order preserved (state.countries[i] -> Selection in
+//     traversal order; equal-score policies break by lower vector index)
+//   - apply atomicity (per-country, via M1.5 pre-flight)
+//   - no time-based input beyond `state.current_date` for the
+//     unexpired-policy filter
 //
 // What this module does NOT do:
-//
-//   - schedule policies for later application (no scheduler;
-//     each apply records ONE ActivePolicy entry via the
-//     existing M1.15 path)
-//   - consume state.rng (RNG-free)
-//   - emit logs / events.jsonl / CSV (consistent with the
-//     M3.4 / M5.6 applicator "no log emission" convention)
-//   - consult RFC-010 §3.6 relationships / §3.7 threat /
-//     §3.8 military_strength (those fields exist on state but
-//     are inputs for a future smarter selection rule, not
-//     the current first-policy rule)
-//   - run as part of monthly::tick_all_countries (standalone
-//     caller-driven helpers, mirroring M5.7's pre-M5.8
-//     contract; a future runner-policy may auto-call
-//     apply_selected_policies once per month)
-//   - apply to the player country (deliberately skipped)
+//   - apply to the player country (skipped via state.player_country
+//     check)
+//   - stack a policy already active+unexpired on the country
+//   - emit logs / events.jsonl entries (consistent with the M3.4 /
+//     M5.6 applicator "no log emission" convention)
+//   - emit CSV rows
+//   - consume state.rng
 
 #ifndef LEVIATHAN_SYSTEMS_AI_POLICY_HPP
 #define LEVIATHAN_SYSTEMS_AI_POLICY_HPP
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -75,77 +76,52 @@
 
 namespace leviathan::systems::ai_policy {
 
-// One AI-driven selection: which policy the AI would enact
-// for `country`. Mirrors the (country, policy_id_code) shape
-// of scenario manifest `starting_policies` entries (M1.13)
-// so a future apply path can reuse the same plumbing.
+// One AI-driven selection: which policy the AI would enact for
+// `country`. Mirrors the (country, policy_id_code) shape of scenario
+// manifest `starting_policies` entries (M1.13) so the apply path
+// reuses the same plumbing.
 struct Selection {
     core::CountryId country;
     std::string     policy_id_code;
 };
 
-// Compute one Selection per non-player country.
+// Compute one Selection per non-player country that has an eligible
+// (non-stacked) candidate. Countries whose every policy is currently
+// active+unexpired emit no Selection (handled in apply_selected_policies
+// via ApplyOutcome.skipped).
 //
-// Preconditions: none. Empty `state.countries` and empty
-// `state.policies` both produce an empty selection vector
-// (Result::success with an empty vector — not a failure).
+// Preconditions: none. Empty `state.countries` and empty `state.policies`
+// both produce an empty selection vector (Result::success with an empty
+// vector — not a failure).
 //
 // Guarantees:
 //   - deterministic (same input -> identical output bytes)
 //   - RNG-free (state.rng untouched)
 //   - mutation-free (state unchanged)
-//   - vector order preserved (state.countries[i] -> result[i]
-//     when neither i is the player nor state.policies is empty)
+//   - skips state.player_country when valid
 core::Result<std::vector<Selection>>
 select_policies(const core::GameState& state);
 
-// RCR-1: AI policy apply path. Calls `select_policies(state)` and
-// then applies each `Selection` via the existing
+// AI policy apply path. Calls `select_policies(state)` and then
+// applies each Selection via the existing
 // `policy::apply_policy_effects(state, country, policy)` path so
 // every AI selection inherits M1.5 pre-flight atomicity + M1.15
-// `active_policies` bookkeeping.
+// active_policies bookkeeping.
 //
-// Returns a per-call summary: how many AI countries were
-// considered, how many had a successful apply, how many were
-// skipped (no matching policy in `state.policies`, or
-// `policy::apply_policy_effects` returned a failure).
-//
-// Atomicity:
-//   - Each per-country apply call is atomic in its own M1.5
-//     pre-flight sense (a failing effect leaves THAT country
-//     untouched).
-//   - Across countries, this function is FAIL-CONTINUE rather
-//     than FAIL-FAST: a failing apply on country `i` records
-//     the failure in the outcome but does not abort the
-//     remaining `[i+1..end)` apply calls. This mirrors the
-//     M5.6 `apply_event_effects` policy of "broken event for
-//     country X doesn't block country Y" and keeps the AI
-//     applicator from leaving the world half-AI'd.
-//   - The function never throws. Failures are reported through
-//     `ApplyOutcome.failed_countries`.
-//
-// Determinism: identical to `select_policies` — RNG-free, vector-
-// order, no time-based input. Same input state produces an
-// identical mutation sequence.
-//
-// What this function does NOT do:
-//   - apply to the player country (skipped via the same
-//     player-detection used in `select_policies`)
-//   - select more than one policy per country in this call
-//   - schedule policies for later application (no scheduler;
-//     reuses M1.15 active_policies expiry-tracking that the
-//     existing policy path already records)
-//   - emit logs / events.jsonl entries (consistent with the
-//     M3.4 / M5.6 "no log emission" invariant for this
-//     applicator's neighbours)
-//   - emit CSV rows
-//   - consult relationships / threat / military values (those
-//     fields exist on state but are inputs for a future smarter
-//     selection rule, not the current first-policy rule)
+// Returns a per-call summary: how many AI countries were considered,
+// how many had a successful apply, how many were skipped (no
+// eligible candidate; every policy currently active+unexpired).
 struct ApplyOutcome {
     std::size_t considered      = 0;  // non-player countries scanned
     std::size_t applied         = 0;  // successful apply calls
-    std::size_t skipped         = 0;  // no policies / no selection
+    std::size_t skipped         = 0;  // no eligible candidate (all stacked)
+    // Issue #112: countries whose `compute_total_pressure` was
+    // below `kPressureThreshold` and therefore emitted 0
+    // selections. These countries ARE counted in `considered`
+    // but NOT in `skipped` (skipped means "tried, all
+    // candidates stacked"). Sum:
+    //   considered = applied_count_per_country + skipped + pressure_below_threshold_skipped
+    std::size_t pressure_below_threshold_skipped = 0;
     std::vector<core::CountryId> failed_countries;  // apply returned failure
 };
 

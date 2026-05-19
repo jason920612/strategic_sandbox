@@ -47,29 +47,58 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
-// M5.8 adds a fourth (and currently final) global step AFTER M3.4:
+// The two final global steps AFTER M3.4 (issue #112 semantics):
 //
-//   7.  event_engine::tick_events (state)
+//   7.  ai_policy::apply_selected_policies (state)
+//   8.  event_engine::tick_events            (state)
 //
-// `tick_events` is the M5.7 composition that evaluates all
-// `state.events` against the post-M3.4 state snapshot, fires
-// every matching event (appends to `state.event_history`), and
-// applies each fired event's effects via the M5.6 / M1.5
-// shared apply path. Runs LAST so it sees the freshest values
-// every other monthly system just produced — events about "low
-// stability" or "high radicalism" check the values as they
-// stand at month-end, not the pre-month-tick snapshot.
+// Step 7 — AI policy selection (RFC-090 §3.5 / RFC-040 §4):
+//   - PRESSURE-gated: countries whose `compute_total_pressure`
+//     (sum of normalised stability / legitimacy / corruption /
+//     budget / threat / IG-radicalism terms) falls below
+//     `ai_policy::kPressureThreshold = 0.80` emit ZERO selections
+//     that tick. `MonthlyOutcome.ai_policies_*` counters expose
+//     the gate result.
+//   - CAPACITY-bounded: countries above the gate emit 1 / 2 / 3
+//     picks based on
+//     `0.5×admin_efficiency + 0.3×bcomp + 0.2×budget_headroom`.
+//   - The scorer reads CountryState pressures, `state.relationships`
+//     inbound threat + hostile-neighbour military_strength gap,
+//     `state.interest_groups` influence-weighted radicalism /
+//     loyalty, and PolicyData category + effects.
+//   - No-stacking rule: candidates already active+unexpired are
+//     excluded; chooser picks next-best.
+//   - Player country always skipped.
 //
-// `tick_events` is documented as snapshot-evaluation: the
-// evaluator runs once at the top of the call and subsequent
-// apply passes that mutate state do NOT re-trigger evaluation
-// in the same month. Cascade events (event B that becomes true
-// only because event A's apply dropped a value) wait for the
-// next monthly tick. `tick_events` does NOT append to
-// `state.logs` / `state.applied_commands` / `events.jsonl` /
-// any country's `active_policies`; it mutates only
-// `state.event_history` and any country fields that the
-// applied effects target.
+// Step 8 — `tick_events` (RFC-090 §5.6 / §5.7 / §5.8 / §5.12,
+// RFC-050 §3):
+//   - PER-COUNTRY / PER-CATEGORY weighted-random draw via
+//     `random::weighted_choice(state.rng, …)`. ONE event fires
+//     per (country, category) per tick. Same template MAY fire
+//     for multiple countries in the same tick — each country
+//     rolls independently.
+//   - Trigger scoping is strictly per-country (`country.*` and
+//     `interest_group.*` both bind within the named country).
+//   - For NON-player countries with options, the state-based
+//     option chooser (`select_best_option_for_country`) picks
+//     and `apply_option_effects_with_mode` applies per the
+//     event's author-controlled `option_effect_mode` (OptionOnly
+//     / BaseThenOption / OptionThenBase). Events without options
+//     fall through to `apply_event_effects`.
+//   - For PLAYER country with options, the parent EventInstance
+//     is recorded but effects are deferred to a
+//     `PlayerCommandKind::ChooseEventOption` command — NO
+//     effects and NO followups during this tick.
+//   - Followups are CONDITIONAL (RFC-050 §3 "條件連鎖"): each
+//     followup must satisfy its own triggers AFTER the parent
+//     applies. Multiple matching followups → weighted draw one.
+//     Recursion runs depth-N up to
+//     `event_engine::kMaxFollowupDepth = 5` with a visited-
+//     id_code cycle guard.
+//   - `record_match` and `record_followup` append one
+//     `LogEntry{category="event_fired", source="event_firer"}`
+//     to `state.logs` per fire — that's what surfaces in
+//     `events.jsonl`.
 //
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and
@@ -79,10 +108,7 @@
 // reversed order would produce a different result, so a future
 // refactor cannot silently flip the order.
 //
-// M1.9 deliberately does NOT do:
-//   * Policy enactment / duration tracking / active-policy container.
-//     A policy fires explicitly via `policy::apply_policy_effects`
-//     from outside the pipeline; M1.9 has no opinion on when.
+// `tick_all_countries` deliberately does NOT do:
 //   * Runner / TimeSystem auto-invocation. The caller decides when a
 //     month boundary occurred.
 //   * Logging, RNG use, date mutation, save-schema change. Tests
@@ -117,6 +143,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/core/result.hpp"
+#include "leviathan/systems/ai_policy.hpp"
 #include "leviathan/systems/economy_system.hpp"
 #include "leviathan/systems/event_engine.hpp"
 #include "leviathan/systems/faction_system.hpp"
@@ -178,6 +205,26 @@ struct MonthlyOutcome {
         interest_group_country_feedback_trace_rows;
     std::vector<interest_group::AuthorityPressureTraceRow>
         interest_group_authority_pressure_trace_rows;
+
+    // Issue #108 fix: AI policy auto-apply counters, populated by
+    // the new global step that runs between M3.4 authority_pressure
+    // and M5.8 event_engine::tick_events. RFC-010 §2.2 / RFC-090
+    // §3.5 expect AI countries to *automatically* select policies
+    // every tick; the helper-only ai_policy::apply_selected_policies
+    // shipped in RCR-1 is now wired into the monthly pipeline so
+    // the simulation actually exercises the AI behavior the RFC
+    // describes. Counters mirror ai_policy::ApplyOutcome:
+    //   ai_policies_considered  = non-player countries scanned
+    //   ai_policies_applied     = successful per-country apply
+    //   ai_policies_skipped     = no policy / no selection
+    //   ai_policies_failed      = per-country apply returned failure
+    //                             (fail-continue: monthly pipeline
+    //                              does NOT abort on a single
+    //                              country's failure)
+    int ai_policies_considered = 0;
+    int ai_policies_applied    = 0;
+    int ai_policies_skipped    = 0;
+    int ai_policies_failed     = 0;
 
     // M5.8: final global step's outcome. Mirrors the fields of
     // `event_engine::TickOutcome` (events_matched / events_recorded

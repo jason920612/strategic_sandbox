@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -282,6 +283,17 @@ parse_event_file(std::string_view json_text,
                 std::move(r.error()));
         }
 
+        // Issue #112: category is required non-empty. The event
+        // engine groups matched events by category and draws one
+        // per (country, category) bucket per tick — so an absent /
+        // empty category would silently drop the event from
+        // every draw.
+        if (auto r = need_string_nonempty("category",
+                                          ev.category); !r) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                std::move(r.error()));
+        }
+
         // triggers: required, non-empty array.
         if (!e.contains("triggers") || !e.at("triggers").is_array()) {
             return core::Result<std::vector<ManifestEvent>>::failure(
@@ -529,6 +541,50 @@ parse_event_file(std::string_view json_text,
                     opt.effects.push_back(std::move(eff));
                 }
                 ev.options.push_back(std::move(opt));
+            }
+        }
+
+        // Issue #112: option_effect_mode required iff options
+        // non-empty. JSON keys: "option_only" | "base_then_option"
+        // | "option_then_base". Reject absent-with-options or
+        // present-without-options to avoid silent semantics.
+        const bool has_mode_key = e.contains("option_effect_mode");
+        const bool has_options  = !ev.options.empty();
+        if (has_options && !has_mode_key) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".option_effect_mode required when "
+                        "options is non-empty"));
+        }
+        if (!has_options && has_mode_key) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".option_effect_mode must be absent "
+                        "when options is empty"));
+        }
+        if (has_options) {
+            if (!e.at("option_effect_mode").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".option_effect_mode must be a string"));
+            }
+            const std::string mode_str =
+                e.at("option_effect_mode").get<std::string>();
+            if (mode_str == "option_only") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::OptionOnly;
+            } else if (mode_str == "base_then_option") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::BaseThenOption;
+            } else if (mode_str == "option_then_base") {
+                ev.option_effect_mode =
+                    core::EventOptionEffectMode::OptionThenBase;
+            } else {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            ctx + ".option_effect_mode '" + mode_str +
+                            "' must be one of option_only / "
+                            "base_then_option / option_then_base"));
             }
         }
 
@@ -813,6 +869,85 @@ core::Result<ScenarioManifest> parse_manifest(std::string_view json_text,
         }
     }
 
+    // ---- Issue #108 fix: optional relationships block ----------------
+    // RFC-090 §3.6 / §3.7: pairwise inter-country relationship +
+    // threat record. Authored on the manifest as
+    //   "relationships": [
+    //     { "from": "GER", "to": "FRA", "relationship": -0.4, "threat": 0.6 },
+    //     ...
+    //   ]
+    // Each entry's `from` / `to` id_code is resolved against
+    // `state.countries` inside `load_into_state`. Range validation
+    // (relationship in [-1, 1]; threat in [0, 1]) happens here at
+    // parse time so a malformed manifest fails before any state
+    // mutation.
+    if (s.contains("relationships")) {
+        const json& arr = s.at("relationships");
+        if (!arr.is_array()) {
+            return core::Result<ScenarioManifest>::failure(
+                fmt_err(source_label,
+                        "'scenario.relationships' is not an array"));
+        }
+        m.relationships.reserve(arr.size());
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            const std::string ctx =
+                "'scenario.relationships[" + std::to_string(i) + "]'";
+            if (!arr[i].is_object()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + " is not an object"));
+            }
+            const json& e = arr[i];
+            ManifestRelation rel;
+            if (!e.contains("from") || !e.at("from").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".from missing or not a string"));
+            }
+            rel.from_id_code = e.at("from").get<std::string>();
+            if (rel.from_id_code.empty()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + ".from must be non-empty"));
+            }
+            if (!e.contains("to") || !e.at("to").is_string()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".to missing or not a string"));
+            }
+            rel.to_id_code = e.at("to").get<std::string>();
+            if (rel.to_id_code.empty()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label, ctx + ".to must be non-empty"));
+            }
+            if (!e.contains("relationship")
+                || !e.at("relationship").is_number()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".relationship missing or not a number"));
+            }
+            rel.relationship = e.at("relationship").get<double>();
+            if (!std::isfinite(rel.relationship)
+                || rel.relationship < -1.0 || rel.relationship > 1.0) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".relationship out of range"
+                            " (expected [-1, 1])"));
+            }
+            if (!e.contains("threat") || !e.at("threat").is_number()) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".threat missing or not a number"));
+            }
+            rel.threat = e.at("threat").get<double>();
+            if (!std::isfinite(rel.threat)
+                || rel.threat < 0.0 || rel.threat > 1.0) {
+                return core::Result<ScenarioManifest>::failure(
+                    fmt_err(source_label,
+                            ctx + ".threat out of range (expected [0, 1])"));
+            }
+            m.relationships.push_back(std::move(rel));
+        }
+    }
+
     return core::Result<ScenarioManifest>::success(std::move(m));
 }
 
@@ -822,13 +957,50 @@ core::Result<ScenarioLoadOutcome> load_into_state(
     namespace dl = leviathan::systems::data_loader;
 
     // ---- 0. Reject pre-populated state -----------------------------
-    if (!state.countries.empty() || !state.factions.empty()
-        || !state.policies.empty()) {
-        return core::Result<ScenarioLoadOutcome>::failure(
-            manifest_path.string() +
-            ": load_into_state requires an empty GameState"
-            " (state.countries / state.factions / state.policies"
-            " must all be empty)");
+    // Issue #112 §7: "scenario-load-clean GameState" — every container
+    // whose load_into_state needs a clean slate must be empty on
+    // entry. The contract covers both scenario-loaded containers
+    // (7 of these) and runtime-carryover containers that would
+    // contaminate a fresh scenario load (2 of these):
+    //
+    //   Scenario-loaded:
+    //     countries / provinces / factions / policies / events /
+    //     interest_groups / relationships
+    //
+    //   Runtime-carryover (rejected so a fresh load doesn't inherit
+    //   stale audit history from a previous scenario):
+    //     pending_player_events  — could reference an event_history
+    //         entry from a different scenario
+    //     event_history          — would mix two scenarios' fire
+    //         audit trails into one save
+    //
+    // `state.logs` and `state.applied_commands` are intentionally
+    // NOT checked: they're runtime audit trails whose carryover
+    // across scenario loads is legitimate (a runner script may want
+    // to log something before / between load_into_state calls).
+    {
+        std::string non_empty;
+        auto note = [&](const char* name, bool flag) {
+            if (flag) {
+                if (!non_empty.empty()) { non_empty += ", "; }
+                non_empty += name;
+            }
+        };
+        note("countries",            !state.countries.empty());
+        note("provinces",            !state.provinces.empty());
+        note("factions",             !state.factions.empty());
+        note("policies",             !state.policies.empty());
+        note("events",               !state.events.empty());
+        note("interest_groups",      !state.interest_groups.empty());
+        note("relationships",        !state.relationships.empty());
+        note("pending_player_events", !state.pending_player_events.empty());
+        note("event_history",        !state.event_history.empty());
+        if (!non_empty.empty()) {
+            return core::Result<ScenarioLoadOutcome>::failure(
+                manifest_path.string() +
+                ": load_into_state requires a scenario-load-clean"
+                " GameState (non-empty containers: " + non_empty + ")");
+        }
     }
 
     // ---- 1. Read + parse manifest ----------------------------------
@@ -1121,17 +1293,65 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                 ev.description        = entry.description;
                 ev.visible_report     = entry.visible_report;   // M6.2
                 ev.true_cause         = entry.true_cause;
+                ev.category           = entry.category;         // issue #112
                 ev.triggers           = entry.triggers;
                 ev.effects            = entry.effects;
                 // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12):
                 ev.weight_modifiers   = entry.weight_modifiers;
                 ev.options            = entry.options;
                 ev.followup_event_ids = entry.followup_event_ids;
+                ev.option_effect_mode = entry.option_effect_mode; // issue #112
                 event_index.emplace(ev.id_code, state.events.size());
                 state.events.push_back(std::move(ev));
             }
         }
         outcome.events_loaded = static_cast<int>(state.events.size());
+    }
+
+    // ---- Issue #108 fix: resolve manifest relationships --------------
+    // After state.countries is fully populated, walk
+    // manifest.relationships and resolve each from/to id_code to a
+    // CountryId by linear scan. Unresolvable id_codes are a hard
+    // failure (mirrors M1.13 starting_policies' "unknown actor"
+    // rejection). The resolved CountryRelation entries are
+    // appended to state.relationships in manifest order.
+    if (!manifest.relationships.empty()) {
+        auto resolve_country = [&](const std::string& id_code)
+            -> std::optional<core::CountryId> {
+            for (std::size_t k = 0; k < state.countries.size(); ++k) {
+                if (state.countries[k].id_code == id_code) {
+                    return core::CountryId{
+                        static_cast<core::CountryId::underlying_type>(k)};
+                }
+            }
+            return std::nullopt;
+        };
+        state.relationships.reserve(manifest.relationships.size());
+        for (std::size_t i = 0; i < manifest.relationships.size(); ++i) {
+            const auto& mr = manifest.relationships[i];
+            const std::string ctx =
+                "relationships[" + std::to_string(i) + "]";
+            auto from = resolve_country(mr.from_id_code);
+            if (!from.has_value()) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() + ": " + ctx +
+                    ": unknown 'from' country id_code '" +
+                    mr.from_id_code + "'");
+            }
+            auto to = resolve_country(mr.to_id_code);
+            if (!to.has_value()) {
+                return core::Result<ScenarioLoadOutcome>::failure(
+                    manifest_path.string() + ": " + ctx +
+                    ": unknown 'to' country id_code '" +
+                    mr.to_id_code + "'");
+            }
+            core::CountryRelation r;
+            r.from         = from.value();
+            r.to           = to.value();
+            r.relationship = mr.relationship;
+            r.threat       = mr.threat;
+            state.relationships.push_back(std::move(r));
+        }
     }
 
     return core::Result<ScenarioLoadOutcome>::success(outcome);

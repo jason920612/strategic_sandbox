@@ -68,7 +68,19 @@ TEST_CASE("RCR-1 ai_policy: policies but no countries produces empty selections"
 // RCR-1 ai_policy::select_policies — happy path
 // =====================================================================
 
-TEST_CASE("RCR-1 ai_policy: 3 countries no player gets one selection each, all to policies[0]") {
+TEST_CASE("ai_policy: 3 countries no player, synthetic high-pressure state "
+          "emits capacity-bounded picks per country "
+          "(empty PolicyData scores tie at 0; vector-order tie-break)") {
+    // Default-constructed CountryState has stability=0 + legitimacy=0
+    // which sums to pressure ≥ 2.0 — well above kPressureThreshold —
+    // so each country emits selections. Default
+    // `government_authority.bureaucratic_compliance = 0.5` plus
+    // `administrative_efficiency = 0.0` and budget_balance = 0
+    // yields capacity = 0.5×0 + 0.3×0.5 + 0.2×1.0 = 0.35 → 2 picks
+    // per country (kCapacityLowMax=0.30, kCapacityMediumMax=0.60).
+    // Synthetic empty PolicyData all score 0 → tie → vector-order
+    // tie-break selects raise_taxes then expand_welfare for each
+    // country.
     GameState state = leviathan::core::make_game_state(
         leviathan::core::SimulationConfig{});
     state.countries.push_back(make_country("GER"));
@@ -79,14 +91,19 @@ TEST_CASE("RCR-1 ai_policy: 3 countries no player gets one selection each, all t
 
     const auto r = ai::select_policies(state);
     REQUIRE(r);
-    REQUIRE(r.value().size() == 3);
+    REQUIRE(r.value().size() == 6u);  // 3 countries × 2 picks each
 
-    CHECK(r.value()[0].country == CountryId{0});
-    CHECK(r.value()[1].country == CountryId{1});
-    CHECK(r.value()[2].country == CountryId{2});
-    CHECK(r.value()[0].policy_id_code == "raise_taxes");
-    CHECK(r.value()[1].policy_id_code == "raise_taxes");
-    CHECK(r.value()[2].policy_id_code == "raise_taxes");
+    for (std::size_t ci = 0; ci < 3u; ++ci) {
+        CAPTURE(ci);
+        const auto& a = r.value()[ci * 2 + 0];
+        const auto& b = r.value()[ci * 2 + 1];
+        CHECK(a.country
+              == CountryId{static_cast<CountryId::underlying_type>(ci)});
+        CHECK(b.country
+              == CountryId{static_cast<CountryId::underlying_type>(ci)});
+        CHECK(a.policy_id_code == "raise_taxes");
+        CHECK(b.policy_id_code == "expand_welfare");
+    }
 }
 
 TEST_CASE("RCR-1 ai_policy: player country is skipped") {

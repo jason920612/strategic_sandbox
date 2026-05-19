@@ -101,6 +101,49 @@ first_interest_group_index_satisfying(const core::GameState&    state,
     return std::nullopt;
 }
 
+// Issue #112: per-country scoped trigger satisfaction. Returns the
+// SAME country's index when target is country-scoped (provided that
+// country actually satisfies the predicate); returns the first
+// matching IG index restricted to IGs whose owning country == cid
+// for IG-scoped triggers. Used by `match_events_for_country` so an
+// IG in FRA doesn't make GER's event pool match.
+std::optional<std::size_t>
+country_index_satisfying_for(const core::GameState&    state,
+                             core::CountryId           cid,
+                             const core::EventTrigger& trig) {
+    if (!target_is_country_scope(trig.target)) {
+        return std::nullopt;
+    }
+    if (!cid.valid()) { return std::nullopt; }
+    const auto idx = static_cast<std::size_t>(cid.value());
+    if (idx >= state.countries.size()) {
+        return std::nullopt;
+    }
+    const double v = pick_country_value(trig.target, state.countries[idx]);
+    if (op_compare(trig.op, v, trig.value)) {
+        return idx;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::size_t>
+ig_index_satisfying_for(const core::GameState&    state,
+                        core::CountryId           cid,
+                        const core::EventTrigger& trig) {
+    if (!target_is_interest_group_scope(trig.target)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
+        const auto& g = state.interest_groups[i];
+        if (g.country != cid) { continue; }
+        const double v = pick_interest_group_value(trig.target, g);
+        if (op_compare(trig.op, v, trig.value)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 bool trigger_matches(const core::GameState&    state,
@@ -189,6 +232,81 @@ std::vector<EventMatch> match_events(const core::GameState& state) {
     for (std::size_t i = 0; i < state.events.size(); ++i) {
         const auto& def = state.events[i];
         auto m = evaluate_match(state, def);
+        if (m.has_value()) {
+            m->event_index = i;
+            out.push_back(std::move(*m));
+        }
+    }
+    return out;
+}
+
+// Issue #112: per-country event-match scoping. Each event evaluates
+// against ONE country only:
+//   * `country.*` triggers must hold for state.countries[country_id]
+//     specifically (NOT any other country).
+//   * `interest_group.*` triggers must hold for some IG whose owning
+//     `country == country_id` (NOT any IG in any country).
+//   * Mixed-trigger events require BOTH sides to bind within the
+//     same country.
+// One country's match does NOT suppress another's — each country
+// gets its own draw pool. Same event template may match for
+// multiple countries independently.
+std::optional<EventMatch>
+evaluate_match_for_country(const core::GameState&       state,
+                           core::CountryId              country_id,
+                           const core::EventDefinition& def) {
+    EventMatch m;
+    m.event_index   = 0;
+    m.event_id_code = def.id_code;
+    m.triggers.reserve(def.triggers.size());
+    for (std::size_t ti = 0; ti < def.triggers.size(); ++ti) {
+        const auto& trig = def.triggers[ti];
+        if (!std::isfinite(trig.value)) {
+            return std::nullopt;
+        }
+        TriggerEvaluation te;
+        te.trigger_index = ti;
+        if (target_is_country_scope(trig.target)) {
+            const auto idx = country_index_satisfying_for(state, country_id, trig);
+            if (!idx.has_value()) {
+                return std::nullopt;
+            }
+            const auto& c = state.countries[*idx];
+            te.actor.kind    = TriggerActorKind::Country;
+            te.actor.id_code = c.id_code;
+            te.actor.country = c.id;
+            te.actor.index   = *idx;
+        } else if (target_is_interest_group_scope(trig.target)) {
+            const auto idx = ig_index_satisfying_for(state, country_id, trig);
+            if (!idx.has_value()) {
+                return std::nullopt;
+            }
+            const auto& g = state.interest_groups[*idx];
+            te.actor.kind    = TriggerActorKind::InterestGroup;
+            te.actor.id_code = g.id_code;
+            te.actor.country = g.country;
+            te.actor.index   = *idx;
+        } else {
+            return std::nullopt;
+        }
+        m.triggers.push_back(std::move(te));
+    }
+    return m;
+}
+
+std::vector<EventMatch>
+match_events_for_country(const core::GameState& state,
+                         core::CountryId        country_id) {
+    std::vector<EventMatch> out;
+    if (!country_id.valid()
+        || static_cast<std::size_t>(country_id.value())
+               >= state.countries.size()) {
+        return out;
+    }
+    out.reserve(state.events.size());
+    for (std::size_t i = 0; i < state.events.size(); ++i) {
+        const auto& def = state.events[i];
+        auto m = evaluate_match_for_country(state, country_id, def);
         if (m.has_value()) {
             m->event_index = i;
             out.push_back(std::move(*m));

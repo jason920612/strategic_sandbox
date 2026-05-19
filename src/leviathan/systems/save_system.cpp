@@ -60,8 +60,9 @@ core::Result<core::LogSeverity> severity_from_string(std::string_view s) {
 
 std::string player_command_kind_to_string(core::PlayerCommandKind k) {
     switch (k) {
-        case core::PlayerCommandKind::EnactPolicy:  return "EnactPolicy";
-        case core::PlayerCommandKind::AdjustBudget: return "AdjustBudget";
+        case core::PlayerCommandKind::EnactPolicy:       return "EnactPolicy";
+        case core::PlayerCommandKind::AdjustBudget:      return "AdjustBudget";
+        case core::PlayerCommandKind::ChooseEventOption: return "ChooseEventOption";
     }
     // Unreachable for any valid enum value. The fallback returns a
     // sentinel rather than re-using a real kind's string so a bug
@@ -81,9 +82,13 @@ core::Result<core::PlayerCommandKind> player_command_kind_from_string(
         return core::Result<core::PlayerCommandKind>::success(
             core::PlayerCommandKind::AdjustBudget);
     }
+    if (s == "ChooseEventOption") {
+        return core::Result<core::PlayerCommandKind>::success(
+            core::PlayerCommandKind::ChooseEventOption);
+    }
     std::string msg = "unknown player command kind '";
     msg.append(s.data(), s.size());
-    msg += "' (expected EnactPolicy|AdjustBudget)";
+    msg += "' (expected EnactPolicy|AdjustBudget|ChooseEventOption)";
     return core::Result<core::PlayerCommandKind>::failure(std::move(msg));
 }
 
@@ -794,6 +799,7 @@ std::string serialize(const core::GameState& state) {
         entry["description"]    = ev.description;
         entry["visible_report"] = ev.visible_report;   // M6.2 (RFC-090 §6.2)
         entry["true_cause"]     = ev.true_cause;       // M6.1 (RFC-090 §6.1)
+        entry["category"]       = ev.category;         // issue #112 — non-empty
         json triggers_arr = json::array();
         for (const auto& t : ev.triggers) {
             json tj = json::object();
@@ -854,6 +860,23 @@ std::string serialize(const core::GameState& state) {
         }
         entry["followup_event_ids"] = std::move(followup_arr);
 
+        // Issue #112: option_effect_mode is SERIALISED ONLY when
+        // `options` is non-empty. Pre-v18 saves did not have this
+        // field; v18+ enforces "present iff options non-empty" at
+        // both load and save sites.
+        if (!ev.options.empty()) {
+            const char* mode_str = "option_only";
+            switch (ev.option_effect_mode) {
+                case core::EventOptionEffectMode::OptionOnly:
+                    mode_str = "option_only";     break;
+                case core::EventOptionEffectMode::BaseThenOption:
+                    mode_str = "base_then_option"; break;
+                case core::EventOptionEffectMode::OptionThenBase:
+                    mode_str = "option_then_base"; break;
+            }
+            entry["option_effect_mode"] = std::string(mode_str);
+        }
+
         events_arr.push_back(std::move(entry));
     }
     root["events"] = std::move(events_arr);
@@ -871,6 +894,19 @@ std::string serialize(const core::GameState& state) {
         relations_arr.push_back(std::move(rj));
     }
     root["relationships"] = std::move(relations_arr);
+
+    // Issue #112 (save v18): pending_player_events. Array of
+    // {event_history_index, event_id_code, country_id_code}.
+    // Required at the save layer; may be empty.
+    json pending_arr = json::array();
+    for (const auto& p : state.pending_player_events) {
+        json pj = json::object();
+        pj["event_history_index"] = p.event_history_index;
+        pj["event_id_code"]       = p.event_id_code;
+        pj["country_id_code"]     = p.country_id_code;
+        pending_arr.push_back(std::move(pj));
+    }
+    root["pending_player_events"] = std::move(pending_arr);
 
     // M5.4: event_history array carries fired-event records
     // (EventInstance). M5.4 ships the data layer only — no system
@@ -922,6 +958,11 @@ std::string serialize(const core::GameState& state) {
             case core::PlayerCommandKind::AdjustBudget:
                 cmd_obj["budget_category"] = ac.command.budget_category;
                 cmd_obj["budget_delta"]    = ac.command.budget_delta;
+                break;
+            case core::PlayerCommandKind::ChooseEventOption:
+                cmd_obj["event_history_index"] =
+                    ac.command.event_history_index;
+                cmd_obj["option_id_code"] = ac.command.option_id_code;
                 break;
         }
         entry["command"] = std::move(cmd_obj);
@@ -1000,6 +1041,14 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                           std::to_string(save_v.value()) +
                           " (this binary supports " +
                           std::to_string(kSaveFormatVersion) + ")";
+        if (save_v.value() == 17u) {
+            msg += "; v17 -> v18 (issue #112) requires per-event "
+                   "`category` (non-empty string), per-option-bearing-"
+                   "event `option_effect_mode` (option_only / "
+                   "base_then_option / option_then_base), and a "
+                   "top-level `pending_player_events` array on "
+                   "GameState";
+        }
         return core::Result<core::GameState>::failure(fmt_err(source_label, msg));
     }
 
@@ -1229,6 +1278,24 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                 }
                 ac.command.budget_category = budget_category.value();
                 ac.command.budget_delta    = budget_delta.value();
+                break;
+            }
+            case core::PlayerCommandKind::ChooseEventOption: {
+                auto idx_r = require_u64(
+                    cmd_obj, "event_history_index", entry_ctx);
+                if (!idx_r) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(idx_r.error()));
+                }
+                auto oid_r = require_string(
+                    cmd_obj, "option_id_code", entry_ctx);
+                if (!oid_r) {
+                    return core::Result<core::GameState>::failure(
+                        std::move(oid_r.error()));
+                }
+                ac.command.event_history_index =
+                    static_cast<std::size_t>(idx_r.value());
+                ac.command.option_id_code = oid_r.value();
                 break;
             }
         }
@@ -1565,6 +1632,19 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                 ev_ctx + ": 'true_cause' must be non-empty");
         }
 
+        // Issue #112 (save v18): category is required non-empty.
+        if (!entry.contains("category")
+            || !entry.at("category").is_string()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'category' missing or not a string");
+        }
+        const std::string category =
+            entry.at("category").get<std::string>();
+        if (category.empty()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'category' must be non-empty");
+        }
+
         // triggers: required, non-empty array.
         if (!entry.contains("triggers")
             || !entry.at("triggers").is_array()) {
@@ -1814,6 +1894,43 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             followup_event_ids.push_back(std::move(s));
         }
 
+        // Issue #112 (save v18): option_effect_mode is required
+        // iff `options` is non-empty; rejected if present alongside
+        // empty options.
+        core::EventOptionEffectMode option_mode =
+            core::EventOptionEffectMode::OptionOnly;
+        const bool has_options = !options.empty();
+        const bool has_mode_key = entry.contains("option_effect_mode");
+        if (has_options && !has_mode_key) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'option_effect_mode' required when "
+                "'options' is non-empty");
+        }
+        if (!has_options && has_mode_key) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'option_effect_mode' must be absent "
+                "when 'options' is empty");
+        }
+        if (has_options) {
+            if (!entry.at("option_effect_mode").is_string()) {
+                return core::Result<core::GameState>::failure(
+                    ev_ctx + ": 'option_effect_mode' must be a string");
+            }
+            const std::string mode_str =
+                entry.at("option_effect_mode").get<std::string>();
+            if (mode_str == "option_only") {
+                option_mode = core::EventOptionEffectMode::OptionOnly;
+            } else if (mode_str == "base_then_option") {
+                option_mode = core::EventOptionEffectMode::BaseThenOption;
+            } else if (mode_str == "option_then_base") {
+                option_mode = core::EventOptionEffectMode::OptionThenBase;
+            } else {
+                return core::Result<core::GameState>::failure(
+                    ev_ctx + ": 'option_effect_mode' must be one of "
+                    "option_only / base_then_option / option_then_base");
+            }
+        }
+
         // Duplicate id_code rejected at the save layer — mirrors
         // the M3.1 interest_groups + M4.1 provinces rule.
         for (const auto& existing : state.events) {
@@ -1830,11 +1947,13 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         ev.description        = desc;
         ev.visible_report     = visible_report;   // M6.2
         ev.true_cause         = true_cause;       // M6.1
+        ev.category           = category;         // issue #112
         ev.triggers           = std::move(triggers);
         ev.effects            = std::move(effects);
         ev.weight_modifiers   = std::move(weight_modifiers);   // RCR-1
         ev.options            = std::move(options);            // RCR-1
         ev.followup_event_ids = std::move(followup_event_ids); // RCR-1
+        ev.option_effect_mode = option_mode;                   // issue #112
         state.events.push_back(std::move(ev));
     }
 
@@ -2048,6 +2167,68 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         r.relationship = rel_v;
         r.threat       = threat_v;
         state.relationships.push_back(std::move(r));
+    }
+
+    // Issue #112 (save v18): pending_player_events. Required at the
+    // save layer; may be empty. Each entry:
+    //   { event_history_index, event_id_code, country_id_code }
+    // event_history_index validated against state.event_history.size().
+    if (!root.contains("pending_player_events")) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "missing required field 'pending_player_events'"));
+    }
+    const auto& pending_arr = root.at("pending_player_events");
+    if (!pending_arr.is_array()) {
+        return core::Result<core::GameState>::failure(
+            fmt_err(source_label,
+                    "'pending_player_events' has wrong type (expected JSON array)"));
+    }
+    state.pending_player_events.reserve(pending_arr.size());
+    for (std::size_t i = 0; i < pending_arr.size(); ++i) {
+        const std::string pctx =
+            std::string(source_label) + ": pending_player_events[" +
+            std::to_string(i) + "]";
+        const auto& entry = pending_arr[i];
+        if (!entry.is_object()) {
+            return core::Result<core::GameState>::failure(
+                pctx + ": expected JSON object");
+        }
+        auto idx_r = require_u64(entry, "event_history_index", pctx);
+        if (!idx_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(idx_r.error()));
+        }
+        if (idx_r.value() >= state.event_history.size()) {
+            return core::Result<core::GameState>::failure(
+                pctx + ": 'event_history_index' (" +
+                std::to_string(idx_r.value()) +
+                ") out of range for event_history.size() (" +
+                std::to_string(state.event_history.size()) + ")");
+        }
+        auto eid_r = require_string(entry, "event_id_code", pctx);
+        if (!eid_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(eid_r.error()));
+        }
+        if (eid_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                pctx + ": 'event_id_code' must be non-empty");
+        }
+        auto cid_r = require_string(entry, "country_id_code", pctx);
+        if (!cid_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(cid_r.error()));
+        }
+        if (cid_r.value().empty()) {
+            return core::Result<core::GameState>::failure(
+                pctx + ": 'country_id_code' must be non-empty");
+        }
+        core::PendingPlayerEvent p;
+        p.event_history_index = static_cast<std::size_t>(idx_r.value());
+        p.event_id_code       = std::move(eid_r).value();
+        p.country_id_code     = std::move(cid_r).value();
+        state.pending_player_events.push_back(std::move(p));
     }
 
     return core::Result<core::GameState>::success(std::move(state));

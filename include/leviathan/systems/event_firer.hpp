@@ -61,36 +61,49 @@
 //         followup_of = parent_instance.event_id_code
 //         message     = "event <id> fired (followup of <parent>)"
 //
-// What the firer does NOT do:
+// What the firer (this module) does NOT do — these concerns
+// live elsewhere now that issue #112 has wired the full event
+// engine:
 //
-//   no effects application (M1.5 policy::apply_policy_effects /
-//     M5.6 event_effects::apply_event_effects own that path)
-//   no option selection (M5.4 / RFC-090 §5.4 / §5.8 — see
-//     event_effects::select_default_option and
-//     apply_default_option_effects)
-//   no automatic recursive followup cascade (record_followup is
-//     the deterministic chain-firing primitive; a runner-policy
-//     consumer would have to loop record_followup over a sequence
-//     of resolved followups itself — wiring that loop into the
-//     runner would change M5.7 snapshot-evaluation semantics and
-//     is intentionally out of scope for the RCR-1 corrective batch)
-//   no applied_commands append (events are not player commands)
-//   no consumption of state.rng (preserves the M5 RNG-free
-//     guarantee for the event engine)
-//   no cooldown / weight / exclusivity / historical-once gating
-//     (caller policy; M5.5 / RCR-1 just records what the caller
-//     asks for)
-//   no dedup (calling twice with the same input appends twice)
-//   no scenario_loader / new RunnerOptions / new CLI flag /
-//     new PlayerCommandKind change initiated by this module
-//   no UI surface
+//   no effects application — `event_effects::apply_event_effects`
+//     handles base effects; `event_effects::apply_option_effects_with_mode`
+//     handles option-bearing events under the author-controlled
+//     `EventOptionEffectMode`; for player-country options the
+//     `commands::dispatch_one` ChooseEventOption handler is the
+//     apply path (post-deferral).
+//   no option SELECTION — `event_effects::select_best_option_for_country`
+//     is the state-based AI chooser; the player resolves choices
+//     via `PlayerCommandKind::ChooseEventOption`. The legacy
+//     `event_effects::select_default_option` is now a tests-only
+//     deterministic-first-option primitive, not the engine path.
+//   no recursion control — `event_engine::tick_events` and
+//     `event_engine::recurse_followups_from_event` own the
+//     conditional followup chain (depth-N up to
+//     `kMaxFollowupDepth = 5`, cycle-guarded). `record_followup`
+//     itself stays depth-agnostic and writes the IMMEDIATE
+//     PREDECESSOR into `followup_of` metadata; the caller picks
+//     the parent.
+//   no applied_commands append (events are not player commands;
+//     the ChooseEventOption *command* that resolves a deferred
+//     event option is what appends to applied_commands).
+//   no consumption of state.rng — the engine's weighted-random
+//     draws happen in `event_engine::tick_events` and
+//     `recurse_followups_*` (via `random::weighted_choice`).
+//     The firer primitive itself records what it's told.
+//   no cooldown / exclusivity / historical-once gating (engine
+//     policy lives in tick_events).
+//   no dedup (calling twice with the same input appends twice;
+//     tick_events maintains a per-country tick-scope dedup set).
+//   no scenario_loader / new RunnerOptions / new CLI flag change
+//     initiated by this module.
+//   no UI surface (the player-choice path uses the existing
+//     `--commands` script / `apply_pending` channel — not a
+//     graphical UI).
 //
-// Save / artefact context (RCR-1 era):
+// Save / artefact context:
 //
-//   save format = v17 (post-RCR-1; v16 -> v17 batched migration
-//     covers EventDefinition.weight_modifiers / options /
-//     followup_event_ids plus several non-event surfaces — the
-//     firer itself adds no new persistent field).
+//   save format is owned by the save layer; the firer itself adds no
+//     persistent schema field.
 //   artefact contract = 11 unconditional artefacts (post-RCR-1;
 //     RCR-1 added annual_world_stats.csv as the 11th — also
 //     unrelated to the firer, listed here only for context).
@@ -102,13 +115,10 @@
 //
 // Composition note:
 //
-//   The firer is the brick that runner / event_engine call as:
-//
-//       const auto matches = event_evaluator::match_events(state);
-//       event_firer::record_matches(state, matches, state.current_date);
-//
-//   The M5.7 `event_engine::tick_events` composition runs as
-//   step 7 of `monthly::tick_all_countries` (M5.8 wiring).
+//   The engine calls `record_match` after selecting one event from a
+//   per-country / per-category weighted draw, and calls
+//   `record_followup` for each selected conditional followup. Batch
+//   `record_matches` remains a low-level deterministic helper.
 
 #ifndef LEVIATHAN_SYSTEMS_EVENT_FIRER_HPP
 #define LEVIATHAN_SYSTEMS_EVENT_FIRER_HPP

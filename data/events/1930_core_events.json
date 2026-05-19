@@ -6,6 +6,7 @@
       "description": "Low stability creates unrest pressure.",
       "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
       "true_cause": "The country's actual stability has fallen below the unrest threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         {
           "target": "country.stability",
@@ -27,6 +28,7 @@
       "description": "A highly radical interest group signals political risk.",
       "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
       "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
+      "category": "domestic_unrest",
       "triggers": [
         {
           "target": "interest_group.radicalism",

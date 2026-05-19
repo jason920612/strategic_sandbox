@@ -42,18 +42,47 @@
 //   * Every loaded faction's `country_id_code` must match a loaded
 //     country's `id_code`; FactionState::country is set to the
 //     numeric CountryId of that match.
-//   * `state.countries` / `state.factions` / `state.policies` must
-//     all be empty on entry to load_into_state. The M1.11 loader
-//     does not append; callers that want incremental loading must
-//     build their own pipeline.
+//   * load_into_state requires a "scenario-load-clean" GameState
+//     on entry — every container whose load needs a clean slate
+//     must be empty. Issue #110 §4 widened the preflight from 3
+//     to 7 scenario-loaded containers; issue #112 §7 extends it to
+//     9 containers by adding two runtime-carryover containers that
+//     would contaminate a fresh scenario load:
+//
+//       Scenario-loaded (7):
+//         state.countries
+//         state.provinces
+//         state.factions
+//         state.policies
+//         state.events
+//         state.interest_groups
+//         state.relationships
+//
+//       Runtime carryover (2):
+//         state.pending_player_events  (could reference an
+//             event_history entry from a previous scenario)
+//         state.event_history          (would mix two scenarios'
+//             fire audit trails into one save)
+//
+//     If ANY of these 9 is non-empty, load_into_state returns
+//     Result::failure with a message that names every non-empty
+//     container. The loader does NOT append; callers that want
+//     incremental loading must build their own pipeline.
+//
+//     `state.logs` and `state.applied_commands` are intentionally
+//     NOT in the contract — they are runtime audit trails whose
+//     carryover across scenario loads is legitimate (a runner
+//     script may log something before / between load_into_state
+//     calls). The loader does not populate them either.
 //
 // What this loader does NOT do:
 //   * Schedule policies over time. Entries in `starting_policies`
 //     are applied exactly once at load time via M1.5's
-//     `apply_policy_effects`. There is NO duration queue, NO
-//     monthly scheduler, NO AI / event-triggered enactment. Policies
-//     not named in `starting_policies` remain inert templates in
-//     `state.policies` until a future system enacts them.
+//     `apply_policy_effects`. There is NO duration queue and NO
+//     monthly scheduler at the loader layer. Issue #110 wires the
+//     monthly tick to call `ai_policy::apply_selected_policies`,
+//     so policies NAMED in `state.policies` may be enacted by the
+//     AI after load — but the LOADER itself doesn't enact them.
 //   * Touch RNG, logs, or the date. The save-format version is
 //     owned by SaveSystem (`kSaveFormatVersion`) and is not
 //     changed by scenario loading; M1.13 introduces no new
@@ -106,6 +135,26 @@ struct ManifestInterestGroup {
     double influence  = 0.5;
     double loyalty    = 0.5;
     double radicalism = 0.0;
+};
+
+// Issue #108 fix: pairwise relationship/threat entry parsed from
+// the scenario manifest's optional `relationships` block. Each
+// entry authors:
+//   {
+//     "from":         "GER",   // matches a loaded CountryState::id_code
+//     "to":           "FRA",   // matches a loaded CountryState::id_code
+//     "relationship": -0.4,    // [-1, 1]
+//     "threat":        0.6     // [0,  1]
+//   }
+// Resolution of id_codes to CountryId numeric handles happens
+// inside `load_into_state`. RFC-090 §3.6 / §3.7 ship the data
+// layer + authored compliance values; dynamic drift / diplomacy
+// driver remains RFC-040 / M8 scope.
+struct ManifestRelation {
+    std::string from_id_code;
+    std::string to_id_code;
+    double relationship = 0.0;
+    double threat       = 0.0;
 };
 
 // One map-node entry parsed from a province file (M4.1). Each
@@ -162,6 +211,7 @@ struct ManifestEvent {
     std::string                      description;
     std::string                      visible_report;   // M6.2
     std::string                      true_cause;       // M6.1
+    std::string                      category;         // issue #112 — required non-empty
     std::vector<core::EventTrigger>  triggers;
     std::vector<core::PolicyEffect>  effects;
     // RCR-1 (RFC-090 §5.3 / §5.4 / §5.12): optional event-extension
@@ -171,6 +221,11 @@ struct ManifestEvent {
     std::vector<core::WeightModifier> weight_modifiers;
     std::vector<core::EventOption>    options;
     std::vector<std::string>          followup_event_ids;
+    // Issue #112: required iff options non-empty. Default
+    // (OptionOnly) is meaningful only when options is empty —
+    // the loader rejects mismatches.
+    core::EventOptionEffectMode       option_effect_mode =
+        core::EventOptionEffectMode::OptionOnly;
 };
 
 // Parsed manifest. Paths are stored verbatim from JSON; resolving
@@ -202,6 +257,13 @@ struct ScenarioManifest {
     // loudly. Cross-file uniqueness of event id_code is enforced
     // inside `load_into_state`.
     std::vector<std::filesystem::path> events;
+    // Issue #108 fix: optional inline `relationships` block on
+    // the manifest. Missing key in JSON => empty vector
+    // (manifests authored before this point stay valid). Each
+    // entry references a `from`/`to` country id_code; resolution
+    // happens inside `load_into_state` after `state.countries`
+    // is populated.
+    std::vector<ManifestRelation> relationships;
 };
 
 // Summary returned from a successful `load_into_state`.

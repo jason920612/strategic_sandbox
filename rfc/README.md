@@ -47,12 +47,18 @@ Specifically:
   tuned not to fire. RFC-090 §M5 asks for weights +
   options + 10 events + a 10-year event stress test +
   event-chain followups.
-- **RFC-010 v0.1 acceptance floors remain deferred.**
-  Current main has 3 countries (floor: 20), 10 policies
-  (floor: 20), 2 events (floor: 10), 3 legacy factions
-  + 3 canonical Bureaucracy interest groups (floor: 6+
-  factions / actors across countries), no AI auto-policy
-  selection, no annual statistics CSV.
+- **RFC-010 v0.1 acceptance floors:** the canonical
+  `1930_minimal.json` scenario stays at 3 countries / 10
+  policies / 2 (non-firing) events so M1–M5 byte-identical
+  determinism baselines hold, BUT the RFC-010 v0.1 floors
+  are met by the separate `1930_rfc_compliance.json`
+  scenario (20 countries / 20 policies / 10 events / 10
+  cross-country IGs / 10 authored relationships /
+  per-country `military_strength`). The compliance scenario
+  is exercised end-to-end by
+  `tests/integration/rcr_1_rfc_compliance_test.cpp` and
+  produces fired events + scorer-driven varied policy
+  selection under ordinary `leviathan.exe` execution.
 
 The canonical reference for the deferred-scope backlog
 is [`../docs/rfc-090-010-compliance-audit.md`](../docs/rfc-090-010-compliance-audit.md).
@@ -63,14 +69,58 @@ they are *implementation milestone* close-outs or *full
 original RFC acceptance* close-outs, and link to the
 compliance-audit doc when the two diverge.
 
-### RCR-1 (one-time corrective PR)
+### RFC compliance recovery sequence (PR #107 → #109 → issue #110 → issue #112)
 
-`RCR-1` was a **one-time corrective PR** that closed the
-audit-doc compliance gap in a single batch — not the first
-of a long-running recovery track. After RCR-1 lands,
-execution returns to the M-numbered milestone sequence; M6.6
-resumes per RFC-090 §6.6 on explicit go-ahead. `RCR` is **not**
-an RFC milestone number and does not consume M0–M9 numbering.
+The compliance gap was closed in three connected pieces, all
+under issue #105's audit umbrella:
+
+1. **RCR-1** (PR #107) shipped the data layer + helpers:
+   20-country / 20-policy / 10-event compliance fixture,
+   save v17 schema bump, ai_policy module, weight ranker,
+   option-default helper, followup resolver, annual_world_stats.
+2. **Issue #108 fix** (PR #109) wired ai_policy into
+   `monthly::tick_all_countries`, authored military_strength
+   on every compliance country, and authored 10 relationships
+   on the compliance scenario.
+3. **Issue #110 strict-RFC fix** (this corrective PR) replaced
+   the first-policy stub with a deterministic scorer
+   (RFC-090 §3.5 / RFC-040 §4 inputs), wired the
+   event-engine helpers into `tick_events` (descending-weight
+   firing, option-default dispatch, depth-1 followup chains),
+   widened `scenario_loader::load_into_state`'s empty-state
+   preflight from 3 to all 7 loader-populated containers,
+   and refreshed audit-doc claim text so `[X]` marks
+   describe wired behaviour rather than callable helpers.
+4. **Issue #112 strict-RFC fix** (same PR #111, extended)
+   replaced the issue-#110 carve-outs with the literal RFC
+   semantics the reviewer audit demanded:
+   - per-country / per-category weighted-random draw using
+     `state.rng` (RFC-090 §5.7 "事件抽選"),
+   - recursive CONDITIONAL followup chain with cycle guard
+     + `kMaxFollowupDepth = 5` depth guard (RFC-050 §3
+     "條件連鎖"),
+   - author-controlled `EventOptionEffectMode` (OptionOnly
+     / BaseThenOption / OptionThenBase) plus a state-based
+     AI option chooser AND a player command surface
+     (`PlayerCommandKind::ChooseEventOption` reachable via
+     the existing `--commands` script path; player choices
+     are satisfied through the COMMAND LAYER — a graphical
+     UI prompt remains a future UI milestone),
+   - pressure-gated + capacity-bounded AI policy selection
+     (`kPressureThreshold=0.80`; capacity returns 1/2/3
+     picks based on administrative_efficiency / bcomp /
+     budget headroom),
+   - 9-container scenario-load-clean preflight (adds
+     `pending_player_events` + `event_history`),
+   - save schema bump v17 → v18.
+
+After issue #112 lands, execution returns to the M-numbered
+milestone sequence; M6.6 resumes per RFC-090 §6.6 on
+explicit go-ahead. `RCR` is **not** an RFC milestone number
+and does not consume M0–M9 numbering. **There is no RCR-2
+track and no planned recovery follow-up.** Issues #105 /
+#108 / #110 / #112 stay open until the reviewer confirms
+strict compliance on PR #111.
 
 What RCR-1 shipped:
 

@@ -69,12 +69,14 @@ PolicyEffect make_effect(const std::string& target,
 
 EventDefinition make_event(const std::string& id_code,
                            std::vector<EventTrigger> triggers,
-                           std::vector<PolicyEffect> effects = {}) {
+                           std::vector<PolicyEffect> effects = {},
+                           const std::string& category = "test") {
     EventDefinition d;
     d.id_code        = id_code;
     d.name           = id_code;
     d.visible_report = "test visible report";   // M6.2: required non-empty
     d.true_cause     = "test true cause";       // M6.1: required non-empty
+    d.category       = category;                // issue #112: required non-empty
     d.triggers       = std::move(triggers);
     d.effects  = std::move(effects);
     return d;
@@ -163,7 +165,14 @@ TEST_CASE("M5.7 tick_events: fired_on for every recorded instance is state.curre
 // tick_events: two matches — canonical order preserved
 // =====================================================================
 
-TEST_CASE("M5.7 tick_events: two matches are recorded + applied in vector order") {
+TEST_CASE("Issue #112 tick_events: two matches in DIFFERENT categories "
+          "each draw one event") {
+    // Per-country, per-category draw — issue #112 §1. The two
+    // events here are in DIFFERENT categories ("stability" and
+    // "interest_group") so each forms its own bucket and each
+    // bucket fires its own draw. Two events recorded in this
+    // tick, but for the country/category-tied reason — NOT the
+    // pre-#112 "fire all matched events in vector order".
     GameState s;
     s.current_date = GameDate(1930, 6, 1);
     s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
@@ -171,10 +180,12 @@ TEST_CASE("M5.7 tick_events: two matches are recorded + applied in vector order"
 
     s.events.push_back(make_event("low_stab",
         { make_trigger("country.stability", "lt", 0.30) },
-        { make_effect("country.stability", "add", -0.02) }));
+        { make_effect("country.stability", "add", -0.02) },
+        /*category*/ "stability"));
     s.events.push_back(make_event("radical_ig",
         { make_trigger("interest_group.radicalism", "gt", 0.75) },
-        { make_effect("country.legitimacy", "add", -0.01) }));
+        { make_effect("country.legitimacy", "add", -0.01) },
+        /*category*/ "interest_group"));
 
     const auto r = eng::tick_events(s);
     REQUIRE(r);
@@ -245,22 +256,17 @@ TEST_CASE("M5.7 tick_events: an event that fires drops state past another event'
 // tick_events: failure path — partial state pinned
 // =====================================================================
 
-TEST_CASE("M5.7 tick_events: failed apply_event_effects bubbles up; partial state pinned") {
-    // Construct a state where one event matches but the
-    // applicator will fail. The simplest way is an IG-scoped
-    // trigger whose IG references a CountryId that doesn't exist
-    // in state.countries — match_events binds country=Invalid;
-    // record_match writes empty country_id_code; apply_event_effects
-    // rejects on "empty country_id_code".
+TEST_CASE("Issue #112 tick_events: IG-scoped trigger whose IG references "
+          "a non-existent country never contributes to any per-country pool") {
+    // Pre-#112 this test fired an orphan-IG event for GER (the IG's
+    // country=99 leaked into GER's match pool under the old global
+    // evaluator). Issue #112 §1 strict scoping: an IG with
+    // owning country != cid does NOT contribute to cid's match
+    // pool. So the orphan IG can't trigger ANY country's draw —
+    // tick_events returns success with zero fires.
     GameState s;
     s.current_date = GameDate(1930, 1, 1);
     s.countries.push_back(make_country(0, "GER"));
-    // Construct an interest group whose `country` doesn't exist
-    // anywhere in state.countries. The evaluator's actor binding
-    // will set TriggerActor.country = CountryId{99}, the firer
-    // will fail the country lookup and leave country_id_code
-    // empty, and apply_event_effects will reject on first-actor
-    // country_id_code empty.
     s.interest_groups.push_back(make_ig("orphan_ig", /*country*/99,
                                         /*rad*/0.85));
     s.events.push_back(make_event("orphan_event",
@@ -268,12 +274,9 @@ TEST_CASE("M5.7 tick_events: failed apply_event_effects bubbles up; partial stat
         { make_effect("country.stability", "add", -0.02) }));
 
     const auto r = eng::tick_events(s);
-    REQUIRE(r.failed());
-    // The match was recorded BEFORE the apply failed, so
-    // event_history holds the entry; the effect did NOT land
-    // (M5.6 pre-flight atomicity).
-    REQUIRE(s.event_history.size() == 1u);
-    CHECK(s.event_history[0].event_id_code == "orphan_event");
+    REQUIRE(r);
+    CHECK(r.value().events_matched == 0);
+    CHECK(s.event_history.empty());
     CHECK(s.countries[0].stability == doctest::Approx(0.5));    // untouched
 }
 

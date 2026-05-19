@@ -242,7 +242,20 @@ namespace leviathan::systems::save_system {
 //                print across both new and pre-existing
 //                fields. Pre-v17 saves are rejected loudly
 //                with the version-mismatch error.
-inline constexpr std::uint32_t kSaveFormatVersion   = 17;
+//   v17 -> v18:  Issue #112 strict-RFC event-engine + player-
+//                choice batch. Adds three required persistent
+//                surfaces:
+//                  * EventDefinition.category          (string)
+//                  * EventDefinition.option_effect_mode (string;
+//                      present ONLY when options non-empty;
+//                      absent when options empty)
+//                  * GameState.pending_player_events    (vector)
+//                AppliedPlayerCommand also gains the
+//                `choose_event_option` kind with its
+//                {event_history_index, option_id_code} payload.
+//                Pre-v18 saves are rejected with a migration
+//                message naming the three new fields.
+inline constexpr std::uint32_t kSaveFormatVersion   = 18;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always
