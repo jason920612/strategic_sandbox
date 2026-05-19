@@ -61,57 +61,68 @@
 >
 > Issue #112 has now landed (PR #111 squash-merged) and
 > execution has returned to the M-numbered milestone
-> sequence: **M6.6** (RFC-090 §6.6 "加入情報預算影響") is
-> the latest shipped sub-milestone — the
+> sequence. **M6.7** (RFC-090 §6.7 "加入腐敗影響") is the
+> latest shipped sub-milestone — the
 > `information_accuracy::compute_for_country` body now
-> reads `government_authority.intelligence_capability`
-> and `budget.intelligence`, ranging
-> `[kMinInformationAccuracy=0.4, 1.0]` instead of the
-> M6.3 constant 1.0. **There is no RCR-2 track.** Issues
-> #105 / #108 / #110 / #112 stay open until the reviewer
-> confirms strict compliance.
+> implements an RFC-080 §8 subset (BaseAccuracy +
+> IntelligenceCapacity − Corruption) with function-level
+> range `[0.0, 1.0]`, and strictly validates each ratio
+> input per `feedback_no_silent_degradation`. **There is
+> no RCR-2 track.** Issues #105 / #108 / #110 / #112 stay
+> open until the reviewer confirms strict compliance.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at M6.6. M6 follows RFC-090 §M6 (隱藏真相
-  與資訊失真): the player will not always see the
-  truth. RFC-090 sequence: 6.1 `true_cause`; 6.2
-  `visible_report`; 6.3 `information_accuracy`; 6.4
-  reported value; 6.5 bias/noise; 6.6 intelligence-
-  budget influence; 6.7 corruption influence; 6.8
-  debug-mode display; 6.9 non-debug hiding. **M6.1**
-  opened M6 with the schema foundation — added a
-  required non-empty `true_cause` string field on
-  `core::EventDefinition`; save v14 → v15. **M6.2**
-  added the **`visible_report` field** between
-  `description` and `true_cause`; save v15 → v16.
-  **M6.3** adds the **`information_accuracy` helper
-  skeleton** — a new
-  `leviathan::systems::information_accuracy` module
-  with `compute_for_country(state, country) →
-  Result<double>` and a public constant
-  `kPlaceholderInformationAccuracy = 1.0`. **M6.3
-  does NOT bump the save schema** per the PR #101
-  reviewer note (helper is pure read; no persistent
-  state) — save stays at v16. **M6.1, M6.2, and
-  M6.3 are all schema/helper-only**: fields and
-  function exist, but **no system consumes them**.
-  Future M6 sub-milestones — 6.4 reported value,
-  6.5 bias/noise, 6.6 intel budget, 6.7 corruption,
-  6.8 debug-mode, 6.9 non-debug hiding — will use
-  the helper + distort / blur / hide / selectively
-  leak `visible_report` toward the truth in
-  `true_cause`. **Canonical events still
-  deliberately don't fire** on the canonical
-  scenario; M6.1 + M6.2 + M6.3 add zero behavioural
-  drift to M1.17 / M2 / M3 / M4 / M5 byte-identical
-  determinism baselines.
-  See `docs/m6-1-event-definition-true-cause-schema.md`,
-  `docs/m6-2-event-definition-visible-report-schema.md`,
-  and
-  `docs/m6-3-information-accuracy-helper-skeleton.md`
-  for the M6 design notes, and
+  progress at **M6.7**; next is RFC-090 §6.8
+  (`debug 模式顯示真相`). M6 follows RFC-090 §M6
+  (隱藏真相與資訊失真): the player will not always
+  see the truth. Shipped so far:
+  - **M6.1** added a required non-empty `true_cause`
+    string field on `core::EventDefinition` (save
+    v14 → v15).
+  - **M6.2** added the `visible_report` field
+    between `description` and `true_cause` (save
+    v15 → v16).
+  - **M6.3** introduced the
+    `leviathan::systems::information_accuracy`
+    module with `compute_for_country(state, country)
+    → Result<double>` and a placeholder body
+    returning `kPlaceholderInformationAccuracy =
+    1.0` (no save bump).
+  - **M6.4** added the
+    `leviathan::systems::reported_value` helper
+    `from_true_value(true_value, accuracy) →
+    true_value × accuracy` (no save bump).
+  - **M6.5** added the
+    `leviathan::systems::bias_noise` helper
+    `sample_for_event` — deterministic FNV-1a +
+    splitmix64 hash noise; no `state.rng`
+    consumption (no save bump).
+  - **M6.6** replaced the M6.3 placeholder body
+    with `0.4 + 0.6 × (0.7 × intelligence_capability
+    + 0.3 × budget.intelligence)` (range
+    `[0.4, 1.0]`; no save bump).
+  - **M6.7** layers the RFC-080 §8 `-Corruption`
+    term on top: `accuracy = m6_6_baseline − 0.4 ×
+    corruption`. Function-level range now
+    `[0.0, 1.0]`; `kMinInformationAccuracy = 0.4`
+    is the M6.6 contribution floor, not the M6.7
+    lower bound. Whole `compute_for_country` body
+    now strictly rejects out-of-range / non-finite
+    ratio inputs with `Result::failure` (per
+    `feedback_no_silent_degradation`).
+
+  **Still deferred** in M6: RFC-090 §6.8 (debug
+  mode displays the truth) and §6.9 (non-debug
+  mode hides the truth — first downstream caller
+  of `compute_for_country` in normal play).
+
+  **Canonical events still deliberately don't fire**
+  on the canonical scenario; every M6.x sub-milestone
+  so far adds zero behavioural drift to M1.17 / M2 /
+  M3 / M4 / M5 byte-identical determinism baselines.
+  See the `docs/m6-*.md` per-PR design notes and
   `docs/milestone-5-result.md` for the M5 exit
   report (canonical M5 record going forward),
   `docs/milestone-4-result.md` /

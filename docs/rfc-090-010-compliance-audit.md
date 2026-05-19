@@ -20,13 +20,30 @@ docs cross-link here rather than re-litigating the gap.
 ## 1. Status
 
 Current implementation milestones **M0 – M5 are closed as
-implementation milestones**. M6 is in progress at M6.6
-(`information_accuracy` body now reads
-`government_authority.intelligence_capability` and
-`budget.intelligence` per RFC-090 §6.6 "加入情報預算影響";
-range graduated from M6.3's constant 1.0 to
-`[kMinInformationAccuracy=0.4, 1.0]`; helper still has no
-production caller — M6.9 will be the first).
+implementation milestones**. M6 is in progress at **M6.7**.
+The `information_accuracy::compute_for_country` body now
+implements an RFC-080 §8 subset:
+
+- M6.6 (RFC-090 §6.6 "加入情報預算影響") shipped the
+  intelligence-budget baseline
+  `0.4 + 0.6 × (0.7 × intelligence_capability + 0.3 × budget.intelligence)`.
+- M6.7 (RFC-090 §6.7 "加入腐敗影響") layers the RFC-080 §8
+  `-Corruption` term on top:
+  `accuracy = m6_6_baseline - 0.4 × corruption`.
+
+Function-level range is now **`[0.0, 1.0]`** (M6.6's
+`[0.4, 1.0]` widened by the corruption subtraction).
+`kMinInformationAccuracy = 0.4` remains as **the M6.6
+contribution floor**, not the M6.7 lower bound — the
+corruption subtraction can push the effective total below it.
+The whole `compute_for_country` body strictly validates
+inputs per `feedback_no_silent_degradation`: each of
+`government_authority.intelligence_capability`,
+`budget.intelligence`, `corruption` must be a finite ratio in
+`[0, 1]`, otherwise `Result::failure` (naming country
+`id_code` + field + numeric value). Helper still has no
+production caller — RFC-090 §6.9 will be the first
+downstream consumer.
 
 **Issue #112 strict-RFC corrective PR** is the final step in
 the compliance recovery sequence: RCR-1 (PR #107) shipped the
@@ -142,8 +159,12 @@ The corrective batch ships:
 The implementation is internally consistent and passes the
 test surface it actually owns:
 
-- `leviathan_tests.exe` reports **1188 cases / 63657
-  assertions** all passing on the issue #112 branch.
+- `leviathan_tests.exe` reports **1229 cases / 64274
+  assertions** all passing on the M6.7 branch (verified via
+  direct binary execution per `feedback_ctest_masks_doctest`).
+  PR-by-PR delta along the recovery sequence: issue #112
+  branch 1188 / 63657 → PR #113 (M6.6) 1216 / 64196 → PR #114
+  (M6.7) 1229 / 64274.
 - The canonical 70-year scenario (`data/scenarios/1930_minimal.json`,
   `--days 25567`) runs to `2000-01-01` with zero sanity
   issues and emits the 10 expected runner artefacts.

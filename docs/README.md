@@ -18,7 +18,7 @@ Per-milestone design notes and PR description drafts.
 
 | File | Covers |
 |------|--------|
-| [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. RFC-010 v0.1 floors (20 countries / 20 policies / 10 events / 6+ factions / AI auto-policy / annual statistics CSV) deferred. **Read this before opening any new milestone work.** Companion to issue #105. |
+| [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 originally closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. The compliance recovery sequence (RCR-1 PR #107 → issue #108 fix PR #109 → issue #110 / #112 strict-RFC corrective PR #111) closed the RFC-090 §M3 / §M5 + RFC-010 v0.1 floor gap end-to-end: 20-country / 20-policy / 10-event / 10-cross-country-IG `1930_rfc_compliance.json` scenario, wired AI policy selection, weighted-RNG event draw via `state.rng`, recursive conditional followups, author-controlled event-option mode + player-command surface, annual-stats CSV as the 11th artefact, save v16 → v17 → v18. The audit doc remains the canonical reference for what shipped vs. is still genuinely deferred (RFC-090 §6.8 / §6.9 hidden-truth wiring, full RFC-080 §8 negative terms beyond corruption, war / full diplomacy AI, UI, etc.). **Read this before opening any new milestone work.** Companion to issue #105. |
 
 ## Index of design notes
 

@@ -76,60 +76,90 @@ under issue #105's audit umbrella:
 
 1. **RCR-1** (PR #107) shipped the data layer + helpers:
    20-country / 20-policy / 10-event compliance fixture,
-   save v17 schema bump, ai_policy module, weight ranker,
-   option-default helper, followup resolver, annual_world_stats.
-2. **Issue #108 fix** (PR #109) wired ai_policy into
-   `monthly::tick_all_countries`, authored military_strength
-   on every compliance country, and authored 10 relationships
-   on the compliance scenario.
-3. **Issue #110 strict-RFC fix** (this corrective PR) replaced
-   the first-policy stub with a deterministic scorer
-   (RFC-090 §3.5 / RFC-040 §4 inputs), wired the
-   event-engine helpers into `tick_events` (descending-weight
-   firing, option-default dispatch, depth-1 followup chains),
-   widened `scenario_loader::load_into_state`'s empty-state
-   preflight from 3 to all 7 loader-populated containers,
-   and refreshed audit-doc claim text so `[X]` marks
-   describe wired behaviour rather than callable helpers.
+   save v17 schema bump, `ai_policy` module, weight ranker
+   (`event_evaluator::rank_weighted_events`),
+   `annual_world_stats.csv`. RCR-1 also shipped two
+   "early" helpers — `event_effects::select_default_option`
+   and `event_effects::resolve_followup_ids` — that issue
+   #112 later superseded with the full RFC semantics
+   (see step 4 below). The early helpers are retained for
+   tests and diagnostic callers but are NOT the engine
+   path.
+2. **Issue #108 fix** (PR #109) wired `ai_policy` into
+   `monthly::tick_all_countries`, authored
+   `military_strength` on every compliance country, and
+   authored 10 relationships on the compliance scenario.
+3. **Issue #110 strict-RFC fix** (the first commit of
+   PR #111) replaced the first-policy stub with a
+   deterministic scorer (RFC-090 §3.5 / RFC-040 §4
+   inputs), wired the event-engine helpers into
+   `tick_events`, widened `scenario_loader::load_into_state`'s
+   empty-state preflight from 3 to all 7 loader-populated
+   containers, and refreshed audit-doc claim text so `[X]`
+   marks describe wired behaviour rather than callable
+   helpers. Issue #110's wiring was a *first pass* —
+   issue #112 audited it and replaced the carve-outs.
 4. **Issue #112 strict-RFC fix** (same PR #111, extended)
    replaced the issue-#110 carve-outs with the literal RFC
-   semantics the reviewer audit demanded:
-   - per-country / per-category weighted-random draw using
-     `state.rng` (RFC-090 §5.7 "事件抽選"),
-   - recursive CONDITIONAL followup chain with cycle guard
-     + `kMaxFollowupDepth = 5` depth guard (RFC-050 §3
-     "條件連鎖"),
-   - author-controlled `EventOptionEffectMode` (OptionOnly
-     / BaseThenOption / OptionThenBase) plus a state-based
-     AI option chooser AND a player command surface
-     (`PlayerCommandKind::ChooseEventOption` reachable via
-     the existing `--commands` script path; player choices
-     are satisfied through the COMMAND LAYER — a graphical
-     UI prompt remains a future UI milestone),
-   - pressure-gated + capacity-bounded AI policy selection
-     (`kPressureThreshold=0.80`; capacity returns 1/2/3
-     picks based on administrative_efficiency / bcomp /
-     budget headroom),
+   semantics the reviewer audit demanded — these are the
+   current engine path (the RCR-1 helpers above are not
+   the final semantics):
+   - **Weighted RNG draw, not fire-all-matched**:
+     per-country / per-category weighted-random draw via
+     `random::weighted_choice(state.rng, …)`
+     (RFC-090 §5.7 "事件抽選"). ONE event fires per
+     (country, category) per tick.
+   - **Recursive conditional followups, not unconditional
+     depth-1**: each followup must satisfy its own
+     triggers AFTER the parent applies; weighted draw
+     picks one when multiple match; cycle guard +
+     `kMaxFollowupDepth = 5` depth guard
+     (RFC-050 §3 "條件連鎖").
+   - **Command-layer player options, not options[0]
+     default**: author-controlled `EventOptionEffectMode`
+     (OptionOnly / BaseThenOption / OptionThenBase) plus
+     a state-based AI option chooser; player-country
+     events defer effects until
+     `PlayerCommandKind::ChooseEventOption` resolves the
+     pending entry (reachable through the existing
+     `--commands` script path).
+   - Pressure-gated + capacity-bounded AI policy
+     selection (`kPressureThreshold=0.80`; capacity
+     returns 1/2/3 picks based on
+     administrative_efficiency / bureaucratic_compliance
+     / budget headroom).
    - 9-container scenario-load-clean preflight (adds
-     `pending_player_events` + `event_history`),
-   - save schema bump v17 → v18.
+     `pending_player_events` + `event_history`).
+   - Save schema bump v17 → v18.
 
 Issue #112 has now landed (PR #111 squash-merged) and
 execution has returned to the M-numbered milestone
-sequence. **M6.6** (RFC-090 §6.6 "加入情報預算影響") then
-shipped the
-`information_accuracy::compute_for_country` body that reads
-`government_authority.intelligence_capability` and
-`budget.intelligence`, replacing the M6.3 constant-1.0
-placeholder with the affine
-`accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability +
-0.3 × budget.intelligence)` formula in range `[0.4, 1.0]`.
+sequence:
+
+- **M6.6** (RFC-090 §6.6 "加入情報預算影響", PR #113)
+  replaced the M6.3 constant-1.0 placeholder body of
+  `information_accuracy::compute_for_country` with the
+  affine
+  `0.4 + 0.6 × (0.7 × intelligence_capability + 0.3 × budget.intelligence)`
+  formula (range `[0.4, 1.0]`).
+- **M6.7** (RFC-090 §6.7 "加入腐敗影響", current PR)
+  layers the RFC-080 §8 `-Corruption` term on top:
+  `accuracy = m6_6_baseline - 0.4 × corruption`.
+  Function-level range now `[0.0, 1.0]`. Whole
+  `compute_for_country` body now strictly validates
+  inputs per `feedback_no_silent_degradation`
+  (out-of-range / non-finite ratios reject with
+  `Result::failure` naming country `id_code` + field +
+  numeric value; no silent clamping).
+
 `RCR` is **not** an RFC milestone number and does not
 consume M0–M9 numbering. **There is no RCR-2 track and no
 planned recovery follow-up.** Issues #105 / #108 / #110 /
 #112 stay open until the reviewer confirms strict compliance.
 
-What RCR-1 shipped:
+What RCR-1 shipped (NOTE: some early helpers below were
+later superseded by issue #112 — see the recovery
+sequence above):
 
 - 20-country / 20-policy / 10-event / 10-cross-country-IG
   floors via new `data/scenarios/1930_rfc_compliance.json`
@@ -140,19 +170,41 @@ What RCR-1 shipped:
   `apply_selected_policies`); apply reuses
   `policy::apply_policy_effects` so events inherit M1.5
   pre-flight atomicity and M1.15 active_policies bookkeeping.
+  *Issue #112 later replaced the first-policy stub inside
+  `select_policies` with a pressure-gated + capacity-
+  bounded deterministic scorer.*
 - Save schema bump **v16 → v17** in one batched migration:
   `CountryState.military_strength`,
   `EventDefinition.weight_modifiers`,
   `EventDefinition.options`,
   `EventDefinition.followup_event_ids`,
-  `GameState.relationships`.
+  `GameState.relationships`. *Issue #112 later bumped
+  v17 → v18 for `EventDefinition.category`,
+  `EventDefinition.option_effect_mode`, and
+  `GameState.pending_player_events`.*
 - New artefact `annual_world_stats.csv` (artefact contract
   10 → 11) emitted per year boundary by the new
   `leviathan::systems::annual_stats` module.
 - `event_evaluator::rank_weighted_events` — RNG-free
-  deterministic weighted ranker (RFC-090 §5.3 / §5.6 / §5.7).
+  deterministic weighted ranker (RFC-090 §5.3 / §5.6).
+  *RFC-090 §5.7's actual weighted DRAW is wired in
+  `event_engine::tick_events` per issue #112 via
+  `random::weighted_choice(state.rng, …)`.
+  `rank_weighted_events` produces the weight vector;
+  it is not the §5.7 implementation.*
 - `event_effects::select_default_option` +
   `resolve_followup_ids` (RFC-090 §5.8 / §5.12).
+  *Issue #112 superseded these as the engine path:
+  `event_effects::select_best_option_for_country` is
+  the state-based AI option chooser;
+  `event_effects::apply_option_effects_with_mode`
+  applies effects per `EventOptionEffectMode`;
+  player-country events go through
+  `PlayerCommandKind::ChooseEventOption`;
+  followups are resolved through a recursive
+  conditional chain with cycle + depth guards. The
+  RCR-1 helpers stay callable for tests / diagnostics
+  but are not the production engine path.*
 - `event_firer::record_match` now emits one `event_fired`
   LogEntry per fired event so `events.jsonl` records
   firings (RFC-090 §5.9). Canonical scenarios at M5 stay
@@ -164,7 +216,7 @@ What RCR-1 shipped:
 
 See [`../docs/rfc-090-010-compliance-audit.md`](../docs/rfc-090-010-compliance-audit.md)
 for the per-item audit-doc status (every actionable bullet
-is `[X]` after RCR-1).
+is `[X]` after issue #112; M6.6 + M6.7 land on top).
 
 ## 實作進度（與 RFC 對應）
 
