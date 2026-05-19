@@ -433,18 +433,22 @@ TEST_CASE("RCR-1 event_firer: record_match appends one LogEntry with event_fired
 // RCR-1 event_evaluator::select_weighted_event (RFC-090 §5.7)
 // =====================================================================
 
-TEST_CASE("RCR-1 select_weighted_event: empty events returns nullopt") {
+TEST_CASE("RCR-1 select_weighted_event: empty events returns success(nullopt)") {
     GameState state;
-    CHECK_FALSE(ev_ev::select_weighted_event(state).has_value());
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r);
+    CHECK_FALSE(r.value().has_value());
 }
 
-TEST_CASE("RCR-1 select_weighted_event: no triggers currently match -> nullopt") {
+TEST_CASE("RCR-1 select_weighted_event: no triggers currently match -> success(nullopt)") {
     GameState state;
     state.countries.push_back(make_country("GER", /*stab*/0.80));
     state.events.push_back(make_event("low_stab",
         { EventTrigger{"country.stability", "lt", 0.30} },
         { WeightModifier{"country.stability", "gt", 0.50, 5.0} }));
-    CHECK_FALSE(ev_ev::select_weighted_event(state).has_value());
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r);
+    CHECK_FALSE(r.value().has_value());
 }
 
 TEST_CASE("RCR-1 select_weighted_event: returns matched candidate with highest weight") {
@@ -462,10 +466,12 @@ TEST_CASE("RCR-1 select_weighted_event: returns matched candidate with highest w
         { EventTrigger{"country.stability", "gt", 0.90} },
         { WeightModifier{"country.stability", "lt", 0.30, 10.0} }));
 
-    const auto pick = ev_ev::select_weighted_event(state);
-    REQUIRE(pick.has_value());
-    CHECK(pick->event_id_code == "b");
-    CHECK(pick->weight        == doctest::Approx(2.5));
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r);
+    REQUIRE(r.value().has_value());
+    const auto& pick = r.value().value();
+    CHECK(pick.event_id_code == "b");
+    CHECK(pick.weight        == doctest::Approx(2.5));
 }
 
 TEST_CASE("RCR-1 select_weighted_event: ties resolve by event vector order") {
@@ -476,9 +482,71 @@ TEST_CASE("RCR-1 select_weighted_event: ties resolve by event vector order") {
     state.events.push_back(make_event("second",
         { EventTrigger{"country.stability", "lt", 0.30} }));
 
-    const auto pick = ev_ev::select_weighted_event(state);
-    REQUIRE(pick.has_value());
-    CHECK(pick->event_id_code == "first");
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r);
+    REQUIRE(r.value().has_value());
+    CHECK(r.value().value().event_id_code == "first");
+}
+
+// =====================================================================
+// Post-M6.7 hardening: select_weighted_event must PROPAGATE malformed
+// weight failures, NOT silently convert them to nullopt. Previously
+// the signature returned `std::optional<...>` and ate the
+// rank_weighted_events failure as "no pick"; that was the last silent
+// degradation site in the event-evaluator surface.
+// =====================================================================
+
+TEST_CASE("Hardening: select_weighted_event REJECTS NaN modifier weight_delta") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30,
+                         std::numeric_limits<double>::quiet_NaN()} }));
+
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+    CHECK(r.error().find("bad") != std::string::npos);
+}
+
+TEST_CASE("Hardening: select_weighted_event REJECTS +Inf modifier weight_delta") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30,
+                         std::numeric_limits<double>::infinity()} }));
+
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+}
+
+TEST_CASE("Hardening: select_weighted_event REJECTS unrecognised modifier target") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.notarealfield", "lt", 0.30, 0.5} }));
+
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("not in the country/interest_group allowlist")
+          != std::string::npos);
+}
+
+TEST_CASE("Hardening: select_weighted_event REJECTS unrecognised modifier op") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "eq" /* not allowed */,
+                         0.30, 0.5} }));
+
+    const auto r = ev_ev::select_weighted_event(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("op = 'eq'") != std::string::npos);
 }
 
 // =====================================================================

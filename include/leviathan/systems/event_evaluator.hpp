@@ -263,7 +263,21 @@ rank_weighted_events(const core::GameState& state);
 // (country, category) bucket. Use this helper only when you
 // want a deterministic top-pick (e.g. tests / diagnostics);
 // do NOT use it as the §5.7 implementation.
-std::optional<WeightedEventCandidate>
+//
+// Post-M6.7 hardening (`feedback_no_silent_degradation` +
+// `feedback_api_signature_expresses_failure`): the previous
+// `std::optional<WeightedEventCandidate>` return shape
+// silently absorbed a `rank_weighted_events` failure into
+// `std::nullopt`, which the strict-validation discipline
+// forbids. The signature is now
+// `core::Result<std::optional<WeightedEventCandidate>>`:
+//   - no matched events                  -> success(nullopt)
+//   - rank_weighted_events failure       -> failure(error)
+//     (malformed weight modifier, non-finite weight_delta,
+//      unrecognised target/op, non-finite accumulated weight)
+//   - top matched candidate by descending weight + vector
+//     tie-break                           -> success(candidate)
+core::Result<std::optional<WeightedEventCandidate>>
 select_weighted_event(const core::GameState& state);
 
 }  // namespace leviathan::systems::event_evaluator

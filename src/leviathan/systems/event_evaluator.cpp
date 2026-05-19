@@ -401,36 +401,37 @@ rank_weighted_events(const core::GameState& state) {
     return R::success(std::move(out));
 }
 
-std::optional<WeightedEventCandidate>
+core::Result<std::optional<WeightedEventCandidate>>
 select_weighted_event(const core::GameState& state) {
+    using R = core::Result<std::optional<WeightedEventCandidate>>;
     const auto matches = match_events(state);
     if (matches.empty()) {
-        return std::nullopt;
+        return R::success(std::nullopt);
     }
 
     // Build a small lookup of currently-matched event indices.
     // state.events is canonically small (~10 in RCR-1 fixtures),
     // so a linear scan per ranked candidate is cheaper than a
     // hash set allocation here.
+    //
+    // Post-M6.7 hardening: a `rank_weighted_events` failure
+    // (malformed weight modifier, non-finite weight, etc.)
+    // MUST propagate as a Result failure — the previous
+    // `return std::nullopt` shape silently swallowed the
+    // problem and is forbidden by
+    // `feedback_no_silent_degradation`.
     auto ranked_r = rank_weighted_events(state);
     if (!ranked_r) {
-        // select_weighted_event is a diagnostic helper. The hardening
-        // discipline says malformed weights must surface; failing
-        // safe here is silent. Return std::nullopt only on an empty-
-        // matches input — propagate the ranker's failure as "no
-        // valid pick" for ad-hoc callers, while production code
-        // (event_engine::tick_events) uses the Result-bearing path
-        // directly.
-        return std::nullopt;
+        return R::failure(std::move(ranked_r.error()));
     }
     for (const auto& cand : ranked_r.value()) {
         for (const auto& m : matches) {
             if (m.event_index == cand.event_index) {
-                return cand;
+                return R::success(cand);
             }
         }
     }
-    return std::nullopt;
+    return R::success(std::nullopt);
 }
 
 }  // namespace leviathan::systems::event_evaluator
