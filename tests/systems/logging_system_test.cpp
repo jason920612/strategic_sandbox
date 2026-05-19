@@ -321,12 +321,14 @@ TEST_CASE("M6.8 export_jsonl: debug_mode=true vs false differ ONLY on event_fire
     CHECK(sb_lines.find("simulation start") != std::string_view::npos);
 }
 
-TEST_CASE("M6.8 export_jsonl: non-event-fired entries with a `true_cause` key are unaffected (no such case occurs in practice but the filter is keyed on the metadata key, not the category)") {
+TEST_CASE("M6.8 export_jsonl: non-event-fired `true_cause` metadata is also filtered by key (no such case occurs in practice today, but the filter is keyed on the metadata KEY NAME, NOT on the entry category — so any stray `true_cause` anywhere is hidden in non-debug mode)") {
     // The filter is purposefully scoped narrowly to the metadata key
-    // name. We pin that scope here so a future refactor that key
+    // name. We pin that scope here so a future refactor that keys
     // the filter on category (e.g. only filter when category ==
-    // "event_fired") doesn't accidentally bypass the filter when
-    // unexpected `true_cause` keys appear elsewhere.
+    // "event_fired") doesn't accidentally LEAK the filter when
+    // unexpected `true_cause` keys appear elsewhere — the
+    // expectation is "any `true_cause` key is filtered in non-debug
+    // mode regardless of the entry category".
     GameState state;
     LogEntry weird;
     weird.date     = GameDate(1930, 1, 1);

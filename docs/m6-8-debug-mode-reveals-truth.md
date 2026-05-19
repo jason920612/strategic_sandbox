@@ -66,12 +66,16 @@ This split keeps three invariants clean:
    `true_cause` metadata key on `event_fired` lines).
 
 The filter in `logging::write_jsonl_line` is keyed on the
-metadata key name (`"true_cause"`), not on the entry category.
-This is on purpose: if some future caller emits a `true_cause`
-key on a non-`event_fired` LogEntry by accident, the filter
-still hides it. A unit test pins this invariant
-(`logging_system_test.cpp` "M6.8 export_jsonl: non-event-fired
-entries with a `true_cause` key are unaffected").
+metadata key name (`"true_cause"`), NOT on the entry category.
+Non-event-fired entries are byte-identical across the debug
+toggle UNLESS they happen to contain a `true_cause` key — in
+that case the key is filtered in non-debug mode regardless of
+the entry's category. This shape is intentional: if some
+future caller accidentally emits a `true_cause` key on a non-
+`event_fired` LogEntry, the truth still does not leak. A unit
+test pins this invariant (`logging_system_test.cpp` "M6.8
+export_jsonl: non-event-fired `true_cause` metadata is also
+filtered by key").
 
 ## 4. What M6.8 deliberately does NOT do
 
