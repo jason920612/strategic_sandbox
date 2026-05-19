@@ -61,19 +61,31 @@ core::Result<bool> draw_bool(core::RandomState& rng,
 
 // Selects an index in [0, weights.size()) with weights[i] / sum(weights).
 //
-// Edge cases:
-//   - weights.empty()        -> precondition violation (assert)
-//   - any weight < 0         -> precondition violation (assert)
-//   - any weight non-finite  -> precondition violation (assert)
-//   - sum of weights == 0    -> returns 0; one draw is still consumed
-//                               so a caller's counter advances by
-//                               exactly the same amount on both the
-//                               "real choice" and "all-zero" paths.
-//
-// Every other valid input consumes exactly one draw.
-std::size_t weighted_choice(core::RandomState& rng,
-                            const std::vector<double>& weights,
-                            std::string_view tag = "");
+// Post-M6.7 hardening (`feedback_no_silent_degradation` +
+// `feedback_api_signature_expresses_failure`): the previous
+// assert-only validation is gone. Malformed input returns
+// `Result::failure` naming the offending field, and **consumes
+// NO RNG draw** so `rng.counter` stays where it was. The
+// rejection paths:
+//   - weights.empty()         -> failure (empty input)
+//   - any weight non-finite   -> failure (names index + value)
+//   - any weight < 0          -> failure (names index + value)
+//   - sum of weights non-finite (saturated to ±Inf / NaN)
+//                             -> failure (names total)
+// Accepted paths:
+//   - sum of weights == 0     -> success(0); one draw IS consumed
+//                                so caller's counter advances
+//                                identically on both the "real
+//                                choice" and "all-zero" branches
+//                                (deterministic replays rely on
+//                                this; see test
+//                                "weighted_choice with all-zero
+//                                weights").
+//   - any other valid input   -> success(index); one draw consumed.
+core::Result<std::size_t>
+weighted_choice(core::RandomState&         rng,
+                const std::vector<double>& weights,
+                std::string_view           tag = "");
 
 // Optional process-wide trace hook.
 //

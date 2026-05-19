@@ -76,7 +76,11 @@ TEST_CASE("Every higher-level helper consumes exactly one draw") {
     }
     CHECK(rng.counter == 4ull);
 
-    lr::weighted_choice(rng, std::vector<double>{1.0, 2.0, 3.0});
+    {
+        const auto r =
+            lr::weighted_choice(rng, std::vector<double>{1.0, 2.0, 3.0});
+        REQUIRE(r);
+    }
     CHECK(rng.counter == 5ull);
 }
 
@@ -187,8 +191,9 @@ TEST_CASE("weighted_choice returns an in-bounds index for normal inputs") {
     rng.seed = 12345ull;
     const std::vector<double> w{1.0, 2.0, 3.0, 4.0};
     for (int i = 0; i < 1000; ++i) {
-        const std::size_t idx = lr::weighted_choice(rng, w);
-        CHECK(idx < 4);
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        CHECK(r.value() < 4);
     }
 }
 
@@ -198,7 +203,9 @@ TEST_CASE("weighted_choice frequencies are roughly proportional to weights") {
     const std::vector<double> w{1.0, 3.0};  // 25% / 75%
     int low = 0, hi = 0;
     for (int i = 0; i < 20000; ++i) {
-        if (lr::weighted_choice(rng, w) == 0) ++low; else ++hi;
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        if (r.value() == 0) ++low; else ++hi;
     }
     // Allow generous slack so the test doesn't flake. Expected
     // proportions are 5000 vs 15000; we just check it's in the
@@ -214,7 +221,9 @@ TEST_CASE("weighted_choice with a zero weight never picks that index") {
     rng.seed = 99ull;
     const std::vector<double> w{1.0, 0.0, 1.0};
     for (int i = 0; i < 5000; ++i) {
-        CHECK(lr::weighted_choice(rng, w) != 1);
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        CHECK(r.value() != 1);
     }
 }
 
@@ -223,10 +232,18 @@ TEST_CASE("weighted_choice with all-zero weights returns 0 and consumes one draw
     rng.seed = 1ull;
     const std::vector<double> w{0.0, 0.0, 0.0};
 
-    CHECK(lr::weighted_choice(rng, w) == 0);
+    {
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        CHECK(r.value() == 0);
+    }
     CHECK(rng.counter == 1ull);
 
-    CHECK(lr::weighted_choice(rng, w) == 0);
+    {
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        CHECK(r.value() == 0);
+    }
     CHECK(rng.counter == 2ull);
 }
 
@@ -235,8 +252,66 @@ TEST_CASE("weighted_choice with a single-element list always returns 0") {
     rng.seed = 7ull;
     const std::vector<double> w{1.5};
     for (int i = 0; i < 100; ++i) {
-        CHECK(lr::weighted_choice(rng, w) == 0);
+        const auto r = lr::weighted_choice(rng, w);
+        REQUIRE(r);
+        CHECK(r.value() == 0);
     }
+}
+
+TEST_CASE("Hardening: weighted_choice REJECTS empty weights vector") {
+    // Post-M6.7 hardening (`feedback_no_silent_degradation` +
+    // `feedback_api_signature_expresses_failure`): assert-only
+    // validation is gone; empty / non-finite / negative weights
+    // return Result::failure and consume NO draw.
+    RandomState rng;
+    rng.seed = 5ull;
+    const auto r = lr::weighted_choice(rng, std::vector<double>{});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("must not be empty") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+}
+
+TEST_CASE("Hardening: weighted_choice REJECTS NaN / +Inf / -Inf weight") {
+    RandomState rng;
+    rng.seed = 5ull;
+    const double nan  = std::numeric_limits<double>::quiet_NaN();
+    const double pinf = std::numeric_limits<double>::infinity();
+
+    auto r = lr::weighted_choice(rng, std::vector<double>{1.0, nan});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("is not finite") != std::string::npos);
+    CHECK(r.error().find("NaN") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+
+    r = lr::weighted_choice(rng, std::vector<double>{1.0, pinf});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("+Inf") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+
+    r = lr::weighted_choice(rng, std::vector<double>{1.0, -pinf});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("-Inf") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+}
+
+TEST_CASE("Hardening: weighted_choice REJECTS negative weight") {
+    RandomState rng;
+    rng.seed = 5ull;
+    const auto r = lr::weighted_choice(rng, std::vector<double>{1.0, -0.5});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("is negative") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+}
+
+TEST_CASE("Hardening: weighted_choice REJECTS sum overflow to +Inf") {
+    RandomState rng;
+    rng.seed = 5ull;
+    const double huge = std::numeric_limits<double>::max();
+    const auto r = lr::weighted_choice(rng, std::vector<double>{huge, huge});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("sum of weights") != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+    CHECK(rng.counter == 0ull);
 }
 
 TEST_CASE("Tag parameter does not affect the draw value") {
@@ -282,7 +357,11 @@ TEST_CASE("Trace callback receives one entry per draw, in order") {
     lr::next_u64(rng, "alpha");
     lr::draw_int(rng, 0, 9, "beta");
     lr::draw_unit(rng, "gamma");
-    lr::weighted_choice(rng, std::vector<double>{1.0, 2.0}, "delta");
+    {
+        const auto r = lr::weighted_choice(
+            rng, std::vector<double>{1.0, 2.0}, "delta");
+        REQUIRE(r);
+    }
 
     lr::set_trace_callback(nullptr);
 
@@ -315,11 +394,12 @@ TEST_CASE("Trace callback fires for the all-zero weighted_choice path too") {
     RandomState rng;
     rng.seed = 1ull;
     const std::vector<double> zeros{0.0, 0.0, 0.0};
-    const auto idx = lr::weighted_choice(rng, zeros, "all-zero");
+    const auto r = lr::weighted_choice(rng, zeros, "all-zero");
 
     lr::set_trace_callback(nullptr);
 
-    CHECK(idx == 0);
+    REQUIRE(r);
+    CHECK(r.value() == 0);
     REQUIRE(TraceCapture::g_rows.size() == 1);
     CHECK(TraceCapture::g_rows[0].tag == "all-zero");
     CHECK(TraceCapture::g_rows[0].counter == 1ull);

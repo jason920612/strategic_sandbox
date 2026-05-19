@@ -280,8 +280,18 @@
   accuracy    = 0.4 + 0.6 × intel_score
   ```
 
-  Both inputs are clamped to `[0, 1]` defensively before
-  the weighted sum. The result lives in
+  Both inputs were clamped to `[0, 1]` defensively before
+  the weighted sum **in the original M6.6 PR (#113)**. The
+  post-M6.7 hardening sweep (PR #115) replaces that
+  defensive clamp with strict `Result::failure` on out-of-
+  range or non-finite input — capability, budget, and
+  corruption are all validated through the same
+  `numeric_guards` predicates and reject loudly per
+  `feedback_no_silent_degradation`. The current
+  `compute_for_country` behaviour is the strict path; the
+  "clamped defensively" wording describes the original
+  M6.6 contract before hardening.
+  The result lives in
   `[kMinInformationAccuracy=0.4, 1.0]`: a country with
   maxed intelligence on both axes returns the old
   no-distortion ceiling (1.0); a country with zero

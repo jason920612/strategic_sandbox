@@ -10,6 +10,8 @@
 #include <doctest/doctest.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -73,8 +75,9 @@ EventDefinition make_event(std::string id_code,
 
 TEST_CASE("RCR-1 rank_weighted_events: empty state.events returns empty vector") {
     GameState state;
-    const auto out = ev_ev::rank_weighted_events(state);
-    CHECK(out.empty());
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r);
+    CHECK(r.value().empty());
 }
 
 TEST_CASE("RCR-1 rank_weighted_events: every event ends at kBaseWeight when no modifiers") {
@@ -84,7 +87,9 @@ TEST_CASE("RCR-1 rank_weighted_events: every event ends at kBaseWeight when no m
     state.events.push_back(make_event("b",
         { EventTrigger{"country.stability", "gt", 0.70} }));
 
-    const auto out = ev_ev::rank_weighted_events(state);
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r);
+    const auto& out = r.value();
     REQUIRE(out.size() == 2u);
     CHECK(out[0].weight == doctest::Approx(ev_ev::kBaseWeight));
     CHECK(out[1].weight == doctest::Approx(ev_ev::kBaseWeight));
@@ -102,7 +107,9 @@ TEST_CASE("RCR-1 rank_weighted_events: matching modifier raises weight; ties use
     state.events.push_back(make_event("b",
         { EventTrigger{"country.stability", "lt", 0.30} }));
 
-    const auto out = ev_ev::rank_weighted_events(state);
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r);
+    const auto& out = r.value();
     REQUIRE(out.size() == 2u);
     CHECK(out[0].event_id_code == "a");
     CHECK(out[0].weight == doctest::Approx(1.5));
@@ -117,7 +124,9 @@ TEST_CASE("RCR-1 rank_weighted_events: non-matching modifier contributes zero") 
         { EventTrigger{"country.stability", "lt", 0.30} },
         { WeightModifier{"country.stability", "lt", 0.30, 100.0} }));
 
-    const auto out = ev_ev::rank_weighted_events(state);
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r);
+    const auto& out = r.value();
     REQUIRE(out.size() == 1u);
     CHECK(out[0].weight == doctest::Approx(1.0));
 }
@@ -131,7 +140,9 @@ TEST_CASE("RCR-1 rank_weighted_events: negative weight_delta lowers priority") {
     state.events.push_back(make_event("base",
         { EventTrigger{"country.stability", "lt", 0.30} }));
 
-    const auto out = ev_ev::rank_weighted_events(state);
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r);
+    const auto& out = r.value();
     REQUIRE(out.size() == 2u);
     CHECK(out[0].event_id_code == "base");  // 1.0
     CHECK(out[1].event_id_code == "low");   // 0.6
@@ -149,12 +160,100 @@ TEST_CASE("RCR-1 rank_weighted_events: deterministic — repeated calls byte-sta
     }
     const auto r1 = ev_ev::rank_weighted_events(state);
     const auto r2 = ev_ev::rank_weighted_events(state);
-    REQUIRE(r1.size() == r2.size());
-    for (std::size_t i = 0; i < r1.size(); ++i) {
-        CHECK(r1[i].event_index   == r2[i].event_index);
-        CHECK(r1[i].event_id_code == r2[i].event_id_code);
-        CHECK(r1[i].weight        == r2[i].weight);
+    REQUIRE(r1);
+    REQUIRE(r2);
+    REQUIRE(r1.value().size() == r2.value().size());
+    for (std::size_t i = 0; i < r1.value().size(); ++i) {
+        CHECK(r1.value()[i].event_index   == r2.value()[i].event_index);
+        CHECK(r1.value()[i].event_id_code == r2.value()[i].event_id_code);
+        CHECK(r1.value()[i].weight        == r2.value()[i].weight);
     }
+}
+
+// =====================================================================
+// Post-M6.7 hardening: rank_weighted_events strict modifier validation
+// =====================================================================
+
+TEST_CASE("Hardening: rank_weighted_events REJECTS NaN weight_delta") {
+    // Post-M6.7 hardening (`feedback_no_silent_degradation`): a
+    // malformed weight modifier no longer silently contributes
+    // zero. NaN / ±Inf weight_delta now Result::failure.
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30,
+                         std::numeric_limits<double>::quiet_NaN()} }));
+
+    // RNG counter must NOT advance on the failure path. rank_weighted_events
+    // is itself RNG-free, but we still pin that the failure surfaces and
+    // the state.rng.counter is whatever the caller had.
+    const std::uint64_t before = state.rng.counter;
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+    CHECK(state.rng.counter == before);
+}
+
+TEST_CASE("Hardening: rank_weighted_events REJECTS +Inf / -Inf weight_delta") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    const double pinf = std::numeric_limits<double>::infinity();
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30, pinf} }));
+
+    auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+
+    state.events.clear();
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt", 0.30, -pinf} }));
+    r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("weight_delta is not finite") != std::string::npos);
+}
+
+TEST_CASE("Hardening: rank_weighted_events REJECTS non-finite modifier value") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "lt",
+                         std::numeric_limits<double>::quiet_NaN(), 0.5} }));
+
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("value is not finite") != std::string::npos);
+}
+
+TEST_CASE("Hardening: rank_weighted_events REJECTS unrecognised modifier target") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.notarealfield", "lt", 0.30, 0.5} }));
+
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.notarealfield") != std::string::npos);
+    CHECK(r.error().find("not in the country/interest_group allowlist")
+          != std::string::npos);
+}
+
+TEST_CASE("Hardening: rank_weighted_events REJECTS unrecognised modifier op") {
+    GameState state;
+    state.countries.push_back(make_country("GER", /*stab*/0.20));
+    state.events.push_back(make_event("bad",
+        { EventTrigger{"country.stability", "lt", 0.30} },
+        { WeightModifier{"country.stability", "eq" /* not in allowlist */,
+                         0.30, 0.5} }));
+
+    const auto r = ev_ev::rank_weighted_events(state);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("op = 'eq'") != std::string::npos);
 }
 
 // =====================================================================

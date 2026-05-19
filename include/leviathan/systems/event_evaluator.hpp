@@ -98,6 +98,7 @@
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::event_evaluator {
 
@@ -205,9 +206,20 @@ match_events_for_country(const core::GameState& state,
 // over every `WeightModifier` whose `target` / `op` / `value`
 // comparison currently holds against any country / interest
 // group in `state` (same ANY-entity-satisfies aggregation as
-// `trigger_matches`). Modifiers with unrecognised targets / ops
-// contribute 0. The result is sorted by descending weight, with
-// original event vector order as the deterministic tie-break.
+// `trigger_matches`). The result is sorted by descending weight,
+// with original event vector order as the deterministic
+// tie-break.
+//
+// Post-M6.7 hardening (`feedback_no_silent_degradation`):
+// malformed modifiers no longer silently contribute zero.
+// Returns `Result::failure` naming the event id_code,
+// modifier index, and offending field for:
+//   - non-finite `weight_delta` (NaN / ±Inf),
+//   - non-finite modifier `value`,
+//   - unrecognised modifier `target` or `op`,
+//   - non-finite accumulated weight after applying matches.
+// On success the returned vector still contains one entry per
+// `state.events` entry.
 //
 // `kBaseWeight` is `1.0` — author-supplied modifiers raise or
 // lower priority from there. Empty `weight_modifiers` keeps
@@ -236,7 +248,7 @@ struct WeightedEventCandidate {
 
 inline constexpr double kBaseWeight = 1.0;
 
-std::vector<WeightedEventCandidate>
+core::Result<std::vector<WeightedEventCandidate>>
 rank_weighted_events(const core::GameState& state);
 
 // `select_weighted_event` — DEPRECATED for engine use as of
