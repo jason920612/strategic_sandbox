@@ -80,6 +80,8 @@ FactionState faction(int id, CountryId country, std::string type,
 // =====================================================================
 
 TEST_CASE("apply: country.military_power add increases the field") {
+    // Mechanical asymptotic-add formula test:
+    //   old = 0.50, delta = +0.03 → 0.50 + 0.03 * (1 - 0.50) = 0.515
     GameState state;
     state.countries.push_back(germany_baseline());
 
@@ -89,7 +91,7 @@ TEST_CASE("apply: country.military_power add increases the field") {
     const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
     REQUIRE(r.ok());
     CHECK(r.value().effects_applied == 1);
-    CHECK(state.countries[0].military_power == doctest::Approx(0.53));
+    CHECK(state.countries[0].military_power == doctest::Approx(0.515));
 }
 
 TEST_CASE("apply: country.stability set replaces the field") {
@@ -115,6 +117,8 @@ TEST_CASE("apply: country.gdp add accepts non-ratio absolute field") {
 }
 
 TEST_CASE("apply: country.budget.military add hits the budget sub-object") {
+    // Mechanical asymptotic-add formula test:
+    //   old = 0.35, delta = +0.05 → 0.35 + 0.05 * (1 - 0.35) = 0.3825
     GameState state;
     state.countries.push_back(germany_baseline());
 
@@ -122,7 +126,7 @@ TEST_CASE("apply: country.budget.military add hits the budget sub-object") {
     p.effects.push_back({"country.budget.military", "add", 0.05});
 
     REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
-    CHECK(state.countries[0].budget.military == doctest::Approx(0.40));
+    CHECK(state.countries[0].budget.military == doctest::Approx(0.3825));
 }
 
 // =====================================================================
@@ -204,6 +208,10 @@ TEST_CASE("Hardening: apply REJECTS set on a ratio field with out-of-range value
 // =====================================================================
 
 TEST_CASE("apply: faction broadcast updates every matching faction") {
+    // Mechanical asymptotic-add formula test (per-faction):
+    //   faction[0] military: 0.40 + 0.10 * (1 - 0.40) = 0.46
+    //   faction[1] workers  unchanged
+    //   faction[2] military: 0.30 + 0.10 * (1 - 0.30) = 0.37
     GameState state;
     state.countries.push_back(germany_baseline());
     state.factions.push_back(faction(0, CountryId{0}, "military", 0.40));
@@ -216,12 +224,15 @@ TEST_CASE("apply: faction broadcast updates every matching faction") {
     const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
     REQUIRE(r.ok());
     CHECK(r.value().faction_targets_updated == 2);
-    CHECK(state.factions[0].support == doctest::Approx(0.50));  // military
+    CHECK(state.factions[0].support == doctest::Approx(0.46));  // military
     CHECK(state.factions[1].support == doctest::Approx(0.50));  // workers (unchanged)
-    CHECK(state.factions[2].support == doctest::Approx(0.40));  // military
+    CHECK(state.factions[2].support == doctest::Approx(0.37));  // military
 }
 
 TEST_CASE("apply: faction broadcast skips factions in other countries") {
+    // Mechanical asymptotic-add formula test:
+    //   GER military: 0.40 + 0.10 * (1 - 0.40) = 0.46
+    //   FRA military: unchanged (different country)
     GameState state;
     state.countries.push_back(germany_baseline());
     auto fra = germany_baseline();
@@ -236,7 +247,7 @@ TEST_CASE("apply: faction broadcast skips factions in other countries") {
     p.effects.push_back({"faction:military.support", "add", 0.10});
 
     REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
-    CHECK(state.factions[0].support == doctest::Approx(0.50));  // GER updated
+    CHECK(state.factions[0].support == doctest::Approx(0.46));  // GER updated
     CHECK(state.factions[1].support == doctest::Approx(0.50));  // FRA untouched
 }
 
@@ -273,6 +284,11 @@ TEST_CASE("apply: faction.resources is an absolute field (no clamp)") {
 // =====================================================================
 
 TEST_CASE("apply: a policy with multiple effects applies them in order") {
+    // Mechanical asymptotic-add formula test:
+    //   country.military_power 0.50 + 0.03 * (1 - 0.50) = 0.515
+    //   faction[0].support     0.40 + 0.08 * (1 - 0.40) = 0.448
+    //   faction[1].support     0.50 + (-0.03) * 0.50    = 0.485
+    //   budget_balance (non-ratio, linear)   -3.2 - 0.10 = -3.30
     GameState state;
     state.countries.push_back(germany_baseline());
     state.factions.push_back(faction(0, CountryId{0}, "military", 0.40));
@@ -288,10 +304,10 @@ TEST_CASE("apply: a policy with multiple effects applies them in order") {
     REQUIRE(r.ok());
     CHECK(r.value().effects_applied == 4);
     CHECK(r.value().faction_targets_updated == 2);
-    CHECK(state.countries[0].military_power == doctest::Approx(0.53));
-    CHECK(state.factions[0].support         == doctest::Approx(0.48));
-    CHECK(state.factions[1].support         == doctest::Approx(0.47));
-    CHECK(state.countries[0].budget_balance == doctest::Approx(-3.3));
+    CHECK(state.countries[0].military_power == doctest::Approx(0.515));
+    CHECK(state.factions[0].support         == doctest::Approx(0.448));
+    CHECK(state.factions[1].support         == doctest::Approx(0.485));
+    CHECK(state.countries[0].budget_balance == doctest::Approx(-3.30));
 }
 
 TEST_CASE("apply: empty effects array applies zero effects successfully") {

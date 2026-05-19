@@ -634,9 +634,10 @@ TEST_CASE("load_into_state: starting_policies applies day-0 enactment") {
     CHECK(r.value().starting_policies_applied == 1);
 
     // country_json sets legal_tax_burden = 0.20. Day-0 raise_taxes
-    // adds 0.05; final value should be 0.25.
+    // adds +0.05 via the asymptotic-add formula: 0.20 + 0.05 *
+    // (1 - 0.20) = 0.24.
     REQUIRE(state.countries.size() == 1u);
-    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.25));
+    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.24));
 
     // M1.15: every successful apply_policy_effects (including the
     // day-0 path) appends to active_policies. GameState defaults to
