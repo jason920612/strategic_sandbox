@@ -105,6 +105,20 @@ void record_match(core::GameState&                                state,
     //                       actors is empty)
     //   actor_id_code      (id_code of actors[0], or "")
     //   country_id_code    (country_id_code of actors[0], or "")
+    //   true_cause         (M6.8: verbatim
+    //                       EventDefinition.true_cause string)
+    //
+    // M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): the
+    // `true_cause` metadata key is appended here UNCONDITIONALLY
+    // at fire time so the truth is always present in
+    // `state.logs` (and therefore in the save.json `logs` array
+    // — debuggable / inspectable / replay-stable). The
+    // events.jsonl artefact filters this key out unless
+    // `RunnerOptions::debug_mode == true`; see
+    // `logging::export_jsonl` and runner::end_tick. The
+    // EventDefinition.true_cause field has been required non-
+    // empty on `state.events` since M6.1, so this lookup never
+    // produces an empty string.
     //
     // Multi-actor events emit ONE log entry with the first
     // actor's surface attached; the EventInstance in
@@ -127,6 +141,16 @@ void record_match(core::GameState&                                state,
         entry.metadata.push_back({"actor_kind",      std::string("<none>")});
         entry.metadata.push_back({"actor_id_code",   std::string()});
         entry.metadata.push_back({"country_id_code", std::string()});
+    }
+    // M6.8: append the M6.1 true_cause string sourced from the
+    // EventDefinition that owns this match. event_index is
+    // populated by the M5.2 / M5.3 match-construction surface and
+    // is always in range when record_match is called on a real
+    // match (event_engine::tick_events / event_evaluator never
+    // emit a match with an out-of-range index).
+    if (match.event_index < state.events.size()) {
+        entry.metadata.push_back(
+            {"true_cause", state.events[match.event_index].true_cause});
     }
     state.logs.push_back(std::move(entry));
 
@@ -157,6 +181,10 @@ void record_followup(core::GameState&             state,
     // Same log emission shape as record_match. Use the parent's
     // first-actor surface so events.jsonl can be filtered by
     // country_id_code consistently across base + followup fires.
+    // M6.8 (RFC-090 §6.8): the followup's own `true_cause`
+    // string is recorded as the last metadata key, mirroring the
+    // record_match path; `logging::export_jsonl` filters it out
+    // unless `RunnerOptions::debug_mode == true`.
     core::LogEntry entry;
     entry.date     = fired_on;
     entry.category = "event_fired";
@@ -176,6 +204,8 @@ void record_followup(core::GameState&             state,
         entry.metadata.push_back({"actor_id_code",   std::string()});
         entry.metadata.push_back({"country_id_code", std::string()});
     }
+    entry.metadata.push_back(
+        {"true_cause", followup_definition.true_cause});
     state.logs.push_back(std::move(entry));
 
     state.event_history.push_back(std::move(inst));

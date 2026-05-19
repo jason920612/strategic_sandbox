@@ -109,6 +109,23 @@ struct RunnerOptions {
     // per-kind payload), minus the `applied_on` date which is
     // auto-stamped to the post-tick `state.current_date`.
     std::optional<std::filesystem::path> commands_path;
+    // M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): reveal each fired
+    // event's `EventDefinition.true_cause` (M6.1) in the
+    // events.jsonl artefact. When false (default), the truth is
+    // hidden from the events.jsonl player-facing surface; when
+    // true, every `event_fired` entry includes a `true_cause`
+    // metadata key carrying the verbatim string from the matching
+    // event definition. Toggling this flag does NOT change which
+    // events fire, does NOT advance `state.rng`, does NOT mutate
+    // any country / faction / interest-group field, and does NOT
+    // bump the save schema (still v18). It is a presentation-only
+    // toggle on the events.jsonl artefact.
+    //
+    // RFC-060 §3 declares an `EventLogEntry { ... publicText;
+    // debugTruth }`. M6.8 implements the `debugTruth` surface;
+    // M6.9 will add the `publicText` (visible_report) flow with
+    // its bias / noise distortion on the non-debug side.
+    bool                                 debug_mode  = false;
     bool                                 show_help   = false;
 };
 

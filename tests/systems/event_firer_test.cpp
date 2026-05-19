@@ -410,3 +410,111 @@ TEST_CASE("M5.5 record_matches: a recorded entry round-trips through save v14") 
     CHECK(reloaded.actors[1].kind            == "interest_group");
     CHECK(reloaded.actors[1].country_id_code == "GER");
 }
+
+// =====================================================================
+// M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): event_firer attaches the
+// matching event's `EventDefinition.true_cause` (M6.1) as a
+// `true_cause` metadata key on every `event_fired` LogEntry it
+// records. The attachment is UNCONDITIONAL at the event_firer
+// layer — the events.jsonl artefact filters the key out unless
+// `RunnerOptions::debug_mode == true` (see logging_system_test).
+// =====================================================================
+
+namespace {
+
+const leviathan::core::LogEntry* find_event_fired_log(const GameState& s) {
+    for (const auto& e : s.logs) {
+        if (e.category == "event_fired") return &e;
+    }
+    return nullptr;
+}
+
+const std::string* metadata_value(const leviathan::core::LogEntry& e,
+                                  const std::string& key) {
+    for (const auto& kv : e.metadata) {
+        if (kv.first == key) return &kv.second;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("M6.8 record_match: appends `true_cause` metadata key sourced from EventDefinition") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    s.events.push_back(make_event("low_stab",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    // Author a specific true_cause so the test can pin the value.
+    s.events.back().true_cause =
+        "Local interest groups instigated unrest to derail tax reform.";
+
+    const auto matches = ee::match_events(s);
+    REQUIRE(matches.size() == 1u);
+    ef::record_match(s, matches[0], GameDate(1930, 4, 1));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* tc = metadata_value(*entry, "true_cause");
+    REQUIRE(tc != nullptr);
+    CHECK(*tc ==
+          "Local interest groups instigated unrest to derail tax reform.");
+    // M6.8 invariant: the truth IS recorded in state.logs even
+    // though events.jsonl will hide it without --debug.
+}
+
+TEST_CASE("M6.8 record_followup: appends `true_cause` metadata key sourced from followup EventDefinition") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    s.events.push_back(make_event("parent",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    s.events.push_back(make_event("child",
+        { make_trigger("country.stability", "lt", 0.30) }));
+    s.events.back().true_cause =
+        "Censorship law triggered media backlash; ministry knew.";
+
+    // Build a synthetic parent EventInstance directly so we can
+    // exercise record_followup without driving the engine.
+    EventInstance parent;
+    parent.event_id_code = "parent";
+    parent.fired_on      = GameDate(1930, 4, 1);
+    EventInstanceActor a;
+    a.kind            = "country";
+    a.id_code         = "GER";
+    a.country_id_code = "GER";
+    a.index           = 0;
+    parent.actors.push_back(a);
+
+    ef::record_followup(s, parent, s.events[1], GameDate(1930, 5, 1));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* tc = metadata_value(*entry, "true_cause");
+    REQUIRE(tc != nullptr);
+    CHECK(*tc ==
+          "Censorship law triggered media backlash; ministry knew.");
+    const auto* fu = metadata_value(*entry, "followup_of");
+    REQUIRE(fu != nullptr);
+    CHECK(*fu == "parent");
+}
+
+TEST_CASE("M6.8 record_match: `true_cause` is appended LAST so existing metadata insertion order is preserved") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    s.events.push_back(make_event("low_stab",
+        { make_trigger("country.stability", "lt", 0.30) }));
+
+    const auto matches = ee::match_events(s);
+    REQUIRE(matches.size() == 1u);
+    ef::record_match(s, matches[0], GameDate(1930, 4, 1));
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    // Stable order: event_id_code, actor_kind, actor_id_code,
+    // country_id_code, true_cause.
+    REQUIRE(entry->metadata.size() == 5u);
+    CHECK(entry->metadata[0].first == "event_id_code");
+    CHECK(entry->metadata[1].first == "actor_kind");
+    CHECK(entry->metadata[2].first == "actor_id_code");
+    CHECK(entry->metadata[3].first == "country_id_code");
+    CHECK(entry->metadata[4].first == "true_cause");
+}

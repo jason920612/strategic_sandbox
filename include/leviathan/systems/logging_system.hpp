@@ -68,11 +68,24 @@ std::vector<core::LogEntry> recent(const core::GameState& state,
 // Writes one LogEntry to `out` as a single JSONL line (no trailing
 // newline before the line, one '\n' after). Stable, byte-determinable
 // format - see docs/m0-6-logging.md for the spec.
-void write_jsonl_line(std::ostream& out, const core::LogEntry& entry);
+//
+// M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): when `debug_mode` is
+// false (the default), the `true_cause` metadata key — appended
+// unconditionally by `event_firer::record_match` /
+// `record_followup` — is FILTERED OUT of the emitted line. When
+// `debug_mode` is true, the key is preserved verbatim in
+// insertion order so a downstream reader sees both the
+// event-engine surface (event_id_code / actors) and the
+// `EventDefinition.true_cause` (M6.1) text. Non-event-fired
+// entries are unaffected (no `true_cause` metadata to filter).
+void write_jsonl_line(std::ostream& out, const core::LogEntry& entry,
+                      bool debug_mode = false);
 
 // Writes every entry in state.logs as JSONL, one per line, in order.
-// No header, no trailer.
-void export_jsonl(std::ostream& out, const core::GameState& state);
+// No header, no trailer. `debug_mode` is forwarded to each
+// `write_jsonl_line` call; see that function for the M6.8 filter.
+void export_jsonl(std::ostream& out, const core::GameState& state,
+                  bool debug_mode = false);
 
 // Converts severity to its canonical lowercase string form.
 // "debug" | "info" | "warn" | "error".

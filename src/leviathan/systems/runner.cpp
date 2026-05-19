@@ -226,6 +226,21 @@ std::string usage_text() {
         "                      `commands::dispatch_one` pipeline as the\n"
         "                      M2 surface; successful commands land in\n"
         "                      state.applied_commands.\n"
+        "  --debug             RFC-090 §6.8 \"debug 模式顯示真相\".\n"
+        "                      Boolean flag (no value). Reveals each\n"
+        "                      fired event's `EventDefinition.true_cause`\n"
+        "                      (M6.1) as a `true_cause` metadata key on\n"
+        "                      every `event_fired` line in the\n"
+        "                      events.jsonl artefact. The hidden truth\n"
+        "                      stays available in `state.logs` and the\n"
+        "                      save.json `logs` array regardless of\n"
+        "                      this flag — `--debug` only filters the\n"
+        "                      events.jsonl player-facing surface.\n"
+        "                      Does NOT advance `state.rng`, does NOT\n"
+        "                      change which events fire, does NOT\n"
+        "                      mutate any country / faction / IG\n"
+        "                      field, does NOT bump the save schema\n"
+        "                      (still v18).\n"
         "  --help              Show this help and exit.\n";
 }
 
@@ -345,6 +360,13 @@ core::Result<RunnerOptions> parse_args(int argc, const char* const* argv) {
             if (!v) return core::Result<RunnerOptions>::failure(std::move(v.error()));
             opts.commands_path = std::filesystem::path(std::string(v.value()));
             ++i;
+        } else if (a == "--debug") {
+            // M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): boolean
+            // toggle. Reveals each fired event's
+            // `EventDefinition.true_cause` (M6.1) in the
+            // events.jsonl artefact. No value follows the flag;
+            // its presence sets `debug_mode = true`.
+            opts.debug_mode = true;
         } else {
             return core::Result<RunnerOptions>::failure(
                 "unknown flag: " + std::string(a));
@@ -875,7 +897,12 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     }
 
     std::ostringstream ss_log;
-    lg::export_jsonl(ss_log, state);
+    // M6.8: forward --debug to the JSONL writer. When opts.debug_mode
+    // is true, every `event_fired` line emits its `true_cause`
+    // metadata key (the M6.1 EventDefinition string); when false,
+    // the key is filtered out of the artefact. state.logs itself is
+    // unchanged either way.
+    lg::export_jsonl(ss_log, state, opts.debug_mode);
     auto log_w = write_string_to_file(log_path, ss_log.str());
     if (!log_w) {
         return core::Result<RunOutcome>::failure(std::move(log_w.error()));

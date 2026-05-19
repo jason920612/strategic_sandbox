@@ -20,11 +20,16 @@ docs cross-link here rather than re-litigating the gap.
 ## 1. Status
 
 Current implementation milestones **M0 – M5 are closed as
-implementation milestones**. M6 is in progress at **M6.7**,
-followed by a **post-M6.7 hardening sweep (NOT a milestone)**
-that applies `feedback_no_silent_degradation` project-wide
-and migrates ratio-target `add` from linear to asymptotic —
-see §1.2 below.
+implementation milestones**. M6 is in progress at **M6.8**
+(`--debug` runner flag reveals each fired event's
+`EventDefinition.true_cause` (M6.1) on the events.jsonl
+artefact — see §1.3 below; the truth is recorded in
+`state.logs` unconditionally so `save.json` is byte-identical
+across the debug toggle). Predecessor: **M6.7** (corruption
+influence on `information_accuracy`), followed by a
+**post-M6.7 hardening sweep (NOT a milestone)** that applies
+`feedback_no_silent_degradation` project-wide and migrates
+ratio-target `add` from linear to asymptotic — see §1.2.
 The `information_accuracy::compute_for_country` body now
 implements an RFC-080 §8 subset:
 
@@ -332,6 +337,54 @@ on every failure path).
 
 Design note:
 [`hardening-strict-numeric-validation.md`](hardening-strict-numeric-validation.md).
+
+### 1.3 M6.8 debug mode reveals truth (RFC-090 §6.8)
+
+After the hardening sweep, M-numbered work resumed with
+**M6.8** (`6.8 debug 模式顯示真相`). The change is a
+presentation-layer toggle: when `--debug` is passed, every
+`event_fired` LogEntry on the events.jsonl artefact gains
+a `"true_cause": "<verbatim M6.1 string>"` metadata key
+sourced from `state.events[match.event_index].true_cause`
+(for parent fires; `EventDefinition.true_cause` directly for
+followups). When `--debug` is omitted, the `true_cause`
+metadata key is filtered out of the artefact at
+`logging::write_jsonl_line` write time.
+
+Three invariants make this a low-risk surface:
+
+1. **Truth is recorded unconditionally.**
+   `event_firer::record_match` and
+   `event_firer::record_followup` push the `true_cause`
+   metadata key onto every `event_fired` LogEntry regardless
+   of `debug_mode`. The truth lives in `state.logs` and is
+   serialised into the `save.json` `logs` array on every run.
+2. **Save format is debug-flag-agnostic.** Two same-seed
+   runs produce **byte-identical `save.json`** whether
+   `--debug` is passed or not — the only diverging artefact
+   is `events.jsonl`. No save schema bump (still `v18`).
+3. **No state-engine effect.** `--debug` does not change
+   which events fire (event_engine and event_evaluator are
+   untouched), does not advance `state.rng`, does not mutate
+   any country / faction / interest-group field. Canonical
+   `1930_minimal` 365-day events.jsonl is byte-identical with
+   and without `--debug` because no events fire on canonical
+   (M5 invariant preserved). Compliance `1930_rfc_compliance`
+   25 567-day (1930→2000) sweep completes with
+   `Sanity issues : 0` on both debug and non-debug runs.
+
+RFC-060 §3 declares the canonical `EventLogEntry { ...
+publicText; debugTruth }` shape. M6.8 implements the
+`debugTruth` reveal. M6.9 (`6.9 非 debug 模式隱藏真相`)
+remains in-scope-but-not-shipped and will add the
+`publicText` (M6.2 `visible_report`) flow with the M6.4
+`reported_value::from_true_value` and M6.5
+`bias_noise::sample_for_event` distortion applied in
+non-debug mode — the first downstream consumer of the
+`information_accuracy` family (M6.3 / M6.6 / M6.7).
+
+Design note:
+[`m6-8-debug-mode-reveals-truth.md`](m6-8-debug-mode-reveals-truth.md).
 
 ## 2. Finding 1 — RFC-090 original M3 drift (issue #105 baseline; see §6.1 for post-RCR-1 + #108 state)
 
