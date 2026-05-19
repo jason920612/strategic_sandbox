@@ -254,9 +254,10 @@ TEST_CASE("M2 end-to-end: gate atomicity across EnactPolicy and AdjustBudget") {
     CHECK(r.value().apply.commands_applied == 1);
 
     // Military adjustment landed (gate let it through via
-    // military_loyalty=0.9).
+    // military_loyalty=0.9). Mechanical asymptotic-add:
+    //   mil_before + 0.03 * (1 - mil_before)
     CHECK(state.countries[0].budget.military ==
-          doctest::Approx(mil_before + 0.03));
+          doctest::Approx(mil_before + 0.03 * (1.0 - mil_before)));
     // EnactPolicy rejected: no legal_tax_burden mutation, no
     // active_policies entry.
     CHECK(state.countries[0].legal_tax_burden == doctest::Approx(tax_before));

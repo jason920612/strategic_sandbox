@@ -219,6 +219,52 @@
   `docs/milestone-6-checkpoint.md`, no
   `docs/milestone-6-result.md`, no "M6 closed" wording.
   M6 remains in progress.
+- **Post-M6.7 hardening sweep (NOT a milestone)** —
+  `feature/hardening-strict-numeric-validation`.
+  Applies `feedback_no_silent_degradation` project-wide:
+  every silent `std::clamp` / NaN-tolerance / silent-skip
+  site in `policy_system`, `commands::AdjustBudget`,
+  `faction_system`, `stability_system`, `economy_system`,
+  `interest_group_system`, `effect_desire`, `ai_policy`,
+  `random_service`, `event_effects`, `event_engine`,
+  `annual_stats`, and the year-boundary runner now
+  surfaces as `Result::failure` naming the entity kind,
+  `id_code`, field path, and offending value. A new shared
+  header `include/leviathan/systems/internal/numeric_guards.hpp`
+  centralises the guard predicates. **Ratio-target `add`
+  migrated from linear to asymptotic:** for ratio fields
+  in `[0, 1]`, the `add` op now computes
+  `new = old + delta * (1 - old)` (positive delta) /
+  `new = old + delta * old` (negative delta). The
+  reshape makes the strict validator pass by construction
+  on long-horizon AI policy application; the bounded /
+  diminishing-returns shape is literature-aligned
+  (Polity / V-Dem / Besley & Persson) but the exact
+  functional form is a game-model assumption. Non-ratio
+  fields (`country.gdp`, `country.budget_balance`,
+  `country.tax_revenue`, `faction.resources`) keep linear
+  `add`. Helper signatures `effect_desire::for_country`,
+  `random_service::draw_bool`, `annual_stats::snapshot`,
+  `event_effects::resolve_followup_ids`,
+  `event_effects::select_best_option_for_country` now
+  return `Result<T>` and propagate failures up through
+  `ai_policy` / `event_engine` / `monthly_pipeline` /
+  `runner`. **No save schema bump.** Save format stays
+  at **v18**; artefact contract stays at **11**. **No new
+  RFC milestone feature, no new player-facing command,
+  no new save-layer surface, no M6 progression.**
+  Canonical numeric baselines are deliberately rebaked
+  (asymptotic-`add` produces different post-values than
+  linear-`add`); same-branch / same-seed determinism is
+  preserved (canonical `1930_minimal` 365-day produces
+  byte-identical output across repeated runs). Compliance
+  `1930_rfc_compliance` 25 567-day (1930→2000) sweep
+  completes with `Sanity issues : 0`. Test count
+  1 235 / 1 235 (69 706 assertions, 0 failed) including
+  4 new trajectory-shape tests in
+  `tests/systems/asymptotic_add_trajectory_test.cpp`.
+  Design note:
+  [`docs/hardening-strict-numeric-validation.md`](docs/hardening-strict-numeric-validation.md).
 - Previously shipped: **M6.6 — intelligence-
   budget influence on `information_accuracy`.** Sixth M6
   PR. Implements RFC-090 §6.6 (`6.6 加入情報預算影響`).

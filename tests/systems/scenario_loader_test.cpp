@@ -773,8 +773,10 @@ TEST_CASE("load_into_state: starting_policies multiple entries apply in order") 
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.ok());
     CHECK(r.value().starting_policies_applied == 2);
-    // 0.20 (initial) + 0.05 (tax_up) + 0.10 (tax_up2) = 0.35.
-    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.35));
+    // Mechanical asymptotic-add applied twice:
+    //   After tax_up:  0.20 + 0.05 * (1 - 0.20) = 0.24
+    //   After tax_up2: 0.24 + 0.10 * (1 - 0.24) = 0.316
+    CHECK(state.countries[0].legal_tax_burden == doctest::Approx(0.316));
 }
 
 // ---------------------------------------------------------------------

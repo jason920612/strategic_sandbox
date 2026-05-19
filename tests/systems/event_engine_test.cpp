@@ -146,7 +146,8 @@ TEST_CASE("M5.7 tick_events: one matching event is recorded AND its effects appl
     REQUIRE(s.event_history.size()         == 1u);
     CHECK(s.event_history[0].event_id_code == "unrest");
     CHECK(s.event_history[0].fired_on      == GameDate(1930, 3, 15));
-    CHECK(s.countries[0].stability         == doctest::Approx(0.18));
+    // Mechanical asymptotic-add: 0.20 + (-0.02) * 0.20 = 0.196
+    CHECK(s.countries[0].stability         == doctest::Approx(0.196));
 }
 
 TEST_CASE("M5.7 tick_events: fired_on for every recorded instance is state.current_date") {
@@ -196,8 +197,11 @@ TEST_CASE("Issue #112 tick_events: two matches in DIFFERENT categories "
     REQUIRE(s.event_history.size() == 2u);
     CHECK(s.event_history[0].event_id_code == "low_stab");
     CHECK(s.event_history[1].event_id_code == "radical_ig");
-    CHECK(s.countries[0].stability  == doctest::Approx(0.18));  // 0.20 - 0.02
-    CHECK(s.countries[0].legitimacy == doctest::Approx(0.49));  // 0.50 - 0.01
+    // Mechanical asymptotic-add:
+    //   stability  0.20 + (-0.02) * 0.20 = 0.196
+    //   legitimacy 0.50 + (-0.01) * 0.50 = 0.495
+    CHECK(s.countries[0].stability  == doctest::Approx(0.196));
+    CHECK(s.countries[0].legitimacy == doctest::Approx(0.495));
 }
 
 // =====================================================================
@@ -215,8 +219,10 @@ TEST_CASE("M5.7 tick_events: calling twice fires twice (M5.7 has no dedup; coold
     REQUIRE(eng::tick_events(s));
     REQUIRE(eng::tick_events(s));
     REQUIRE(s.event_history.size() == 2u);
-    // Stability dropped twice: 0.20 -> 0.18 -> 0.16.
-    CHECK(s.countries[0].stability == doctest::Approx(0.16));
+    // Mechanical asymptotic-add applied twice:
+    //   first:  0.20 + (-0.02) * 0.20  = 0.196
+    //   second: 0.196 + (-0.02) * 0.196 = 0.19208
+    CHECK(s.countries[0].stability == doctest::Approx(0.19208));
 }
 
 // =====================================================================
@@ -248,7 +254,8 @@ TEST_CASE("M5.7 tick_events: an event that fires drops state past another event'
     CHECK(r.value().events_matched == 1);  // only "first" matched the snapshot
     REQUIRE(s.event_history.size() == 1u);
     CHECK(s.event_history[0].event_id_code == "first");
-    CHECK(s.countries[0].stability  == doctest::Approx(0.20));
+    // Mechanical asymptotic-add: 0.40 + (-0.20) * 0.40 = 0.32
+    CHECK(s.countries[0].stability  == doctest::Approx(0.32));
     CHECK(s.countries[0].legitimacy == doctest::Approx(0.50));  // untouched
 }
 
@@ -299,7 +306,8 @@ TEST_CASE("M5.7 tick_events: after-tick state round-trips through save v14") {
     REQUIRE(r.value().event_history.size() == 1u);
     CHECK(r.value().event_history[0].event_id_code == "x");
     CHECK(r.value().event_history[0].fired_on      == GameDate(1930, 5, 1));
-    CHECK(r.value().countries[0].stability         == doctest::Approx(0.18));
+    // Mechanical asymptotic-add: 0.20 + (-0.02) * 0.20 = 0.196
+    CHECK(r.value().countries[0].stability         == doctest::Approx(0.196));
 }
 
 // =====================================================================

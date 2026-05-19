@@ -915,8 +915,11 @@ TEST_CASE("run: --scenario with starting_policies applies them at day 0") {
     REQUIRE(!loaded.value().countries.empty());
     const auto& ger = loaded.value().countries[0];
     CHECK(ger.id_code == "GER");
-    CHECK(ger.legal_tax_burden    == doctest::Approx(0.25));
-    CHECK(ger.military_power      == doctest::Approx(0.53));
+    // Mechanical asymptotic-add applied at day-0 enactment of
+    //   raise_taxes:               0.20 + 0.05 * (1 - 0.20) = 0.24
+    //   increase_military_budget:  0.50 + 0.03 * (1 - 0.50) = 0.515
+    CHECK(ger.legal_tax_burden    == doctest::Approx(0.24));
+    CHECK(ger.military_power      == doctest::Approx(0.515));
 }
 
 TEST_CASE("run: --scenario with starting_policies is byte-identical on same seed") {

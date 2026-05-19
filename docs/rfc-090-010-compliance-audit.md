@@ -20,7 +20,11 @@ docs cross-link here rather than re-litigating the gap.
 ## 1. Status
 
 Current implementation milestones **M0 – M5 are closed as
-implementation milestones**. M6 is in progress at **M6.7**.
+implementation milestones**. M6 is in progress at **M6.7**,
+followed by a **post-M6.7 hardening sweep (NOT a milestone)**
+that applies `feedback_no_silent_degradation` project-wide
+and migrates ratio-target `add` from linear to asymptotic —
+see §1.2 below.
 The `information_accuracy::compute_for_country` body now
 implements an RFC-080 §8 subset:
 
@@ -227,6 +231,100 @@ unchanged (11). Test count rose from 1154 → 1158 (+4 new tests in
 `monthly_pipeline_test.cpp` covering the new AI auto-apply step) /
 62951 → 62982 (+31 assertions for the new compliance content
 checks).
+
+### 1.2 Post-M6.7 hardening sweep (NOT an RFC milestone)
+
+After M6.7 landed, a cross-cutting hardening PR
+(`feature/hardening-strict-numeric-validation`) applies
+`feedback_no_silent_degradation` project-wide. The motivation:
+late-game numeric bugs were nearly impossible to debug under the
+pre-sweep `field = std::clamp(field + delta, 0.0, 1.0)` pattern,
+because a single bad upstream value silently saturated to a bound
+and propagated through hundreds of monthly ticks without surfacing
+an error. The sweep is composed of two textually distinct passes:
+
+- **Sweep A — numeric validation.** Every silent
+  `std::clamp` / NaN-tolerance / silent-skip site in
+  `policy_system`, `commands::AdjustBudget`, `faction_system`,
+  `stability_system`, `economy_system`,
+  `interest_group_system`, `effect_desire`, `ai_policy`,
+  `random_service` now surfaces as `Result::failure` naming
+  the entity kind, `id_code`, field path, and offending
+  value. A new shared header
+  `include/leviathan/systems/internal/numeric_guards.hpp`
+  provides `require_unit_ratio`, `require_finite_double`,
+  and `require_nonneg_finite` predicates.
+- **Sweep B — strict structural fallback.**
+  `event_effects::resolve_followup_ids` now rejects unknown
+  `id_code`; `apply_event_effects` rejects vacuous actors;
+  `event_effects::select_best_option_for_country` returns
+  `Result<const EventOption*>`; `annual_stats::snapshot`
+  rejects empty `state.countries`; the runner gates the
+  year-boundary `annual_stats::snapshot` call with
+  `!state.countries.empty()` (so an empty-world
+  `leviathan.exe` run remains a valid time-tick exercise
+  but emits no annual-stats row at the year boundary).
+
+Helper signatures that can fail are promoted to `Result<T>` per
+`feedback_api_signature_expresses_failure`:
+`effect_desire::for_country`, `random_service::draw_bool`,
+`annual_stats::snapshot`,
+`event_effects::resolve_followup_ids`,
+`event_effects::select_best_option_for_country`. All callers
+propagate; no silent `value_or(default)`, no fallback score,
+no skip-bad-candidate-and-continue.
+
+Removing the silent clamp exposed a bounded-ratio update
+problem: long-horizon AI policy application + linear `add`
+on `[0, 1]` ratio fields + strict no-overshoot are jointly
+incompatible — under the strict pass, the compliance scenario
+saturated within months and cascaded into rejections. The
+fix in the same PR is a formula migration: ratio-target `add`
+now uses an **asymptotic** update
+
+```
+positive delta: new = old + delta * (1 - old)
+negative delta: new = old + delta * old
+```
+
+so the strict validator passes by construction on ratio-target
+`add`. The bounded / diminishing-returns shape is
+**literature-aligned** (Polity IV / V-Dem bounded indicators
+support a `[0, 1]` cap; Besley & Persson state-capacity stock
+dynamics support diminishing returns near the bound) but the
+exact functional form is a **game-model assumption**, not
+derived from any single paper. Non-ratio fields
+(`country.gdp`, `country.budget_balance`, `country.tax_revenue`,
+`faction.resources`) keep linear `add` (consistent with
+Barro-style additive-flow growth accounting; specific weight
+coefficients remain authored gameplay parameters, not measured
+empirical estimates).
+
+This PR is **not** an RFC milestone:
+
+- No new RFC-090 §6.X feature lands.
+- No save schema bump (still v18).
+- No new artefact (still 11).
+- No new player-facing command, no new save-layer surface,
+  no new gameplay system module.
+- No M6 progression — M6 stays at M6.7; M6.8 / M6.9 are not
+  green-lit by this PR.
+
+Canonical numeric baselines are deliberately rebaked because
+asymptotic-`add` produces different post-values than PR #114's
+linear-`add`. Same-branch / same-seed determinism is preserved
+(running the canonical `1930_minimal` 365-day scenario twice
+produces byte-identical save / events.jsonl / CSVs). Compliance
+`1930_rfc_compliance` 25 567-day (1930→2000) sweep completes
+with `Sanity issues : 0`. Test count is 1 235 / 1 235 cases,
+69 706 assertions, 0 failed, including 4 new trajectory-shape
+tests in `tests/systems/asymptotic_add_trajectory_test.cpp`
+per `feedback_trajectory_observation_tests` (bounded-from-
+above approach; bounded-from-below approach;
+1 000-input no-overshoot fuzz; symmetry around the midpoint).
+
+Design note:
+[`hardening-strict-numeric-validation.md`](hardening-strict-numeric-validation.md).
 
 ## 2. Finding 1 — RFC-090 original M3 drift (issue #105 baseline; see §6.1 for post-RCR-1 + #108 state)
 

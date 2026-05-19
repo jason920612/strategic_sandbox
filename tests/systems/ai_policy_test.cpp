@@ -253,9 +253,10 @@ TEST_CASE("RCR-1 ai_policy: apply_selected_policies applies to non-player countr
     CHECK(r.value().skipped    == 0);
     CHECK(r.value().failed_countries.empty());
 
-    CHECK(state.countries[0].stability == doctest::Approx(0.6));
-    CHECK(state.countries[1].stability == doctest::Approx(0.6));
-    CHECK(state.countries[2].stability == doctest::Approx(0.6));
+    // Mechanical asymptotic-add: 0.5 + 0.1 * (1 - 0.5) = 0.55 per country.
+    CHECK(state.countries[0].stability == doctest::Approx(0.55));
+    CHECK(state.countries[1].stability == doctest::Approx(0.55));
+    CHECK(state.countries[2].stability == doctest::Approx(0.55));
 
     // M1.15 active_policies appended through the existing policy
     // path (the AI applicator reuses policy::apply_policy_effects).
@@ -284,9 +285,10 @@ TEST_CASE("RCR-1 ai_policy: apply_selected_policies skips the player country") {
     REQUIRE(r);
     CHECK(r.value().considered == 1);
     CHECK(r.value().applied    == 1);
-    // Player country unchanged.
+    // Player country unchanged. Non-player: mechanical asymptotic-add
+    //   0.5 + 0.1 * (1 - 0.5) = 0.55
     CHECK(state.countries[0].stability == doctest::Approx(0.5));
-    CHECK(state.countries[1].stability == doctest::Approx(0.6));
+    CHECK(state.countries[1].stability == doctest::Approx(0.55));
     CHECK(state.countries[0].active_policies.size() == 0u);
     CHECK(state.countries[1].active_policies.size() == 1u);
 }

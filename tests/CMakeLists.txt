@@ -29,6 +29,7 @@ FetchContent_MakeAvailable(doctest)
 add_executable(leviathan_tests
     test_main.cpp
     systems/ai_policy_test.cpp
+    systems/asymptotic_add_trajectory_test.cpp
     systems/bias_noise_test.cpp
     systems/rcr_1_event_extensions_test.cpp
     core/ids_test.cpp

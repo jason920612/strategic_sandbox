@@ -442,9 +442,12 @@ TEST_CASE("RCR-1 apply_default_option_effects: first option's effects land on th
     const auto r = ev_ef::apply_default_option_effects(state, inst, d);
     REQUIRE(r);
     CHECK(r.value().effects_applied == 2);
-    // opt_a applied (deterministic first-option selector)
-    CHECK(state.countries[0].stability  == doctest::Approx(0.55));
-    CHECK(state.countries[0].legitimacy == doctest::Approx(0.60));
+    // opt_a applied (deterministic first-option selector). Mechanical
+    // asymptotic-add:
+    //   stability  0.50 + 0.05 * (1 - 0.50) = 0.525
+    //   legitimacy 0.50 + 0.10 * (1 - 0.50) = 0.55
+    CHECK(state.countries[0].stability  == doctest::Approx(0.525));
+    CHECK(state.countries[0].legitimacy == doctest::Approx(0.55));
 }
 
 TEST_CASE("Hardening: apply_default_option_effects REJECTS empty actors") {
