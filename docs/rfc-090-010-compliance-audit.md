@@ -926,18 +926,27 @@ do NOT:
 
 - Modify M6 hidden-truth helper behaviour beyond what
   RCR-1 / #108 / #110 / #112 already documented.
-  M6.6 — RFC-090 §6.6 "加入情報預算影響" — has now landed in
-  its own PR following this corrective batch, replacing the
-  M6.3 constant-1.0 placeholder body of
+  M6.6 — RFC-090 §6.6 "加入情報預算影響" — landed in its own PR
+  following this corrective batch, replacing the M6.3
+  constant-1.0 placeholder body of
   `information_accuracy::compute_for_country` with the affine
   `accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability +
   0.3 × budget.intelligence)` formula (range
-  `[kMinInformationAccuracy=0.4, 1.0]`). `reported_value` and
-  `bias_noise` bodies are unchanged; M6.7 (corruption term) /
-  M6.8 (debug bypass) / M6.9 (first non-debug caller) remain
-  out of scope. Canonical `1930_minimal` byte-identical
-  baselines stay green because no production code path calls
-  `compute_for_country` yet.
+  `[kMinInformationAccuracy=0.4, 1.0]`). **M6.7 — RFC-090
+  §6.7 "加入腐敗影響" — has now also landed**, layering the
+  RFC-080 §8 `-Corruption` term on top of the M6.6 baseline:
+  `accuracy = m6_6_baseline - 0.4 × corruption`. Function-level
+  range graduates to `[0.0, 1.0]`. New public constant
+  `kInformationAccuracyCorruptionWeight = 0.4` (symmetric to
+  `kMinInformationAccuracy`). The whole `compute_for_country`
+  body now follows the `feedback_no_silent_degradation` rule:
+  out-of-range / non-finite inputs are rejected with
+  `Result::failure` (naming country `id_code` + field + value),
+  not silently clamped. `reported_value` and `bias_noise`
+  bodies are unchanged; M6.8 (debug bypass) / M6.9 (first
+  non-debug caller) remain out of scope. Canonical
+  `1930_minimal` byte-identical baselines stay green because
+  no production code path calls `compute_for_country` yet.
 - Add debug-mode / non-debug-mode hidden-truth display
   (RFC-090 §6.8 / §6.9, separate M6 work).
 - Add UI / map visualisation / SVG renderer changes.

@@ -360,7 +360,100 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.6
+  information distortion）** — **M6.7
+  （corruption influence on
+  `information_accuracy`）** 是 M6 的第七個
+  sub-milestone。完全照 RFC-090 §6.7
+  （`6.7 加入腐敗影響`）實作：在 M6.6 的
+  intelligence-budget baseline 上再疊上 RFC-080 §8
+  的 `-Corruption` 項：
+
+  ```
+  intel_score    = 0.7 × intelligence_capability
+                 + 0.3 × budget.intelligence
+  m6_6_baseline  = 0.4 + 0.6 × intel_score
+  accuracy       = m6_6_baseline - 0.4 × corruption
+  ```
+
+  函式層級的 **range** 從 M6.6 的 `[0.4, 1.0]`
+  擴張到 `[0.0, 1.0]`。角落值：滿情報 + 零腐敗 →
+  1.0（no-distortion ceiling）；滿情報 + 滿腐敗 →
+  0.6；零情報 + 零腐敗 → 0.4（M6.6 contribution
+  floor）；零情報 + 滿腐敗 → 0.0（full blackout）。
+  **新增 public header 常數**
+  `kInformationAccuracyCorruptionWeight = 0.4`，
+  刻意對稱於 `kMinInformationAccuracy = 0.4` 讓
+  「零情報 + 滿腐敗」角落剛好到 0.0。
+  **`kMinInformationAccuracy` 的語意升級** 從
+  「函式層級下界」(M6.6) 升級到「M6.6 contribution
+  alone 的下界」(M6.7+)；M6.7 的 corruption 減項
+  可以把函式總值壓到此 floor 以下。
+  **嚴格輸入驗證，不做 silent degradation**（per
+  `feedback_no_silent_degradation`，於 M6.7 kick-off
+  2026-05-19 確立）：三個 ratio 輸入
+  （`government_authority.intelligence_capability`、
+  `budget.intelligence`、`corruption`）必須是
+  finite 且在 `[0, 1]`。NaN / ±Inf / 越界都以
+  `Result::failure` 拒絕，錯誤訊息帶出違規 country
+  `id_code`、違規欄位、違規數值 ── 不再 silent
+  clamp。這把整個 `compute_for_country` body 帶進
+  同一條紀律；M6.6 對情報輸入的 finite 越界
+  defensive clamp 也升級為 reject。輸出端的
+  single-ULP `std::clamp` 只剩浮點 rounding 安全網
+  的角色，不是 input-validation fallback。
+  **沒有 save schema bump** ── `country.corruption`
+  從 M1.1 起就在 CountryState 上；M6.6 兩個情報輸入
+  也已存在。Save format 保持 **v18**；artefact
+  contract 保持 **11**。**沒有 production caller** ──
+  `compute_for_country` 仍未被任何 production code
+  path 呼叫；`event_evaluator` / `event_firer` /
+  `event_effects` / `event_engine` /
+  `monthly_pipeline` / `runner` 全部不動。Canonical
+  `1930_minimal` 365 天 run 對 PR #111 與 PR #113
+  baseline 都產出 byte-identical 的 save.json
+  （以 `diff` 驗證）；M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baseline 全部維持。
+  **沒有 `state.rng` 消耗** ── helper 是純讀。
+  **13 個新 doctest case（1229 total，64274
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：零腐敗
+  保留 M6.6 baseline；滿腐敗 + 零情報 = 0.0；滿
+  腐敗 + 滿情報 = 0.6；七組
+  `(cap, bud, corruption)` sample 釘公式；隨
+  corruption 單調非遞增；corruption-delta 等於
+  `kCorruptionWeight × Δcorruption`；M6.6 floor
+  在 M6.7 中不再是函式下界；finite 越界
+  capability / budget / corruption 全部 reject
+  （不 clamp）；NaN / +Inf / -Inf 三個輸入都
+  reject；deterministic short-circuit 順序
+  capability → budget → corruption；失敗 call
+  不改 state；新常數穩定。七個 M6.6 baseline
+  test（capability DOES consult / budget DOES
+  consult / capability dominates / monotonicity 等）
+  以 `corruption = 0` 完整保留。新
+  `docs/m6-7-corruption-influence.md` design note。
+  **沒有 save format bump（仍 v18）/ 新 state
+  field / 新 artefact（仍 11）/ 新 `RunnerOptions`
+  field / CLI flag / 新 `PlayerCommandKind` /
+  scenario_loader 變動 / event-module /
+  monthly_pipeline / runner 程式變動 /
+  `random_service` 消耗 / canonical fixture 變動 /
+  任何系統消費此 helper / `compute_for_event` 變體
+  / debug 模式 bypass（RFC-090 §6.8 scope）/
+  非 debug 隱藏（RFC-090 §6.9 scope）/ 其餘
+  RFC-080 §8 項（`-FactionCapture` /
+  `-LeaderIsolation` / `-LocalAutonomyOpacity` /
+  `+MediaFreedomSignal` /
+  `+BureaucraticProfessionalism` / `+AuditCapacity`
+  ── 皆無 RFC-090 任務）/ `bias_noise` body 變動
+  / `reported_value` body 變動 / EventReport
+  類型或 artefact / events.jsonl 語意變動 / UI /
+  map 整合 / balance pass / 對 M1.17 / M2 / M3 /
+  M4 / M5 byte-identical determinism baseline
+  的變動 / `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` /「M6 closed」
+  字樣**。M6 remains in progress。
+- **M6（歷史進行中）** — **M6.6
   （intelligence-budget influence on
   `information_accuracy`）** 是 M6 的第六個
   sub-milestone。完全照 RFC-090 §6.6
