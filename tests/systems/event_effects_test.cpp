@@ -179,9 +179,14 @@ TEST_CASE("M5.6 apply_event_effects: budget category effect routes through count
     CHECK(s.countries[0].budget.military == doctest::Approx(0.30));
 }
 
-TEST_CASE("M5.6 apply_event_effects: ratio fields clamp to [0, 1] post-op (inherits M1.5 clamping)") {
+TEST_CASE("Hardening: apply_event_effects REJECTS ratio overshoot (M1.5 strict propagation)") {
+    // Post-M6.7 strict numeric validation: an effect that would
+    // push a ratio target below 0 (or above 1) is rejected with
+    // state untouched (inherits the M1.5 strict validation through
+    // the M5.6 shared `policy::apply_effects_to_actor` helper).
     GameState s;
     s.countries.push_back(make_country(0, "GER", /*stab*/0.05));
+    const double original = s.countries[0].stability;
     EventDefinition def = make_event_def(
         "crash",
         { make_trigger("country.stability", "lt", 0.10) },
@@ -190,8 +195,11 @@ TEST_CASE("M5.6 apply_event_effects: ratio fields clamp to [0, 1] post-op (inher
         hand_instance("crash", "country", "GER", "GER");
 
     const auto r = eex::apply_event_effects(s, inst, def);
-    REQUIRE(r);
-    CHECK(s.countries[0].stability == doctest::Approx(0.0));
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.stability") != std::string::npos);
+    CHECK(r.error().find("escapes ratio range [0, 1]")
+          != std::string::npos);
+    CHECK(s.countries[0].stability == doctest::Approx(original));
 }
 
 // =====================================================================
@@ -255,7 +263,11 @@ TEST_CASE("M5.6 apply_event_effects: unknown op rejected; state untouched") {
 // edge cases: empty actors / unresolvable country / empty effects
 // =====================================================================
 
-TEST_CASE("M5.6 apply_event_effects: empty actors -> no-op success") {
+TEST_CASE("Hardening: apply_event_effects REJECTS empty actors (strict-fallback)") {
+    // Post-M6.7 strict-fallback hardening: a structurally
+    // inconsistent EventInstance with no actors is no longer a
+    // silent vacuous success; it returns Result::failure with
+    // state untouched.
     GameState s;
     s.countries.push_back(make_country(0, "GER", 0.50));
     EventDefinition def = make_event_def(
@@ -266,9 +278,8 @@ TEST_CASE("M5.6 apply_event_effects: empty actors -> no-op success") {
     inst.fired_on      = GameDate(1930, 1, 1);
 
     const auto r = eex::apply_event_effects(s, inst, def);
-    REQUIRE(r);
-    CHECK(r.value().effects_applied == 0);
-    // Country unchanged.
+    REQUIRE(r.failed());
+    CHECK(r.error().find("no actors") != std::string::npos);
     CHECK(s.countries[0].stability == doctest::Approx(0.50));
 }
 

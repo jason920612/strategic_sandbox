@@ -32,12 +32,22 @@
 //   - Same inputs → identical output bytes.
 //
 // Unknown country target (e.g. `country.gdp`, `country.tax_revenue`):
-// returns 0.0. Faction-side targets (`faction:*`) and any non-
-// `country.*` target also return 0.0 — the desire helper deliberately
-// scores only the modern `country.*` surface; faction-support effects
-// are handled by the caller if needed (issue #110 / #111 chose to
-// ignore faction-side effects in policy / option scoring, and this
-// helper keeps that decision).
+// returns `success(0.0)`. Faction-side targets (`faction:*`) and any
+// non-`country.*` target also return `success(0.0)` — the desire
+// helper deliberately scores only the modern `country.*` surface;
+// faction-support effects are handled by the caller if needed
+// (issue #110 / #111 chose to ignore faction-side effects in policy
+// / option scoring, and this helper keeps that decision).
+//
+// Strict numeric validation (post-M6.7 hardening sweep): per
+// `feedback_no_silent_degradation` + `feedback_api_signature_expresses_failure`,
+// `for_country` now returns `core::Result<double>`. Each branch
+// validates the CountryState (and, for `country.military_power`,
+// `state.relationships` + neighbour `military_strength`) fields it
+// actually reads — non-finite or out-of-range inputs return
+// `Result::failure` naming the country `id_code`, the offending
+// field, and the value. Callers (`ai_policy::score_policy`,
+// `event_effects::select_best_option_for_country`) must propagate.
 
 #ifndef LEVIATHAN_SYSTEMS_EFFECT_DESIRE_HPP
 #define LEVIATHAN_SYSTEMS_EFFECT_DESIRE_HPP
@@ -46,12 +56,13 @@
 
 #include "leviathan/core/entities.hpp"
 #include "leviathan/core/game_state.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::effect_desire {
 
-double for_country(const core::CountryState& c,
-                   const std::string&        target,
-                   const core::GameState&    state);
+core::Result<double> for_country(const core::CountryState& c,
+                                 const std::string&        target,
+                                 const core::GameState&    state);
 
 }  // namespace leviathan::systems::effect_desire
 

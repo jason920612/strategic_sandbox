@@ -23,11 +23,23 @@
 //
 // Atomicity:
 //   apply_policy_effects pre-flight-checks every effect (target
-//   resolution, op recognition) BEFORE mutating any state. If any
-//   effect fails to resolve, the function returns Result::failure
-//   and state is untouched (NO active_policies entry is added).
-//   Otherwise every effect applies in order and exactly one
-//   ActivePolicy entry is appended.
+//   resolution, op recognition, candidate-value validation)
+//   BEFORE mutating any state. If any effect fails any check,
+//   the function returns Result::failure and state is untouched
+//   (NO active_policies entry is added). Otherwise every effect
+//   applies in order and exactly one ActivePolicy entry is
+//   appended.
+//
+// Strict numeric validation (post-M6.7 hardening sweep):
+//   The post-op `std::clamp` that previously saturated ratio
+//   fields silently has been removed. Per
+//   `feedback_no_silent_degradation`, an effect that would push
+//   a ratio target outside `[0, 1]` (either by `set value` or by
+//   `add` overshoot) is REJECTED with `Result::failure` naming
+//   the target, the candidate value, and the effect index. Non-
+//   ratio targets (gdp, tax_revenue, budget_balance, resources)
+//   must produce a finite candidate; non-finite candidates are
+//   rejected on the same path.
 
 #ifndef LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP
 #define LEVIATHAN_SYSTEMS_POLICY_SYSTEM_HPP
@@ -72,9 +84,13 @@ struct ApplyOutcome {
 //
 // Ops recognised: "add", "set".
 //
-// Post-op clamping: ratio fields (anything documented as `[0, 1]`)
-// are clamped to `[0, 1]` after the op. Absolute fields (gdp,
-// tax_revenue, budget_balance, resources) are not clamped.
+// Strict candidate validation (post-M6.7 hardening sweep):
+//   Ratio targets (anything documented as `[0, 1]`) require the
+//   computed candidate (old + delta for `add`, value for `set`)
+//   to be a finite value in `[0, 1]`. Non-ratio targets (gdp,
+//   tax_revenue, budget_balance, resources) require the candidate
+//   to be finite. Any candidate that fails its check rejects the
+//   whole call with `Result::failure`; no state mutation happens.
 //
 // Failure cases:
 //   - actor is not a valid index into state.countries
@@ -82,6 +98,8 @@ struct ApplyOutcome {
 //     kMaxTrackedPolicyDurationDays (M1.15 runtime cap, see above)
 //   - any effect has an unrecognised op or target path
 //   - any effect target's <field> name is unknown
+//   - any effect's computed candidate fails its range / finite
+//     check (see "Strict candidate validation" above)
 // On failure, state is unchanged.
 core::Result<ApplyOutcome> apply_policy_effects(
     core::GameState&        state,
@@ -101,8 +119,9 @@ core::Result<ApplyOutcome> apply_policy_effects(
 //   - rejects non-finite effect values at pre-flight
 //   - rejects unknown op (only "add" / "set" recognised)
 //   - rejects unknown target / field
+//   - rejects when a candidate value escapes the target's range
+//     (ratio targets require `[0, 1]`; non-ratio require finite)
 //   - pre-flight atomicity: any failure leaves state untouched
-//   - ratio clamping post-op
 //   - faction:<type>.<field> with zero matches is a silent no-op
 //
 // Does NOT:

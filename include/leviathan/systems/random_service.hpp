@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "leviathan/core/random_state.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::random {
 
@@ -44,10 +45,19 @@ double draw_double(core::RandomState& rng,
                    double min_inclusive, double max_exclusive,
                    std::string_view tag = "");
 
-// True with probability `probability`. Probability is clamped to [0, 1]
-// (NaN clamps to 0). Consumes one draw regardless of `probability`.
-bool draw_bool(core::RandomState& rng, double probability,
-               std::string_view tag = "");
+// True with probability `probability`. Consumes one draw on
+// success (regardless of the probability value).
+//
+// Post-M6.7 hardening (`feedback_no_silent_degradation` +
+// `feedback_api_signature_expresses_failure`): the previous
+// "NaN clamps to 0; out-of-range clamps to nearest bound"
+// silent-fallback shape is gone. `probability` must be a
+// finite value in `[0, 1]`; NaN / ±Inf / out-of-range return
+// `Result::failure` and consume NO draw. Same-input
+// determinism preserved on the success path.
+core::Result<bool> draw_bool(core::RandomState& rng,
+                             double probability,
+                             std::string_view tag = "");
 
 // Selects an index in [0, weights.size()) with weights[i] / sum(weights).
 //

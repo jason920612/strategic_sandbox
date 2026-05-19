@@ -187,17 +187,18 @@ TEST_CASE("RCR-1 select_default_option: returns pointer to options[0]") {
 // RCR-1 event_effects::resolve_followup_ids (RFC-090 §5.12)
 // =====================================================================
 
-TEST_CASE("RCR-1 resolve_followup_ids: empty followup list returns empty vector") {
+TEST_CASE("Hardening: resolve_followup_ids empty followup list returns empty vector") {
     GameState state;
     state.events.push_back(make_event("a",
         { EventTrigger{"country.stability", "lt", 0.30} }));
     EventDefinition d = make_event("trig",
         { EventTrigger{"country.stability", "lt", 0.30} });
-    const auto out = ev_ef::resolve_followup_ids(state, d);
-    CHECK(out.empty());
+    const auto r = ev_ef::resolve_followup_ids(state, d);
+    REQUIRE(r);
+    CHECK(r.value().empty());
 }
 
-TEST_CASE("RCR-1 resolve_followup_ids: resolves matching ids to state.events indices") {
+TEST_CASE("Hardening: resolve_followup_ids resolves matching ids to state.events indices") {
     GameState state;
     state.events.push_back(make_event("alpha",
         { EventTrigger{"country.stability", "lt", 0.30} }));
@@ -210,13 +211,16 @@ TEST_CASE("RCR-1 resolve_followup_ids: resolves matching ids to state.events ind
         { EventTrigger{"country.stability", "lt", 0.30} },
         {}, {}, {"gamma", "alpha"});
 
-    const auto out = ev_ef::resolve_followup_ids(state, d);
-    REQUIRE(out.size() == 2u);
-    CHECK(out[0] == 2u);  // gamma
-    CHECK(out[1] == 0u);  // alpha
+    const auto r = ev_ef::resolve_followup_ids(state, d);
+    REQUIRE(r);
+    REQUIRE(r.value().size() == 2u);
+    CHECK(r.value()[0] == 2u);  // gamma
+    CHECK(r.value()[1] == 0u);  // alpha
 }
 
-TEST_CASE("RCR-1 resolve_followup_ids: skips unresolvable ids without failing") {
+TEST_CASE("Hardening: resolve_followup_ids rejects unresolvable id_code") {
+    // Post-M6.7 strict-fallback hardening: an unknown followup
+    // id_code is now Result::failure (was silently skipped).
     GameState state;
     state.events.push_back(make_event("alpha",
         { EventTrigger{"country.stability", "lt", 0.30} }));
@@ -224,36 +228,39 @@ TEST_CASE("RCR-1 resolve_followup_ids: skips unresolvable ids without failing") 
         { EventTrigger{"country.stability", "lt", 0.30} },
         {}, {}, {"ghost", "alpha"});
 
-    const auto out = ev_ef::resolve_followup_ids(state, d);
-    REQUIRE(out.size() == 1u);
-    CHECK(out[0] == 0u);
+    const auto r = ev_ef::resolve_followup_ids(state, d);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("ghost") != std::string::npos);
+    CHECK(r.error().find("origin") != std::string::npos);
+    CHECK(r.error().find("does not resolve") != std::string::npos);
 }
 
 // =====================================================================
 // RCR-1 annual_stats (RFC-090 §3.9 / RFC-010 §5)
 // =====================================================================
 
-TEST_CASE("RCR-1 annual_stats::snapshot: empty state produces zeroed averages and zero counts") {
+TEST_CASE("Hardening: annual_stats::snapshot rejects empty state.countries") {
+    // Post-M6.7 strict-fallback hardening: the previous "empty
+    // state produces zeroed averages" success is now a hard
+    // failure. The runner gates the call so empty-world
+    // simulations skip emission entirely.
     GameState state;
-    const auto row = ann::snapshot(state, 1930);
-    CHECK(row.year                == 1930);
-    CHECK(row.country_count       == 0u);
-    CHECK(row.avg_stability       == doctest::Approx(0.0));
-    CHECK(row.avg_legitimacy      == doctest::Approx(0.0));
-    CHECK(row.avg_gdp             == doctest::Approx(0.0));
-    CHECK(row.avg_corruption      == doctest::Approx(0.0));
-    CHECK(row.total_gdp           == doctest::Approx(0.0));
-    CHECK(row.event_history_count == 0u);
+    const auto r = ann::snapshot(state, 1930);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("state.countries is empty")
+          != std::string::npos);
 }
 
-TEST_CASE("RCR-1 annual_stats::snapshot: averages and total over populated state") {
+TEST_CASE("Hardening: annual_stats::snapshot averages and total over populated state") {
     GameState state;
     auto a = make_country("A"); a.stability = 0.4; a.legitimacy = 0.5; a.gdp = 100.0; a.corruption = 0.2;
     auto b = make_country("B"); b.stability = 0.6; b.legitimacy = 0.7; b.gdp = 200.0; b.corruption = 0.4;
     state.countries.push_back(a);
     state.countries.push_back(b);
 
-    const auto row = ann::snapshot(state, 1940);
+    const auto r = ann::snapshot(state, 1940);
+    REQUIRE(r);
+    const auto& row = r.value();
     CHECK(row.year             == 1940);
     CHECK(row.country_count    == 2u);
     CHECK(row.avg_stability    == doctest::Approx(0.5));
@@ -440,7 +447,10 @@ TEST_CASE("RCR-1 apply_default_option_effects: first option's effects land on th
     CHECK(state.countries[0].legitimacy == doctest::Approx(0.60));
 }
 
-TEST_CASE("RCR-1 apply_default_option_effects: actors empty -> success, no mutation") {
+TEST_CASE("Hardening: apply_default_option_effects REJECTS empty actors") {
+    // Post-M6.7 strict-fallback hardening (mirrors
+    // apply_event_effects): a structurally inconsistent
+    // EventInstance with no actors returns Result::failure.
     GameState state;
     state.countries.push_back(make_country("GER", /*stab*/0.50));
 
@@ -455,8 +465,8 @@ TEST_CASE("RCR-1 apply_default_option_effects: actors empty -> success, no mutat
             {{"country.stability", "add", 0.5}}} });
 
     const auto r = ev_ef::apply_default_option_effects(state, inst, d);
-    REQUIRE(r);
-    CHECK(r.value().effects_applied == 0);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("no actors") != std::string::npos);
     CHECK(state.countries[0].stability == doctest::Approx(0.50));
 }
 

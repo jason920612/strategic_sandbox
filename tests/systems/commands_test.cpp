@@ -374,24 +374,34 @@ TEST_CASE("M2.5 apply_pending: AdjustBudget negative delta shrinks the budget") 
     CHECK(s.countries[0].budget.education == doctest::Approx(0.05));
 }
 
-TEST_CASE("M2.5 apply_pending: AdjustBudget clamps above 1.0") {
+TEST_CASE("Hardening: apply_pending AdjustBudget REJECTS overshoot above 1.0") {
+    // Post-M6.7 strict numeric validation: the previous silent
+    // `std::clamp(*field + delta, 0.0, 1.0)` is gone.
+    // Player command that would push budget above 1.0 is rejected
+    // with state untouched.
     GameState s = ger_state_with_player_selected();
+    const double original = s.countries[0].budget.military;
     cmd::CommandQueue q;
-    // military starts at 0.35; +1.0 overshoots, clamps to 1.0.
     q.pending.push_back(make_adjust_budget("military", 1.0));
 
-    REQUIRE(cmd::apply_pending(s, q).ok());
-    CHECK(s.countries[0].budget.military == doctest::Approx(1.0));
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.budget.military") != std::string::npos);
+    CHECK(r.error().find("escapes ratio range [0, 1]")
+          != std::string::npos);
+    CHECK(s.countries[0].budget.military == doctest::Approx(original));
 }
 
-TEST_CASE("M2.5 apply_pending: AdjustBudget clamps below 0.0") {
+TEST_CASE("Hardening: apply_pending AdjustBudget REJECTS undershoot below 0.0") {
     GameState s = ger_state_with_player_selected();
+    const double original = s.countries[0].budget.welfare;
     cmd::CommandQueue q;
-    // welfare starts at 0.10; -1.0 undershoots, clamps to 0.0.
     q.pending.push_back(make_adjust_budget("welfare", -1.0));
 
-    REQUIRE(cmd::apply_pending(s, q).ok());
-    CHECK(s.countries[0].budget.welfare == doctest::Approx(0.0));
+    const auto r = cmd::apply_pending(s, q);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.budget.welfare") != std::string::npos);
+    CHECK(s.countries[0].budget.welfare == doctest::Approx(original));
 }
 
 TEST_CASE("M2.5 apply_pending: unknown budget_category is rejected with no mutation") {

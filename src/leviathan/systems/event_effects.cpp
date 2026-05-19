@@ -1,11 +1,10 @@
-// M5.6: EventEffects implementation.
-//
-// See include/leviathan/systems/event_effects.hpp for the public
-// contract (actor-selection policy, pre-flight atomicity,
-// deliberate non-goals). This file is the small bridge that turns
-// "fire this event instance" into "apply these PolicyEffects to
-// this country" by delegating to the M1.5 / M5.6-extracted
-// `policy::apply_effects_to_actor` helper.
+// EventEffects implementation. Post-M6.7 hardening sweep applies
+// the project-wide `feedback_no_silent_degradation` rule: vacuous-
+// actor branches return `Result::failure` rather than silently
+// returning success-with-0-applied; `resolve_followup_ids` rejects
+// unresolvable id_codes rather than silently skipping;
+// `select_best_option_for_country` returns `Result<const EventOption*>`
+// so `effect_desire::for_country` failures propagate.
 
 #include "leviathan/systems/event_effects.hpp"
 
@@ -13,6 +12,7 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/effect_desire.hpp"
@@ -21,10 +21,6 @@
 namespace leviathan::systems::event_effects {
 namespace {
 
-// Resolve a country id_code to a CountryId by linear scan of
-// state.countries. Returns CountryId::invalid() if no match.
-// Linear scan is fine: state.countries is canonically small and
-// this is not a per-tick hot path.
 core::CountryId find_country_by_id_code(const core::GameState& state,
                                         const std::string&     id_code) {
     for (std::size_t i = 0; i < state.countries.size(); ++i) {
@@ -41,18 +37,17 @@ core::Result<ApplyOutcome> apply_event_effects(
         core::GameState&             state,
         const core::EventInstance&   instance,
         const core::EventDefinition& definition) {
-    // Vacuous-actor case: a hand-built EventInstance with no
-    // actors (mirrors the M5.5 empty-triggers vacuous fire). No
-    // actor means no country to direct effects at; return
-    // success with 0 applied. The caller can detect this via
-    // outcome.effects_applied == 0.
     if (instance.actors.empty()) {
-        return core::Result<ApplyOutcome>::success(ApplyOutcome{});
+        // Post-M6.7 strict-fallback hardening: a structurally
+        // inconsistent EventInstance (no actors) is now a hard
+        // error rather than a silent success-with-0-applied.
+        return core::Result<ApplyOutcome>::failure(
+            "apply_event_effects: '" + instance.event_id_code +
+            "': EventInstance has no actors — structurally"
+            " inconsistent input (engine path always produces"
+            " at least one actor)");
     }
 
-    // Resolve the first actor's owning country to a CountryId.
-    // M5.6 uses the FIRST actor's country for ALL effects; see
-    // the header doc for the rationale.
     const auto& head_country_id_code = instance.actors.front().country_id_code;
     if (head_country_id_code.empty()) {
         return core::Result<ApplyOutcome>::failure(
@@ -69,9 +64,6 @@ core::Result<ApplyOutcome> apply_event_effects(
             "' does not resolve to any country in state.countries");
     }
 
-    // Delegate to the shared M1.5 / M5.6-extracted helper. M1.5
-    // pre-flight atomicity is inherited: any per-effect failure
-    // leaves state untouched.
     auto inner = policy::apply_effects_to_actor(state, actor,
                                                 definition.effects);
     if (!inner) {
@@ -98,10 +90,18 @@ core::Result<ApplyOutcome> apply_default_option_effects(
         const core::EventDefinition& definition) {
     const auto* option = select_default_option(definition);
     if (option == nullptr) {
+        // No options to apply: structural "nothing to do" — not a
+        // numeric / runtime abnormality. Success with 0 is the
+        // correct semantic.
         return core::Result<ApplyOutcome>::success(ApplyOutcome{});
     }
     if (instance.actors.empty()) {
-        return core::Result<ApplyOutcome>::success(ApplyOutcome{});
+        // Post-M6.7 strict-fallback hardening (mirrors
+        // apply_event_effects): vacuous actors → failure.
+        return core::Result<ApplyOutcome>::failure(
+            "apply_default_option_effects: '" + instance.event_id_code +
+            "': EventInstance has no actors — structurally"
+            " inconsistent input");
     }
 
     const auto& head_country_id_code = instance.actors.front().country_id_code;
@@ -131,18 +131,15 @@ core::Result<ApplyOutcome> apply_default_option_effects(
     return core::Result<ApplyOutcome>::success(std::move(out));
 }
 
-// Issue #112: state-based option chooser. For non-player countries
-// (or any deterministic headless caller), score each option by
-// summing `effect.value * effect_desire::for_country(country, target)`
-// over its country.* effects. Highest-scored wins; tie on equal
-// score breaks by lower option vector index. Mirrors the
-// score_policy pattern in ai_policy.cpp.
-const core::EventOption*
+core::Result<const core::EventOption*>
 select_best_option_for_country(const core::GameState&       state,
                                const core::CountryState&    country,
                                const core::EventDefinition& definition) {
     if (definition.options.empty()) {
-        return nullptr;
+        // "No options to score" is a structural input; success-
+        // with-nullptr lets the caller switch to the fallback
+        // path (base-effects-only). Not a numeric abnormality.
+        return core::Result<const core::EventOption*>::success(nullptr);
     }
     double      best_score = -std::numeric_limits<double>::infinity();
     std::size_t best_index = 0;
@@ -152,8 +149,13 @@ select_best_option_for_country(const core::GameState&       state,
         for (const auto& eff : opt.effects) {
             if (eff.op != "add") { continue; }
             if (eff.target.rfind("country.", 0) == 0) {
-                score += eff.value
-                       * effect_desire::for_country(country, eff.target, state);
+                auto desire_r = effect_desire::for_country(
+                    country, eff.target, state);
+                if (!desire_r) {
+                    return core::Result<const core::EventOption*>::failure(
+                        std::move(desire_r.error()));
+                }
+                score += eff.value * desire_r.value();
             }
         }
         if (i == 0 || score > best_score) {
@@ -163,19 +165,22 @@ select_best_option_for_country(const core::GameState&       state,
         // Strict `>` preserves the lower-index winner on ties
         // (deterministic vector-order tie-break).
     }
-    return &definition.options[best_index];
+    return core::Result<const core::EventOption*>::success(
+        &definition.options[best_index]);
 }
 
 namespace {
-// Resolve the head actor's owning country to a CountryId for
-// mode-aware apply. Mirrors apply_event_effects' guard logic.
 core::Result<core::CountryId>
 resolve_head_actor_country(const core::GameState&     state,
                            const core::EventInstance& instance,
                            const char*                tag) {
     if (instance.actors.empty()) {
-        return core::Result<core::CountryId>::success(
-            core::CountryId::invalid());
+        // Post-M6.7 strict-fallback hardening: vacuous actors are
+        // now an error here too (mirrors apply_event_effects).
+        return core::Result<core::CountryId>::failure(
+            std::string(tag) + ": '" + instance.event_id_code +
+            "': EventInstance has no actors — structurally"
+            " inconsistent input");
     }
     const auto& head_country_id_code = instance.actors.front().country_id_code;
     if (head_country_id_code.empty()) {
@@ -209,11 +214,6 @@ apply_option_effects_with_mode(
             std::move(actor_r.error()));
     }
     const core::CountryId actor = actor_r.value();
-    if (!actor.valid()) {
-        // No actors → success with 0 applied (mirrors the M5.6
-        // vacuous-actor case for the base apply path).
-        return core::Result<ApplyOutcome>::success(ApplyOutcome{});
-    }
 
     ApplyOutcome out;
     std::string apply_err;
@@ -253,20 +253,32 @@ apply_option_effects_with_mode(
     return core::Result<ApplyOutcome>::success(std::move(out));
 }
 
-std::vector<std::size_t>
+core::Result<std::vector<std::size_t>>
 resolve_followup_ids(const core::GameState&       state,
                      const core::EventDefinition& definition) {
     std::vector<std::size_t> out;
     out.reserve(definition.followup_event_ids.size());
     for (const auto& id_code : definition.followup_event_ids) {
+        std::size_t found_index = state.events.size();
         for (std::size_t i = 0; i < state.events.size(); ++i) {
             if (state.events[i].id_code == id_code) {
-                out.push_back(i);
+                found_index = i;
                 break;
             }
         }
+        if (found_index >= state.events.size()) {
+            // Post-M6.7 strict-fallback hardening: unresolvable
+            // followup id_codes now surface as a hard error rather
+            // than being silently skipped. Authoring typos are
+            // caught here.
+            return core::Result<std::vector<std::size_t>>::failure(
+                "resolve_followup_ids: definition '" + definition.id_code +
+                "' references followup event id_code '" + id_code +
+                "' which does not resolve to any entry in state.events");
+        }
+        out.push_back(found_index);
     }
-    return out;
+    return core::Result<std::vector<std::size_t>>::success(std::move(out));
 }
 
 }  // namespace leviathan::systems::event_effects

@@ -1,18 +1,54 @@
 #include "leviathan/systems/interest_group_system.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include "internal/numeric_guards.hpp"
 
 namespace leviathan::systems::interest_group {
 
+namespace ng = leviathan::systems::detail;
+
+namespace {
+
+// One interest group's prepared drift candidates (used by react()).
+struct PreparedReactionWrite {
+    core::InterestGroupState* group           = nullptr;
+    double                    new_loyalty     = 0.0;
+    double                    new_radicalism  = 0.0;
+};
+
+// One country's prepared stability write (used by country_feedback()).
+struct PreparedFeedbackWrite {
+    std::size_t country_index = 0;
+    double      new_stability = 0.0;
+    // Trace metadata captured during candidate computation.
+    double      before                = 0.0;
+    double      target_stability      = 0.0;
+    double      weighted_radicalism   = 0.0;
+    double      weight_sum            = 0.0;
+    int         matched_groups        = 0;
+};
+
+// One country's prepared compliance write (used by authority_pressure()).
+struct PreparedAuthorityWrite {
+    std::size_t country_index             = 0;
+    double      new_compliance            = 0.0;
+    double      before                    = 0.0;
+    double      target_compliance         = 0.0;
+    double      weighted_bureau_loyalty   = 0.0;
+    double      weight_sum                = 0.0;
+    int         matched_groups            = 0;
+};
+
+}  // namespace
+
 core::Result<ReactionOutcome> react(core::GameState& state) {
     // ---- Preflight: every group.country must index into state.countries.
-    // M3.2 documents atomicity across the list: if any single
-    // group has a bad country, NO group's loyalty / radicalism
-    // is mutated. The preflight pass is cheap (size N walk) and
-    // makes the test surface obvious.
+    // M3.2 documents atomicity across the list: if any single group
+    // has a bad country, NO group's loyalty / radicalism is mutated.
     for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
         const auto& g = state.interest_groups[i];
         if (!g.country.valid() ||
@@ -26,22 +62,63 @@ core::Result<ReactionOutcome> react(core::GameState& state) {
         }
     }
 
-    // ---- Apply drift -----------------------------------------------------
-    ReactionOutcome outcome;
+    // Validate every input the drift formula reads (post-M6.7
+    // hardening: `feedback_no_silent_degradation`).
+    for (auto& g : state.interest_groups) {
+        if (auto err = ng::require_unit_ratio<ReactionOutcome>(
+                "interest_group::react", "interest_group", g.id_code,
+                "interest_group.loyalty", g.loyalty)) {
+            return *err;
+        }
+        if (auto err = ng::require_unit_ratio<ReactionOutcome>(
+                "interest_group::react", "interest_group", g.id_code,
+                "interest_group.radicalism", g.radicalism)) {
+            return *err;
+        }
+    }
+    for (const auto& c : state.countries) {
+        if (auto err = ng::require_unit_ratio<ReactionOutcome>(
+                "interest_group::react", "country", c.id_code,
+                "country.stability", c.stability)) {
+            return *err;
+        }
+    }
+
+    // ---- Pre-flight: compute drift candidates and validate ---------
+    std::vector<PreparedReactionWrite> prepared;
+    prepared.reserve(state.interest_groups.size());
     for (auto& g : state.interest_groups) {
         const auto& country = state.countries[
             static_cast<std::size_t>(g.country.value())];
         const double target_loyalty    = country.stability;
         const double target_radicalism = 1.0 - country.stability;
-
-        g.loyalty    += (target_loyalty    - g.loyalty)
+        const double new_loyalty =
+            g.loyalty + (target_loyalty - g.loyalty)
                         * kInterestGroupReactionRate;
-        g.radicalism += (target_radicalism - g.radicalism)
-                        * kInterestGroupReactionRate;
+        const double new_radicalism =
+            g.radicalism + (target_radicalism - g.radicalism)
+                           * kInterestGroupReactionRate;
 
-        g.loyalty    = std::clamp(g.loyalty,    0.0, 1.0);
-        g.radicalism = std::clamp(g.radicalism, 0.0, 1.0);
+        if (auto err = ng::require_unit_ratio<ReactionOutcome>(
+                "interest_group::react", "interest_group", g.id_code,
+                "interest_group.loyalty (post-drift candidate)",
+                new_loyalty)) {
+            return *err;
+        }
+        if (auto err = ng::require_unit_ratio<ReactionOutcome>(
+                "interest_group::react", "interest_group", g.id_code,
+                "interest_group.radicalism (post-drift candidate)",
+                new_radicalism)) {
+            return *err;
+        }
+        prepared.push_back({&g, new_loyalty, new_radicalism});
+    }
 
+    // ---- Commit ----------------------------------------------------
+    ReactionOutcome outcome;
+    for (auto& p : prepared) {
+        p.group->loyalty    = p.new_loyalty;
+        p.group->radicalism = p.new_radicalism;
         ++outcome.groups_updated;
     }
 
@@ -56,12 +133,6 @@ core::Result<CountryFeedbackOutcome> country_feedback(
         core::GameState& state,
         std::vector<CountryFeedbackTraceRow>* trace_out) {
     // ---- Preflight: validate every input before any mutation ---------
-    // M3.3 is the first reverse-direction system. The preflight
-    // pass is stricter than M3.2's because a NaN in influence or
-    // radicalism would otherwise propagate into country.stability
-    // and silently poison the simulation. Cost: one extra walk
-    // through state.interest_groups + state.countries; tiny
-    // relative to the per-month per-country systems.
     for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
         const auto& g = state.interest_groups[i];
         if (!g.country.valid() ||
@@ -73,34 +144,27 @@ core::Result<CountryFeedbackOutcome> country_feedback(
                 std::to_string(i) +
                 "] country is not a valid index into state.countries");
         }
-        if (!std::isfinite(g.influence) ||
-            g.influence < 0.0 || g.influence > 1.0) {
-            return core::Result<CountryFeedbackOutcome>::failure(
-                "interest_group::country_feedback: interest_groups[" +
-                std::to_string(i) +
-                "] influence is not a finite ratio in [0, 1]");
+        if (auto err = ng::require_unit_ratio<CountryFeedbackOutcome>(
+                "interest_group::country_feedback", "interest_group",
+                g.id_code, "interest_group.influence", g.influence)) {
+            return *err;
         }
-        if (!std::isfinite(g.radicalism) ||
-            g.radicalism < 0.0 || g.radicalism > 1.0) {
-            return core::Result<CountryFeedbackOutcome>::failure(
-                "interest_group::country_feedback: interest_groups[" +
-                std::to_string(i) +
-                "] radicalism is not a finite ratio in [0, 1]");
+        if (auto err = ng::require_unit_ratio<CountryFeedbackOutcome>(
+                "interest_group::country_feedback", "interest_group",
+                g.id_code, "interest_group.radicalism", g.radicalism)) {
+            return *err;
         }
     }
-    for (std::size_t i = 0; i < state.countries.size(); ++i) {
-        const auto& c = state.countries[i];
-        if (!std::isfinite(c.stability) ||
-            c.stability < 0.0 || c.stability > 1.0) {
-            return core::Result<CountryFeedbackOutcome>::failure(
-                "interest_group::country_feedback: countries[" +
-                std::to_string(i) +
-                "] stability is not a finite ratio in [0, 1]");
+    for (const auto& c : state.countries) {
+        if (auto err = ng::require_unit_ratio<CountryFeedbackOutcome>(
+                "interest_group::country_feedback", "country", c.id_code,
+                "country.stability", c.stability)) {
+            return *err;
         }
     }
 
-    // ---- Apply feedback ----------------------------------------------
-    CountryFeedbackOutcome outcome;
+    // ---- Pre-flight: compute every country's candidate stability ---
+    std::vector<PreparedFeedbackWrite> prepared;
     for (std::size_t ci = 0; ci < state.countries.size(); ++ci) {
         double weighted_sum = 0.0;
         double weight_sum   = 0.0;
@@ -118,39 +182,50 @@ core::Result<CountryFeedbackOutcome> country_feedback(
         }
         if (weight_sum <= 0.0) {
             // No matching groups (or all zero-influence) -> skip.
-            // M3.6: skipped countries produce no trace row by design.
             continue;
         }
 
-        const double weighted_radicalism = weighted_sum / weight_sum;
-        const double target_stability    = 1.0 - weighted_radicalism;
+        const auto& country = state.countries[ci];
+        const double before                = country.stability;
+        const double weighted_radicalism   = weighted_sum / weight_sum;
+        const double target_stability      = 1.0 - weighted_radicalism;
+        const double new_stability =
+            before + (target_stability - before) *
+                     kInterestGroupCountryFeedbackRate;
 
-        auto& country = state.countries[ci];
-        const double before = country.stability;
-        country.stability +=
-            (target_stability - country.stability) *
-            kInterestGroupCountryFeedbackRate;
-        country.stability = std::clamp(country.stability, 0.0, 1.0);
+        // Candidate-validate-commit (post-M6.7 hardening): the previous
+        // `std::clamp(country.stability, 0.0, 1.0)` saturation is gone.
+        if (auto err = ng::require_unit_ratio<CountryFeedbackOutcome>(
+                "interest_group::country_feedback", "country",
+                country.id_code,
+                "country.stability (post-feedback candidate)",
+                new_stability)) {
+            return *err;
+        }
+
+        prepared.push_back({ci, new_stability, before, target_stability,
+                            weighted_radicalism, weight_sum, matched});
+    }
+
+    // ---- Commit + emit trace ---------------------------------------
+    CountryFeedbackOutcome outcome;
+    for (const auto& p : prepared) {
+        auto& country = state.countries[p.country_index];
+        country.stability = p.new_stability;
         ++outcome.countries_updated;
 
-        // M3.6: emit a trace row reflecting the mutation that just
-        // landed. Only countries actually updated produce a row,
-        // and the row is emitted AFTER the clamp so `stability_after`
-        // matches what the rest of the simulation will read this
-        // month. `trace_out == nullptr` is the default M3.3 / M3.4 /
-        // M3.5 behaviour.
         if (trace_out != nullptr) {
             CountryFeedbackTraceRow row;
             row.date                = state.current_date;
-            row.country_id          = static_cast<int>(ci);
+            row.country_id          = static_cast<int>(p.country_index);
             row.country_id_code     = country.id_code;
-            row.matched_groups      = matched;
-            row.weight_sum          = weight_sum;
-            row.weighted_radicalism = weighted_radicalism;
-            row.target_stability    = target_stability;
-            row.stability_before    = before;
+            row.matched_groups      = p.matched_groups;
+            row.weight_sum          = p.weight_sum;
+            row.weighted_radicalism = p.weighted_radicalism;
+            row.target_stability    = p.target_stability;
+            row.stability_before    = p.before;
             row.stability_after     = country.stability;
-            row.stability_delta     = country.stability - before;
+            row.stability_delta     = country.stability - p.before;
             trace_out->push_back(std::move(row));
         }
     }
@@ -166,17 +241,6 @@ core::Result<AuthorityPressureOutcome> authority_pressure(
         core::GameState& state,
         std::vector<AuthorityPressureTraceRow>* trace_out) {
     // ---- Preflight: validate inputs that this step actually reads -----
-    // M3.4 reads ONLY:
-    //   - group.country (every group, regardless of kind, because
-    //     a bad country index would crash the per-country loop
-    //     below before the kind filter even runs)
-    //   - group.influence (every group)
-    //   - group.loyalty   (every group)
-    //   - country.government_authority.bureaucratic_compliance
-    // It does NOT read radicalism or country.stability, so those
-    // are not preflighted here. The strict-preflight pattern
-    // mirrors M3.3 (`country_feedback`) to keep the M3 reverse-
-    // direction surface consistent.
     for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
         const auto& g = state.interest_groups[i];
         if (!g.country.valid() ||
@@ -188,35 +252,29 @@ core::Result<AuthorityPressureOutcome> authority_pressure(
                 std::to_string(i) +
                 "] country is not a valid index into state.countries");
         }
-        if (!std::isfinite(g.influence) ||
-            g.influence < 0.0 || g.influence > 1.0) {
-            return core::Result<AuthorityPressureOutcome>::failure(
-                "interest_group::authority_pressure: interest_groups[" +
-                std::to_string(i) +
-                "] influence is not a finite ratio in [0, 1]");
+        if (auto err = ng::require_unit_ratio<AuthorityPressureOutcome>(
+                "interest_group::authority_pressure", "interest_group",
+                g.id_code, "interest_group.influence", g.influence)) {
+            return *err;
         }
-        if (!std::isfinite(g.loyalty) ||
-            g.loyalty < 0.0 || g.loyalty > 1.0) {
-            return core::Result<AuthorityPressureOutcome>::failure(
-                "interest_group::authority_pressure: interest_groups[" +
-                std::to_string(i) +
-                "] loyalty is not a finite ratio in [0, 1]");
+        if (auto err = ng::require_unit_ratio<AuthorityPressureOutcome>(
+                "interest_group::authority_pressure", "interest_group",
+                g.id_code, "interest_group.loyalty", g.loyalty)) {
+            return *err;
         }
     }
-    for (std::size_t i = 0; i < state.countries.size(); ++i) {
-        const double bc =
-            state.countries[i].government_authority.bureaucratic_compliance;
-        if (!std::isfinite(bc) || bc < 0.0 || bc > 1.0) {
-            return core::Result<AuthorityPressureOutcome>::failure(
-                "interest_group::authority_pressure: countries[" +
-                std::to_string(i) +
-                "] government_authority.bureaucratic_compliance is"
-                " not a finite ratio in [0, 1]");
+    for (const auto& c : state.countries) {
+        if (auto err = ng::require_unit_ratio<AuthorityPressureOutcome>(
+                "interest_group::authority_pressure", "country",
+                c.id_code,
+                "country.government_authority.bureaucratic_compliance",
+                c.government_authority.bureaucratic_compliance)) {
+            return *err;
         }
     }
 
-    // ---- Apply pressure ----------------------------------------------
-    AuthorityPressureOutcome outcome;
+    // ---- Pre-flight: compute every country's candidate compliance ---
+    std::vector<PreparedAuthorityWrite> prepared;
     for (std::size_t ci = 0; ci < state.countries.size(); ++ci) {
         double weighted_sum = 0.0;
         double weight_sum   = 0.0;
@@ -236,37 +294,52 @@ core::Result<AuthorityPressureOutcome> authority_pressure(
             ++matched;
         }
         if (weight_sum <= 0.0) {
-            // M3.6: skipped countries produce no trace row by design.
             continue;
         }
 
         const double target_compliance = weighted_sum / weight_sum;
-        auto& compliance =
+        const double before =
             state.countries[ci].government_authority.bureaucratic_compliance;
-        const double before = compliance;
-        compliance +=
-            (target_compliance - compliance) *
-            kInterestGroupAuthorityPressureRate;
-        compliance = std::clamp(compliance, 0.0, 1.0);
+        const double new_compliance =
+            before + (target_compliance - before) *
+                     kInterestGroupAuthorityPressureRate;
+
+        if (auto err = ng::require_unit_ratio<AuthorityPressureOutcome>(
+                "interest_group::authority_pressure", "country",
+                state.countries[ci].id_code,
+                "country.government_authority.bureaucratic_compliance"
+                " (post-pressure candidate)",
+                new_compliance)) {
+            return *err;
+        }
+
+        prepared.push_back({ci, new_compliance, before, target_compliance,
+                            target_compliance, weight_sum, matched});
+    }
+
+    // ---- Commit + emit trace ---------------------------------------
+    AuthorityPressureOutcome outcome;
+    for (const auto& p : prepared) {
+        auto& compliance =
+            state.countries[p.country_index]
+                .government_authority.bureaucratic_compliance;
+        compliance = p.new_compliance;
         ++outcome.countries_updated;
 
-        // M3.6: emit a trace row reflecting the mutation that just
-        // landed. `target_compliance == weighted_bureaucracy_loyalty`
-        // by definition; we surface both names so the CSV column
-        // matches the formula reader's mental model.
         if (trace_out != nullptr) {
             AuthorityPressureTraceRow row;
             row.date                            = state.current_date;
-            row.country_id                      = static_cast<int>(ci);
+            row.country_id                      =
+                static_cast<int>(p.country_index);
             row.country_id_code                 =
-                state.countries[ci].id_code;
-            row.matched_groups                  = matched;
-            row.weight_sum                      = weight_sum;
-            row.weighted_bureaucracy_loyalty    = target_compliance;
-            row.target_bureaucratic_compliance  = target_compliance;
-            row.bureaucratic_compliance_before  = before;
+                state.countries[p.country_index].id_code;
+            row.matched_groups                  = p.matched_groups;
+            row.weight_sum                      = p.weight_sum;
+            row.weighted_bureaucracy_loyalty    = p.weighted_bureau_loyalty;
+            row.target_bureaucratic_compliance  = p.target_compliance;
+            row.bureaucratic_compliance_before  = p.before;
             row.bureaucratic_compliance_after   = compliance;
-            row.bureaucratic_compliance_delta   = compliance - before;
+            row.bureaucratic_compliance_delta   = compliance - p.before;
             trace_out->push_back(std::move(row));
         }
     }

@@ -38,6 +38,7 @@
 #include <string>
 
 #include "leviathan/core/game_state.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::annual_stats {
 
@@ -56,9 +57,19 @@ struct AnnualRow {
 
 // Compute a row from a snapshot of `state`. `year` is supplied by
 // the caller (the runner passes the year of the just-crossed
-// year-boundary). Empty `state.countries` yields zero counts and
-// zeroed averages (no division by zero — avg fields stay 0.0).
-AnnualRow snapshot(const core::GameState& state, int year);
+// year-boundary).
+//
+// Post-M6.7 strict-fallback hardening (`feedback_no_silent_degradation`):
+// the previous "empty `state.countries` yields zeroed averages"
+// silent fallback is gone. Empty `state.countries` returns
+// `Result::failure`. The runner gates the call with
+// `!state.countries.empty()` so empty-world simulations continue
+// to tick time without emitting any annual_world_stats row.
+// Per-country aggregated ratios (`stability`, `legitimacy`,
+// `corruption`) and `gdp` are validated as finite + in their
+// documented ranges before the fold; any non-finite or out-of-
+// range value rejects the call.
+core::Result<AnnualRow> snapshot(const core::GameState& state, int year);
 
 // Byte-stable CSV header. Trailing '\n'. Mirrors the M1.14 /
 // M1.16 CSV conventions.

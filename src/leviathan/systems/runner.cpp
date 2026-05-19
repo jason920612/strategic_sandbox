@@ -675,10 +675,21 @@ core::Result<bool> begin_tick(core::GameState& state,
     // RCR-1 (RFC-090 §3.9): capture the initial annual-stats row
     // (one row labelled by start_date.year). Subsequent rows are
     // appended on every year_changed boundary in step_one_day.
-    {
+    //
+    // Post-M6.7 strict-fallback hardening: annual_stats::snapshot
+    // now returns Result<AnnualRow> and rejects empty
+    // state.countries. The runner gates the call so empty-world
+    // simulations continue to tick time without emitting any
+    // annual_world_stats row.
+    if (!state.countries.empty()) {
+        auto row_r =
+            annual_stats::snapshot(state, state.current_date.year());
+        if (!row_r) {
+            return core::Result<bool>::failure(std::move(row_r.error()));
+        }
         TickController::AnnualRowEntry e;
         e.snapshot_date = state.current_date;
-        e.row = annual_stats::snapshot(state, state.current_date.year());
+        e.row = std::move(row_r).value();
         ctrl.annual_rows.push_back(std::move(e));
     }
 
@@ -753,11 +764,17 @@ core::Result<bool> step_one_day(core::GameState& state,
     // RCR-1 (RFC-090 §3.9): annual snapshot on year boundary,
     // after the year-rolled-over log and after the monthly pipeline
     // ran (so the year-end aggregates reflect the just-finished
-    // December tick).
-    if (tr.year_changed) {
+    // December tick). Post-M6.7: gate on non-empty countries so
+    // empty-world simulations skip emission rather than failing.
+    if (tr.year_changed && !state.countries.empty()) {
+        auto row_r =
+            annual_stats::snapshot(state, state.current_date.year());
+        if (!row_r) {
+            return core::Result<bool>::failure(std::move(row_r.error()));
+        }
         TickController::AnnualRowEntry e;
         e.snapshot_date = state.current_date;
-        e.row = annual_stats::snapshot(state, state.current_date.year());
+        e.row = std::move(row_r).value();
         ctrl.annual_rows.push_back(std::move(e));
     }
 

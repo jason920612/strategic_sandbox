@@ -156,9 +156,38 @@ core::Result<DispatchOutcome> dispatch_one(core::GameState& state,
                     "' (expected administration|military|education|"
                     "welfare|intelligence|infrastructure|industry)");
             }
-            // Apply with the same [0, 1] clamp policy M1.5 uses for
-            // ratio fields.
-            *field = std::clamp(*field + cmd.budget_delta, 0.0, 1.0);
+            // Post-M6.7 hardening + research-grounded asymptotic
+            // ratio update (Polity / V-Dem / Besley & Persson —
+            // bounded institutional indicators with diminishing
+            // returns near the bounds). Validate the current
+            // field as a finite ratio, then apply the asymptotic
+            // add: positive delta scales by `1 - old`, negative
+            // scales by `old`. The candidate is in `[0, 1]` by
+            // construction; the explicit check is a single-ULP
+            // floating-point safety net + formula-rebalance
+            // regression catch.
+            if (!std::isfinite(*field) || *field < 0.0 || *field > 1.0) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": AdjustBudget current country.budget." +
+                    cmd.budget_category + " = " +
+                    std::to_string(*field) +
+                    " is not a finite ratio in [0, 1]");
+            }
+            const double delta = cmd.budget_delta;
+            const double candidate = (delta >= 0.0)
+                ? *field + delta * (1.0 - *field)
+                : *field + delta * (*field);
+            if (!std::isfinite(candidate) ||
+                candidate < 0.0 || candidate > 1.0) {
+                return core::Result<DispatchOutcome>::failure(
+                    ctx + ": AdjustBudget country.budget." +
+                    cmd.budget_category + " asymptotic-add candidate " +
+                    std::to_string(candidate) + " (from " +
+                    std::to_string(*field) + " with delta " +
+                    std::to_string(delta) +
+                    ") escapes ratio range [0, 1]");
+            }
+            *field = candidate;
             DispatchOutcome out;
             out.applied = true;
             return core::Result<DispatchOutcome>::success(std::move(out));

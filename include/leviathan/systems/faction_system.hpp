@@ -12,7 +12,15 @@
 //   loyalty += (country.stability  - loyalty) * 0.10
 //   support += (country.legitimacy - support) * 0.05
 //
-// Both ratios are clamped to [0, 1] after the step.
+// Both ratios must produce a candidate value in [0, 1] post-drift.
+// Per the post-M6.7 hardening sweep (`feedback_no_silent_degradation`),
+// the previous `std::clamp(.., 0.0, 1.0)` saturation has been
+// removed; `react` validates inputs and the computed candidates,
+// and returns `Result::failure` naming the offending entity / field
+// / value if any value escapes `[0, 1]`. The pre-flight pattern is
+// candidate-validate-commit: compute every drift candidate first,
+// reject the whole call on any invalid candidate, then commit all
+// updates only when every faction's candidates are in range.
 //
 // `influence`, `radicalism`, `resources`, `country_id_code`, `type`,
 // and `preferred_policies` are all UNCHANGED. Their dynamics belong
@@ -52,7 +60,13 @@ inline constexpr double kSupportDriftRate = 0.05;
 //
 // Failure cases:
 //   - `country` is not a valid index into `state.countries`
-// On failure, no faction is modified.
+//   - `country.stability` or `country.legitimacy` is non-finite
+//     or outside `[0, 1]`
+//   - any faction in `country` has a non-finite or out-of-range
+//     `loyalty` / `support` input
+//   - any computed drift candidate escapes `[0, 1]` (post-M6.7
+//     hardening: never silently clamped)
+// On failure, no faction is modified (M1.6 atomicity preserved).
 core::Result<ReactionOutcome> react(core::GameState& state,
                                     core::CountryId  country);
 

@@ -70,7 +70,10 @@ TEST_CASE("Every higher-level helper consumes exactly one draw") {
     lr::draw_double(rng, -1.0, 1.0);
     CHECK(rng.counter == 3ull);
 
-    lr::draw_bool(rng, 0.5);
+    {
+        const auto r = lr::draw_bool(rng, 0.5);
+        REQUIRE(r);
+    }
     CHECK(rng.counter == 4ull);
 
     lr::weighted_choice(rng, std::vector<double>{1.0, 2.0, 3.0});
@@ -127,28 +130,56 @@ TEST_CASE("draw_bool: p=0 always false, p=1 always true") {
     RandomState rng;
     rng.seed = 5ull;
     for (int i = 0; i < 500; ++i) {
-        CHECK_FALSE(lr::draw_bool(rng, 0.0));
-        CHECK(lr::draw_bool(rng, 1.0));
+        const auto a = lr::draw_bool(rng, 0.0);
+        REQUIRE(a);
+        CHECK_FALSE(a.value());
+        const auto b = lr::draw_bool(rng, 1.0);
+        REQUIRE(b);
+        CHECK(b.value());
     }
     // Both paths still advanced the counter, exactly once each.
     CHECK(rng.counter == 1000ull);
 }
 
-TEST_CASE("draw_bool clamps out-of-range probabilities") {
+TEST_CASE("Hardening: draw_bool REJECTS out-of-range probabilities") {
+    // Post-M6.7 strict numeric validation: the previous silent
+    // clamp of out-of-range probabilities is gone. p > 1 / p < 0
+    // both return Result::failure and consume NO draw (preserves
+    // rng.counter deterministically on the rejection path).
     RandomState rng;
     rng.seed = 5ull;
-    // p > 1 -> always true; p < 0 -> always false; both still consume.
-    CHECK(lr::draw_bool(rng,  5.0));
-    CHECK_FALSE(lr::draw_bool(rng, -5.0));
-    CHECK(rng.counter == 2ull);
+    const auto over = lr::draw_bool(rng, 5.0);
+    REQUIRE(over.failed());
+    CHECK(over.error().find("not a finite ratio in [0, 1]")
+          != std::string::npos);
+    const auto under = lr::draw_bool(rng, -5.0);
+    REQUIRE(under.failed());
+    CHECK(under.error().find("not a finite ratio in [0, 1]")
+          != std::string::npos);
+    CHECK(rng.counter == 0ull);  // no draw consumed on failure
 }
 
-TEST_CASE("draw_bool treats NaN probability as zero") {
+TEST_CASE("Hardening: draw_bool REJECTS NaN probability") {
     RandomState rng;
     rng.seed = 1ull;
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    CHECK_FALSE(lr::draw_bool(rng, nan));
-    CHECK(rng.counter == 1ull);
+    const auto r = lr::draw_bool(rng, nan);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("NaN") != std::string::npos);
+    CHECK(rng.counter == 0ull);
+}
+
+TEST_CASE("Hardening: draw_bool REJECTS +Inf / -Inf probability") {
+    RandomState rng;
+    rng.seed = 2ull;
+    const double pinf = std::numeric_limits<double>::infinity();
+    const auto r1 = lr::draw_bool(rng, pinf);
+    REQUIRE(r1.failed());
+    CHECK(r1.error().find("+Inf") != std::string::npos);
+    const auto r2 = lr::draw_bool(rng, -pinf);
+    REQUIRE(r2.failed());
+    CHECK(r2.error().find("-Inf") != std::string::npos);
+    CHECK(rng.counter == 0ull);
 }
 
 TEST_CASE("weighted_choice returns an in-bounds index for normal inputs") {

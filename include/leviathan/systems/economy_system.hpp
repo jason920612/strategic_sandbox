@@ -90,12 +90,30 @@ inline constexpr double kCorruptionGrowthDrag        = 0.005;
 // Apply one month-end economy step to `country` in `state`.
 // See the formulas at the top of this header.
 //
+// Strict numeric validation (post-M6.7 hardening sweep): per
+// `feedback_no_silent_degradation`, the previous silent
+// `if (c.gdp < 0.0) c.gdp = 0.0;` floor has been removed.
+// Every input is validated as a finite ratio in `[0, 1]` (for
+// `legal_tax_burden`, `fiscal_capacity`, `central_control`,
+// `corruption`, `stability`, `administrative_efficiency`,
+// every budget category) or as a finite non-negative double
+// (for `gdp`). The candidate `gdp_growth_rate`, the candidate
+// new `gdp` (= `gdp * (1 + growth_rate)`), and the candidate
+// new `budget_balance` are each validated before any state
+// mutation. Any non-finite candidate or candidate `gdp < 0`
+// rejects the whole tick.
+//
 // Failure cases:
 //   - `country` is not a valid index into `state.countries`
+//   - any read input is non-finite or out of its documented range
+//   - the computed `gdp_growth_rate` is non-finite
+//   - the computed new `gdp` is non-finite or strictly negative
+//   - the computed new `budget_balance` is non-finite
 // On failure, no state is modified.
 //
 // Only state.countries[country] fields are modified: gdp,
-// tax_revenue, budget_balance. Faction state is never touched.
+// tax_revenue, budget_balance, last_gdp_growth_rate. Faction
+// state is never touched.
 core::Result<EconomyOutcome> tick(core::GameState& state,
                                   core::CountryId  country);
 

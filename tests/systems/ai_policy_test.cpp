@@ -291,10 +291,12 @@ TEST_CASE("RCR-1 ai_policy: apply_selected_policies skips the player country") {
     CHECK(state.countries[1].active_policies.size() == 1u);
 }
 
-TEST_CASE("RCR-1 ai_policy: apply_selected_policies fail-continues on per-country failure") {
-    // A bogus policy effect target will cause every per-country apply
-    // to fail. Failures should be reported but the call should not
-    // throw or short-circuit.
+TEST_CASE("Hardening: apply_selected_policies fail-FAST on per-country failure") {
+    // Post-M6.7 strict numeric validation + signature honesty:
+    // the previous fail-continue (accumulate into
+    // ApplyOutcome.failed_countries) is gone. A per-country apply
+    // failure now surfaces as a hard Result::failure so the
+    // monthly pipeline propagates it to the runner.
     GameState state = leviathan::core::make_game_state(
         leviathan::core::SimulationConfig{});
     state.current_date = leviathan::core::GameDate(1930, 1, 1);
@@ -310,8 +312,7 @@ TEST_CASE("RCR-1 ai_policy: apply_selected_policies fail-continues on per-countr
     state.policies.push_back(p);
 
     const auto r = ai::apply_selected_policies(state);
-    REQUIRE(r);
-    CHECK(r.value().considered == 2);
-    CHECK(r.value().applied    == 0);
-    CHECK(r.value().failed_countries.size() == 2);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("broken_policy") != std::string::npos);
+    CHECK(r.error().find("unknown country field") != std::string::npos);
 }

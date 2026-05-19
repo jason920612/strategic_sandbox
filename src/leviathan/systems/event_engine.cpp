@@ -73,11 +73,17 @@ apply_for_ai(core::GameState&                state,
             "options but no country to score against (" +
             instance.event_id_code + ")");
     }
-    const auto* opt = event_effects::select_best_option_for_country(
+    auto opt_r = event_effects::select_best_option_for_country(
         state, *country_for_option_score, def);
+    if (!opt_r) {
+        return core::Result<event_effects::ApplyOutcome>::failure(
+            std::move(opt_r.error()));
+    }
+    const core::EventOption* opt = opt_r.value();
     if (opt == nullptr) {
-        // Should be unreachable: options non-empty ⇒ chooser
-        // returns a pointer. Defensive guard.
+        // Should be unreachable: options non-empty ⇒ chooser returns
+        // a pointer. Defensive guard preserved as success-with-0 so
+        // caller can detect "scorer agreed there's nothing to apply".
         return core::Result<event_effects::ApplyOutcome>::success(
             event_effects::ApplyOutcome{});
     }
@@ -155,8 +161,13 @@ recurse_followups_impl(core::GameState&                  state,
 
     for (std::size_t depth = 0; depth < kMaxFollowupDepth; ++depth) {
         const auto& current_def = state.events[current.definition_index];
-        const auto fids =
+        auto fids_r =
             event_effects::resolve_followup_ids(state, current_def);
+        if (!fids_r) {
+            return core::Result<FollowupOutcome>::failure(
+                std::move(fids_r.error()));
+        }
+        const auto& fids = fids_r.value();
         if (fids.empty()) {
             break;
         }

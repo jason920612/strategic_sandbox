@@ -129,7 +129,14 @@ TEST_CASE("apply: country.budget.military add hits the budget sub-object") {
 // Clamping
 // =====================================================================
 
-TEST_CASE("apply: ratio field clamps to 1.0 on overshoot") {
+TEST_CASE("Hardening: asymptotic add never overshoots ratio bounds") {
+    // Post-M6.7 hardening: `add` on a ratio target uses the
+    // asymptotic formula `old + delta * (1 - old)` for positive
+    // delta, `old + delta * old` for negative. Repeated /
+    // large-magnitude applications converge toward the bounds
+    // rather than crossing them. (Polity / V-Dem / Besley &
+    // Persson research grounding documented in
+    // policy_system.cpp::compute_candidate.)
     GameState state;
     auto g = germany_baseline();
     g.stability = 0.90;
@@ -138,11 +145,14 @@ TEST_CASE("apply: ratio field clamps to 1.0 on overshoot") {
     PolicyData p;
     p.effects.push_back({"country.stability", "add", 0.50});
 
-    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
-    CHECK(state.countries[0].stability == doctest::Approx(1.0));
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+    REQUIRE(r.ok());
+    // Asymptotic: 0.90 + 0.50 * (1 - 0.90) = 0.95
+    CHECK(state.countries[0].stability == doctest::Approx(0.95));
+    CHECK(state.countries[0].stability <= 1.0);
 }
 
-TEST_CASE("apply: ratio field clamps to 0.0 on undershoot") {
+TEST_CASE("Hardening: asymptotic negative add never undershoots ratio bounds") {
     GameState state;
     auto g = germany_baseline();
     g.corruption = 0.10;
@@ -151,8 +161,11 @@ TEST_CASE("apply: ratio field clamps to 0.0 on undershoot") {
     PolicyData p;
     p.effects.push_back({"country.corruption", "add", -0.50});
 
-    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
-    CHECK(state.countries[0].corruption == doctest::Approx(0.0));
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+    REQUIRE(r.ok());
+    // Asymptotic: 0.10 + (-0.50) * 0.10 = 0.05
+    CHECK(state.countries[0].corruption == doctest::Approx(0.05));
+    CHECK(state.countries[0].corruption >= 0.0);
 }
 
 TEST_CASE("apply: absolute fields are NOT clamped") {
@@ -168,15 +181,22 @@ TEST_CASE("apply: absolute fields are NOT clamped") {
     CHECK(state.countries[0].budget_balance == doctest::Approx(-4.0));
 }
 
-TEST_CASE("apply: set on a ratio field clamps if value out of range") {
+TEST_CASE("Hardening: apply REJECTS set on a ratio field with out-of-range value") {
+    // `set` op writes the value directly without the asymptotic
+    // wrapping. Strict validation rejects out-of-range `set`.
     GameState state;
     state.countries.push_back(germany_baseline());
+    const double original = state.countries[0].stability;
 
     PolicyData p;
     p.effects.push_back({"country.stability", "set", 1.7});
 
-    REQUIRE(ps::apply_policy_effects(state, CountryId{0}, p).ok());
-    CHECK(state.countries[0].stability == doctest::Approx(1.0));
+    const auto r = ps::apply_policy_effects(state, CountryId{0}, p);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country.stability") != std::string::npos);
+    CHECK(r.error().find("escapes ratio range [0, 1]")
+          != std::string::npos);
+    CHECK(state.countries[0].stability == doctest::Approx(original));
 }
 
 // =====================================================================

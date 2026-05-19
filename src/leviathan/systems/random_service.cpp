@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <utility>
 
 namespace leviathan::systems::random {
 
@@ -101,17 +103,32 @@ double draw_double(core::RandomState& rng,
     return min_inclusive + u * (max_exclusive - min_inclusive);
 }
 
-bool draw_bool(core::RandomState& rng, double probability,
-               std::string_view tag) {
-    // std::clamp's contract: returns hi if v > hi, lo if v < lo, else v.
-    // For NaN: NaN < lo is false and lo < NaN is false, so the chain
-    // returns NaN. Use a NaN check up front so callers do not need to
-    // worry about NaN propagation through downstream comparisons.
-    if (std::isnan(probability)) {
-        probability = 0.0;
+core::Result<bool> draw_bool(core::RandomState& rng, double probability,
+                             std::string_view tag) {
+    // Post-M6.7 hardening (`feedback_no_silent_degradation` +
+    // `feedback_api_signature_expresses_failure`): the previous
+    // "NaN clamps to 0; out-of-range clamps to nearest bound"
+    // silent-fallback shape is gone. Validate first; reject
+    // loudly; consume NO draw on rejection so the rng.counter
+    // doesn't advance on a malformed call.
+    if (!std::isfinite(probability) ||
+        probability < 0.0 || probability > 1.0) {
+        std::string err =
+            "draw_bool: probability is not a finite ratio in [0, 1] "
+            "(got ";
+        if (std::isnan(probability)) {
+            err += "NaN)";
+        } else if (probability > 0.0 && std::isinf(probability)) {
+            err += "+Inf)";
+        } else if (probability < 0.0 && std::isinf(probability)) {
+            err += "-Inf)";
+        } else {
+            err += std::to_string(probability) + ")";
+        }
+        return core::Result<bool>::failure(std::move(err));
     }
-    const double clamped = std::clamp(probability, 0.0, 1.0);
-    return draw_unit(rng, tag) < clamped;
+    const double u = draw_unit(rng, tag);
+    return core::Result<bool>::success(u < probability);
 }
 
 std::size_t weighted_choice(core::RandomState& rng,
