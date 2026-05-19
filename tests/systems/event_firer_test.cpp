@@ -201,22 +201,25 @@ TEST_CASE("M5.5 record_match: empty-triggers match becomes EventInstance with em
     CHECK(s.event_history[0].actors.empty());
 }
 
-TEST_CASE("M5.5 record_match: IG actor with broken owning-country handle leaves country_id_code empty (save will reject)") {
+TEST_CASE("M6.9 record_match: IG actor with broken owning-country handle FAILS LOUDLY (no LogEntry / no EventInstance appended)") {
     // Build an EventMatch by hand whose IG actor references a
-    // CountryId that does NOT exist in state.countries. The firer
-    // is documented as "always succeeds; leaves country_id_code
-    // empty on lookup failure; save layer rejects on next
-    // round-trip" — pin that contract.
+    // CountryId that does NOT exist in state.countries.
     //
-    // Note: the state has a country (so its OWN deserialize side
-    // passes) but no matching IG record, since the hand-built
-    // EventMatch bypasses the evaluator's invariant. We only need
-    // the country list to be deserialize-clean; the firer takes
-    // its actor data straight from the EventMatch we pass in.
+    // Pre-M6.9 history: the firer was documented as
+    // "always succeeds; leaves country_id_code empty on lookup
+    // failure; save layer rejects on next round-trip". That
+    // contract carried over to the save serialisation guard.
+    //
+    // Post-M6.9 (Codex P2 reviewer fix): a non-empty actor list
+    // whose first actor has an empty `country_id_code` is
+    // MALFORMED state (not the same as a vacuous-actor case
+    // where `actors.empty()`). The firer now rejects it at fire
+    // time per `feedback_no_silent_degradation` — the save
+    // layer never gets the chance to catch it because no save
+    // ever materialises. Per-event atomicity: no LogEntry, no
+    // EventInstance appended.
     GameState s;
     s.countries.push_back(make_country(0, "GER"));
-    // M6.8 / M6.9 update: record_match needs the EventDefinition
-    // to source true_cause + visible_report; supply one.
     s.events.push_back(make_event("x", {
         make_trigger("country.stability", "lt", 0.30),
     }));
@@ -232,19 +235,16 @@ TEST_CASE("M5.5 record_match: IG actor with broken owning-country handle leaves 
     te.actor.index      = 0;
     m.triggers.push_back(te);
 
-    const auto fired = ef::record_match(s, m, GameDate(1930, 1, 1));
-    REQUIRE(fired);
-    REQUIRE(s.event_history.size() == 1u);
-    REQUIRE(s.event_history[0].actors.size() == 1u);
-    CHECK(s.event_history[0].actors[0].kind            == "interest_group");
-    CHECK(s.event_history[0].actors[0].id_code         == "orphan_ig");
-    CHECK(s.event_history[0].actors[0].country_id_code == "");
+    const auto before_logs    = s.logs.size();
+    const auto before_history = s.event_history.size();
+    const auto r = ef::record_match(s, m, GameDate(1930, 1, 1));
 
-    // And the save layer rejects it loudly on the next round-trip.
-    const std::string text = ss::serialize(s);
-    const auto rt = ss::deserialize(text);
-    REQUIRE(rt.failed());
-    CHECK(rt.error().find("country_id_code") != std::string::npos);
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country_id_code is empty") != std::string::npos);
+    CHECK(r.error().find("malformed actor binding")   != std::string::npos);
+    // Per-event atomicity: nothing was appended on rejection.
+    CHECK(s.logs.size()          == before_logs);
+    CHECK(s.event_history.size() == before_history);
 }
 
 // =====================================================================
@@ -796,4 +796,149 @@ TEST_CASE("M6.9 record_followup: distortion uses parent's first-actor country") 
     // Same accuracy as the parent country (GER's cap=0.5 / bud=0
     // / corr=0 -> 0.4 + 0.6×0.35 = 0.61).
     CHECK(std::stod(*acc) == doctest::Approx(0.61));
+}
+
+// =====================================================================
+// M6.9 (Codex P2 reviewer fix): actor-binding preflight must
+// distinguish two distinct shapes:
+//   A. actors.empty()                    — vacuous degenerate;
+//                                          publicText only,
+//                                          numeric distortion
+//                                          fields skipped,
+//                                          success.
+//   B. !actors.empty() &&
+//      actors.front().country_id_code.empty()
+//                                        — MALFORMED state;
+//                                          fail loudly with
+//                                          no LogEntry / no
+//                                          EventInstance
+//                                          appended.
+// =====================================================================
+
+TEST_CASE("M6.9 record_match (P2): vacuous-actor case (A) emits publicText only and succeeds") {
+    GameState s;
+    // No country / IG; the match's triggers vector is empty so
+    // EventInstance.actors will be empty.
+    auto def = make_event("ev_vacuous_ok", {
+        make_trigger("country.stability", "lt", 0.30),
+    });
+    def.visible_report = "Vacuous-actor publicText.";
+    s.events.push_back(std::move(def));
+
+    ee::EventMatch m;
+    m.event_index   = 0;
+    m.event_id_code = "ev_vacuous_ok";
+    // m.triggers stays empty -> EventInstance.actors will be empty.
+
+    const auto r = ef::record_match(s, m, GameDate(1930, 4, 1));
+    REQUIRE(r);                                  // success
+    REQUIRE(s.event_history.size() == 1u);
+    CHECK(s.event_history[0].actors.empty());
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    // publicText IS emitted (always-emitted key).
+    const auto* pt = metadata_value(*entry, "publicText");
+    REQUIRE(pt != nullptr);
+    CHECK(*pt == "Vacuous-actor publicText.");
+    // Numeric distortion fields are SKIPPED (no country anchor).
+    CHECK(metadata_value(*entry, "information_accuracy") == nullptr);
+    CHECK(metadata_value(*entry, "reported_intensity")   == nullptr);
+    CHECK(metadata_value(*entry, "noise_sample")         == nullptr);
+}
+
+TEST_CASE("M6.9 record_match (P2): malformed case (B) — non-empty actor with empty country_id_code FAILS LOUDLY") {
+    // Reach case B by giving the IG actor a CountryId that
+    // does not resolve in state.countries. to_actor will leave
+    // country_id_code empty, but actors.size() == 1 — the
+    // distinguishing shape Codex flagged.
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    s.events.push_back(make_event("ev_malformed", {
+        make_trigger("country.stability", "lt", 0.30),
+    }));
+
+    ee::EventMatch m;
+    m.event_index   = 0;
+    m.event_id_code = "ev_malformed";
+    ee::TriggerEvaluation te;
+    te.actor.kind    = ee::TriggerActorKind::InterestGroup;
+    te.actor.id_code = "orphan_ig";
+    te.actor.country = CountryId{99};   // not in state.countries
+    te.actor.index   = 0;
+    m.triggers.push_back(te);
+
+    const auto before_logs    = s.logs.size();
+    const auto before_history = s.event_history.size();
+    const auto r = ef::record_match(s, m, GameDate(1930, 4, 1));
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country_id_code is empty") != std::string::npos);
+    CHECK(r.error().find("malformed actor binding")  != std::string::npos);
+    CHECK(r.error().find("ev_malformed")             != std::string::npos);
+    // Per-event atomicity: no LogEntry, no EventInstance appended.
+    CHECK(s.logs.size()          == before_logs);
+    CHECK(s.event_history.size() == before_history);
+}
+
+TEST_CASE("M6.9 record_followup (P2): malformed inherited actor — non-empty with empty country_id_code FAILS LOUDLY") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
+    s.events.push_back(make_event("ev_followup_malformed", {
+        make_trigger("country.stability", "lt", 0.30),
+    }));
+
+    // Build a synthetic parent with a malformed (empty
+    // country_id_code) first-actor. record_followup inherits
+    // the actor list from the parent; the inherited shape must
+    // be caught at the followup's own fire time.
+    EventInstance parent;
+    parent.event_id_code = "parent_ev";
+    parent.fired_on      = GameDate(1930, 4, 1);
+    EventInstanceActor a;
+    a.kind            = "interest_group";
+    a.id_code         = "orphan_ig";
+    a.country_id_code = "";   // <-- malformed
+    a.index           = 0;
+    parent.actors.push_back(a);
+
+    const auto before_logs    = s.logs.size();
+    const auto before_history = s.event_history.size();
+    const auto r = ef::record_followup(
+        s, parent, s.events[0], GameDate(1930, 5, 1));
+
+    REQUIRE(r.failed());
+    CHECK(r.error().find("country_id_code is empty")       != std::string::npos);
+    CHECK(r.error().find("malformed actor binding")        != std::string::npos);
+    CHECK(r.error().find("ev_followup_malformed")          != std::string::npos);
+    CHECK(r.error().find("parent_ev")                      != std::string::npos);
+    CHECK(s.logs.size()          == before_logs);
+    CHECK(s.event_history.size() == before_history);
+}
+
+TEST_CASE("M6.9 record_followup (P2): vacuous parent (actors.empty()) emits publicText only and succeeds") {
+    GameState s;
+    s.events.push_back(make_event("ev_followup_vacuous", {
+        make_trigger("country.stability", "lt", 0.30),
+    }));
+    s.events.back().visible_report = "Followup vacuous publicText.";
+
+    EventInstance parent;
+    parent.event_id_code = "parent_ev";
+    parent.fired_on      = GameDate(1930, 4, 1);
+    // parent.actors stays empty -> the followup inherits that
+    // empty list. Case A, not Case B.
+
+    const auto r = ef::record_followup(
+        s, parent, s.events[0], GameDate(1930, 5, 1));
+    REQUIRE(r);
+
+    const auto* entry = find_event_fired_log(s);
+    REQUIRE(entry != nullptr);
+    const auto* pt = metadata_value(*entry, "publicText");
+    REQUIRE(pt != nullptr);
+    CHECK(*pt == "Followup vacuous publicText.");
+    CHECK(metadata_value(*entry, "information_accuracy") == nullptr);
+    CHECK(metadata_value(*entry, "reported_intensity")   == nullptr);
+    CHECK(metadata_value(*entry, "noise_sample")         == nullptr);
 }

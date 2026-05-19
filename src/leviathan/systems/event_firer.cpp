@@ -99,25 +99,54 @@ struct DistortionFields {
 // with intensity 1.0"); the player's perception of intensity
 // is `accuracy + noise`. Pure read of state — no mutation.
 //
-// Returns failure if any of the three helpers fails. Returns
-// success with `emit_distortion = false` when there is no
-// country actor to compute accuracy against (vacuous-actor
-// edge case).
+// The two "no country anchor" cases the caller distinguishes
+// BEFORE invoking this helper:
+//
+//   - `has_actor == false`: vacuous-actor event (the match's
+//     EventInstance.actors is empty). Degenerate case: emit
+//     the `publicText` string only, skip the three numeric
+//     distortion fields. Not an error. (M5.1 schema rejects
+//     empty-triggers events at load time, so this case is
+//     test-only.)
+//
+//   - `has_actor == true && first_actor_country_id_code.empty()`:
+//     MALFORMED state (a non-vacuous actor list whose first
+//     actor has an empty `country_id_code`). The caller MUST
+//     reject this with `Result::failure` BEFORE calling this
+//     helper, per `feedback_no_silent_degradation`. The
+//     helper itself defensively rejects too, so a slip can't
+//     silently degrade.
+//
+// Returns failure if any of the three composed helpers fails
+// (or the malformed-state defensive guard trips).
 core::Result<DistortionFields> compute_distortion_fields(
     const core::GameState&        state,
     const core::EventDefinition&  definition,
+    bool                          has_actor,
     const std::string&            first_actor_country_id_code,
     const core::GameDate&         fired_on) {
     using R = core::Result<DistortionFields>;
     DistortionFields out;
     out.visible_report = definition.visible_report;
 
-    if (first_actor_country_id_code.empty()) {
+    if (!has_actor) {
         // Vacuous-actor event: no country anchor; emit only
-        // the visible_report string (still useful for the
-        // player as the public-facing text) but skip the
-        // numeric distortion fields. Not an error.
+        // the publicText string (still useful for the player
+        // as the public-facing text) but skip the numeric
+        // distortion fields. Not an error.
         return R::success(std::move(out));
+    }
+    if (first_actor_country_id_code.empty()) {
+        // Defensive: callers must preflight this case, but if
+        // we get here we fail loudly rather than silently
+        // degrade — a non-empty actor list with an empty
+        // first-actor `country_id_code` is malformed state
+        // (e.g. an IG actor whose owning country handle didn't
+        // resolve), not a vacuous-actor degenerate case.
+        return R::failure(
+            "event_firer::record_match (M6.9): first actor's "
+            "country_id_code is empty (malformed actor binding; "
+            "vacuous-actor events have actors.empty() instead)");
     }
 
     // Look up the country INDEX (not the stored CountryId field).
@@ -298,23 +327,50 @@ core::Result<bool> record_match(
     // distortion is computed BEFORE state mutation; on failure
     // neither the EventInstance nor the LogEntry is appended
     // (per-event atomicity per feedback_no_silent_degradation).
+    //
+    // Actor-binding preflight — two distinct shapes, two
+    // distinct outcomes:
+    //
+    //   1. `inst.actors.empty()` — vacuous-actor degenerate
+    //      case. The match has no actor binding (M5.1 schema
+    //      rejects this at load time; reachable only via hand-
+    //      built test fixtures). Emit publicText only, skip
+    //      the three numeric distortion fields.
+    //
+    //   2. `!inst.actors.empty()` &&
+    //      `inst.actors.front().country_id_code.empty()` —
+    //      MALFORMED state. A non-vacuous actor list whose
+    //      first actor has an empty `country_id_code` (e.g. an
+    //      interest_group actor whose owning-country handle
+    //      did NOT resolve at to_actor time). Pre-M6.9 the
+    //      firer was total here and the save layer rejected on
+    //      round-trip; M6.9 promotes the firer to be strict.
+    //      Fail loudly BEFORE any state mutation per
+    //      `feedback_no_silent_degradation`.
+    const bool has_actor = !inst.actors.empty();
     const std::string first_actor_country =
-        inst.actors.empty() ? std::string{}
-                            : inst.actors.front().country_id_code;
+        has_actor ? inst.actors.front().country_id_code
+                  : std::string{};
+    if (has_actor && first_actor_country.empty()) {
+        return core::Result<bool>::failure(
+            "event_firer::record_match (M6.9): first actor's "
+            "country_id_code is empty for event '" +
+            match.event_id_code +
+            "' (malformed actor binding; vacuous-actor events "
+            "have actors.empty() instead)");
+    }
     auto dist_r = compute_distortion_fields(
-        state, definition, first_actor_country, fired_on);
+        state, definition, has_actor, first_actor_country, fired_on);
     if (!dist_r) {
         return core::Result<bool>::failure(std::move(dist_r.error()));
     }
     const auto& dist = dist_r.value();
-    // visible_report is always emitted (player-facing text;
-    // present even on vacuous-actor events for grep'ability).
-    // M6.9: emit as `publicText` per RFC-060 §3
-    // EventLogEntry.publicText (the canonical RFC-named
-    // surface). The string is sourced verbatim from the M6.2
-    // `EventDefinition.visible_report` field — the schema
-    // field keeps its M6.2 name; only the per-entry metadata
-    // key on events.jsonl follows the RFC-060 vocabulary.
+    // publicText is always emitted (RFC-060 §3
+    // EventLogEntry.publicText, sourced verbatim from M6.2
+    // EventDefinition.visible_report). The metadata key
+    // follows the RFC-060 vocabulary; the schema-level field
+    // keeps its M6.2 name. Present even on vacuous-actor
+    // events for grep'ability.
     entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
@@ -389,11 +445,28 @@ core::Result<bool> record_followup(
     // accuracy / noise are computed against that country. Per-
     // event atomicity preserved: if distortion fails, neither
     // the EventInstance nor the LogEntry is appended.
+    //
+    // Same actor-binding preflight as record_match — vacuous-
+    // actor (inherited from a vacuous parent) is the success +
+    // publicText-only path; a non-vacuous inherited actor with
+    // an empty country_id_code is malformed state and is
+    // rejected loudly. See record_match for the full contract.
+    const bool has_actor = !inst.actors.empty();
     const std::string first_actor_country =
-        inst.actors.empty() ? std::string{}
-                            : inst.actors.front().country_id_code;
+        has_actor ? inst.actors.front().country_id_code
+                  : std::string{};
+    if (has_actor && first_actor_country.empty()) {
+        return core::Result<bool>::failure(
+            "event_firer::record_followup (M6.9): first actor's "
+            "country_id_code is empty for followup '" +
+            followup_definition.id_code +
+            "' (malformed actor binding inherited from parent '" +
+            parent_instance.event_id_code +
+            "'; vacuous-actor events have actors.empty() instead)");
+    }
     auto dist_r = compute_distortion_fields(
-        state, followup_definition, first_actor_country, fired_on);
+        state, followup_definition, has_actor, first_actor_country,
+        fired_on);
     if (!dist_r) {
         return core::Result<bool>::failure(std::move(dist_r.error()));
     }

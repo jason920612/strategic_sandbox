@@ -217,11 +217,22 @@
   `TrueValue = 1.0` anchor), and `noise_sample`
   (in `[-(1-accuracy), +(1-accuracy)]` per the M6.5
   deterministic hash; `state.rng` is NEVER consumed).
-  **Vacuous-actor hand-built matches** (test-only
-  degenerate case; not reachable through scenario
-  load) carry `publicText` only and skip the numeric
-  distortion because there is no country anchor for
-  `information_accuracy::compute_for_country`. RFC-080
+  **Vacuous-actor hand-built matches**
+  (`actors.empty()`; test-only degenerate case; not
+  reachable through scenario load) carry `publicText`
+  only and skip the numeric distortion because there
+  is no country anchor for
+  `information_accuracy::compute_for_country`. A
+  **non-vacuous actor list with an empty
+  `country_id_code`** on the first actor (e.g. an
+  interest-group actor whose owning-country handle
+  did not resolve at `to_actor` time — a different
+  shape from vacuous) is rejected with
+  `Result::failure` per
+  `feedback_no_silent_degradation`; no LogEntry / no
+  EventInstance is appended. Pre-M6.9 the firer was
+  total over this case and the save layer rejected on
+  round-trip; M6.9 surfaces it at fire time. RFC-080
   §8 numeric model:
   `ReportedValue = TrueValue + Bias + Noise` with
   `Noise = RandomNormal(0, 1 - InformationAccuracy)`;
@@ -257,16 +268,23 @@
   runs; events.jsonl gains four M6.9 keys per fired
   event line on the country-anchored compliance
   events (41 events × 4 keys = 164 new metadata
-  entries). **9 new doctest cases (1272 total,
-  96 004 assertions, verified via direct
+  entries). **13 new doctest cases (1276 total,
+  96 033 assertions, verified via direct
   `leviathan_tests.exe` run** per
-  `feedback_ctest_masks_doctest`): 6 unit cases
+  `feedback_ctest_masks_doctest`): 10 unit cases
   (`record_match` `publicText` mirrors
   `EventDefinition.visible_report` verbatim;
   high-accuracy maxed-corner; low-accuracy + high-
   corruption noise envelope; same-seed deterministic
   noise; non-finite intelligence FAILS LOUDLY;
-  `record_followup` uses parent's first-actor country)
+  `record_followup` uses parent's first-actor
+  country; **P2 vacuous-actor case A succeeds with
+  publicText only**; **P2 malformed case B — non-
+  empty actor with empty `country_id_code` FAILS
+  LOUDLY with no state mutation**; **P2
+  `record_followup` malformed inherited actor case B
+  FAILS LOUDLY**; **P2 `record_followup` vacuous
+  parent case A succeeds with publicText only**)
   plus 3 m5_event_pipeline integration cases (end-
   to-end --debug vs non-debug events.jsonl;
   deterministic publicText across runs; save format

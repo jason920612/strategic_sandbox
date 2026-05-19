@@ -44,16 +44,34 @@ or interest-group entity, so the first actor's
 `country_id_code` is always populated.
 
 **Vacuous-actor entries** (a degenerate / test-only hand-built
-match with no first-actor country) carry **only `publicText`**
-and skip the three numeric distortion keys, because there is no
-country anchor for `information_accuracy::compute_for_country`.
-This case does not occur in scenario-loaded simulation; the
-M5.1 schema rejects events whose triggers don't bind to a
-country / interest-group entity, so the first-actor
-`country_id_code` is always populated in production. Per-event
-atomicity is preserved either way: if any composed helper
-fails, the EventInstance and the LogEntry are NOT appended
-(see §3).
+match where `inst.actors.empty()` — i.e. the EventMatch had no
+triggers, so `to_actor` produced no actors) carry **only
+`publicText`** and skip the three numeric distortion keys,
+because there is no country anchor for
+`information_accuracy::compute_for_country`. This case does
+not occur in scenario-loaded simulation; the M5.1 schema
+rejects events whose triggers don't bind to a country /
+interest-group entity, so `actors.empty()` is unreachable
+through normal load + evaluate paths.
+
+**Malformed-actor entries** (a different case entirely — a
+non-vacuous `inst.actors` whose first actor has an empty
+`country_id_code`, e.g. an interest-group actor whose
+owning-country handle did not resolve at `to_actor` time) are
+**rejected with `Result::failure`**. No LogEntry is appended;
+no EventInstance is appended; per-event atomicity is
+preserved. This case is distinct from the vacuous-actor
+degenerate case and is handled separately per Codex P2 review:
+silently emitting `publicText`-only on a malformed-but-non-
+vacuous actor list would mask state corruption (e.g. an IG
+actor that lost its CountryId resolver), exactly the kind of
+silent degradation `feedback_no_silent_degradation` forbids.
+
+| Shape | Outcome |
+|---|---|
+| `actors.empty()` | success; `publicText` only; numeric distortion skipped |
+| `!actors.empty()` && `actors.front().country_id_code.empty()` | **`Result::failure`**; nothing appended |
+| `!actors.empty()` && country resolves in `state.countries` | success; all four keys emitted |
 
 The M6.8 `true_cause` key continues to be filtered out of the
 events.jsonl artefact in non-debug mode; the M6.9 keys are
@@ -116,16 +134,40 @@ context. No silent fallback per
 `feedback_no_silent_degradation` +
 `feedback_api_signature_expresses_failure`.
 
-Vacuous-actor case: if the match has no first-actor country
-(`inst.actors.empty()` OR `first_actor.country_id_code.empty()`),
-the three numeric distortion keys are SKIPPED but the call
-still succeeds. The `publicText` key is always emitted
-regardless. This is not a silent degradation — vacuous events
-are degenerate, not malformed; the M5.1 schema rejects them
-at load time, so the firer can only see them via hand-built
-test fixtures. The skip is documented and pinned in tests
-(see `M5.5 record_match: empty-triggers match becomes
-EventInstance with empty actors`).
+Actor-binding preflight: two distinct shapes, two distinct
+outcomes (post Codex P2 review):
+
+- **`inst.actors.empty()`** — vacuous-actor degenerate case.
+  The three numeric distortion keys are SKIPPED; the
+  `publicText` key is still emitted. The call succeeds.
+  Vacuous events are degenerate, not malformed; the M5.1
+  schema rejects them at load time, so the firer can only see
+  them via hand-built test fixtures.
+- **`!inst.actors.empty()` && `inst.actors.front().country_id_code.empty()`**
+  — MALFORMED state. A non-vacuous actor list whose first
+  actor has an empty `country_id_code` (e.g. an
+  interest-group actor whose owning-country handle did not
+  resolve at `to_actor` time). The call returns
+  `Result::failure` BEFORE any state mutation; no LogEntry
+  and no EventInstance are appended. Pre-M6.9 the firer was
+  total over this case and the save layer caught it on
+  round-trip; M6.9 promotes the firer to be strict so the
+  state corruption surfaces at fire time rather than at
+  serialise time.
+- **`!inst.actors.empty()` && first actor's country resolves
+  in `state.countries`** — normal path. `publicText` plus the
+  three numeric distortion keys are emitted; the call
+  succeeds.
+
+Tests pin all three shapes:
+- `M6.9 record_match (P2): vacuous-actor case (A) emits publicText only and succeeds`
+- `M6.9 record_match (P2): malformed case (B) — non-empty actor with empty country_id_code FAILS LOUDLY`
+- `M6.9 record_followup (P2): malformed inherited actor — non-empty with empty country_id_code FAILS LOUDLY`
+- `M6.9 record_followup (P2): vacuous parent (actors.empty()) emits publicText only and succeeds`
+- The pre-M6.9 `M5.5 record_match: IG actor with broken
+  owning-country handle leaves country_id_code empty` test was
+  the "save layer rejects on round-trip" pin; it is renamed
+  and updated to expect the new M6.9-time rejection.
 
 ## 4. M6.8 invariants preserved
 
@@ -218,6 +260,34 @@ EventInstance with empty actors`).
   per-event atomicity pin.
 - `M6.9 record_followup: distortion uses parent's first-actor
   country` — followup-chain semantics.
+
+### Unit — Codex P2 actor-binding preflight (`tests/systems/event_firer_test.cpp`)
+
+- `M6.9 record_match (P2): vacuous-actor case (A) emits
+  publicText only and succeeds` — `actors.empty()` is the
+  vacuous-actor case; numeric distortion is skipped;
+  `publicText` is still emitted; call succeeds.
+- `M6.9 record_match (P2): malformed case (B) — non-empty
+  actor with empty country_id_code FAILS LOUDLY` —
+  `!actors.empty() && actors.front().country_id_code.empty()`
+  is malformed state; Result::failure with the event id_code
+  and "malformed actor binding" in the message; no LogEntry
+  / no EventInstance appended.
+- `M6.9 record_followup (P2): malformed inherited actor —
+  non-empty with empty country_id_code FAILS LOUDLY` — same
+  shape as case B but inherited from the parent
+  EventInstance; same failure outcome with both the followup
+  and parent id_codes in the error context.
+- `M6.9 record_followup (P2): vacuous parent (actors.empty())
+  emits publicText only and succeeds` — case A on the
+  followup path.
+- The pre-M6.9 `M5.5 record_match: IG actor with broken
+  owning-country handle` test is renamed and updated to
+  `M6.9 record_match: IG actor with broken owning-country
+  handle FAILS LOUDLY` to match the new strict contract.
+  Pre-M6.9 the firer was total over this case and the save
+  layer rejected on round-trip; M6.9 surfaces the state
+  corruption at fire time.
 
 ### Integration (`tests/integration/m5_event_pipeline_test.cpp`)
 
