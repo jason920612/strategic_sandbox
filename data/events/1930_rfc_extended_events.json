@@ -223,6 +223,33 @@
       ]
     },
     {
+      "id": "student_protest",
+      "name": "Student Protest",
+      "description": "Mass student demonstrations against the regime erupt in major cities.",
+      "visible_report": "Educational institutions report wide walkouts; demonstrators occupy public squares with growing momentum.",
+      "true_cause": "Combined stability slip + interest-group radicalism crossing the student-protest thresholds satisfy the M7.9 trigger (RFC-090 §7.9).",
+      "category": "social",
+      "triggers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.40
+        },
+        {
+          "target": "interest_group.radicalism",
+          "op": "gt",
+          "value": 0.65
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.stability",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
       "id": "economic_slowdown_warning",
       "name": "Economic Slowdown Warning",
       "description": "A combined stability + legitimacy slip signals economic confidence loss.",
