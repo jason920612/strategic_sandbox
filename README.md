@@ -529,9 +529,10 @@
   change, no new artefact (still 10), no new
   `RunnerOptions` field / CLI flag, no new
   `PlayerCommandKind`, no new state field beyond
-  `EventDefinition.true_cause`, no RNG draws from
-  the event pipeline (M5-era RNG-free property
-  preserved), no rebake of M1.17 / M2 / M3 / M4 /
+  `EventDefinition.true_cause`, no RNG draws added
+  by the M6.1 schema-only PR (PR #111 later adds
+  RFC-090 §5.7 weighted event-engine draws), no
+  rebake of M1.17 / M2 / M3 / M4 /
   M5 byte-identical determinism baselines (canonical
   events still don't fire — `true_cause` is
   narrative metadata, not behaviour), no M6.2 work

@@ -100,12 +100,10 @@
 //     `--commands` script / `apply_pending` channel — not a
 //     graphical UI).
 //
-// Save / artefact context (RCR-1 era):
+// Save / artefact context:
 //
-//   save format = v17 (post-RCR-1; v16 -> v17 batched migration
-//     covers EventDefinition.weight_modifiers / options /
-//     followup_event_ids plus several non-event surfaces — the
-//     firer itself adds no new persistent field).
+//   save format is owned by the save layer; the firer itself adds no
+//     persistent schema field.
 //   artefact contract = 11 unconditional artefacts (post-RCR-1;
 //     RCR-1 added annual_world_stats.csv as the 11th — also
 //     unrelated to the firer, listed here only for context).
@@ -117,13 +115,10 @@
 //
 // Composition note:
 //
-//   The firer is the brick that runner / event_engine call as:
-//
-//       const auto matches = event_evaluator::match_events(state);
-//       event_firer::record_matches(state, matches, state.current_date);
-//
-//   The M5.7 `event_engine::tick_events` composition runs as
-//   step 7 of `monthly::tick_all_countries` (M5.8 wiring).
+//   The engine calls `record_match` after selecting one event from a
+//   per-country / per-category weighted draw, and calls
+//   `record_followup` for each selected conditional followup. Batch
+//   `record_matches` remains a low-level deterministic helper.
 
 #ifndef LEVIATHAN_SYSTEMS_EVENT_FIRER_HPP
 #define LEVIATHAN_SYSTEMS_EVENT_FIRER_HPP

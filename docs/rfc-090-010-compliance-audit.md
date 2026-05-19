@@ -252,7 +252,8 @@ deterministic reaction loop between country state and
 interest-group state — but it is **not the same scope** as
 RFC-090's original M3 multi-country simulation milestone.
 
-Concretely, on current main:
+Concretely, at the issue #105 baseline snapshot before the
+compliance recovery PRs:
 
 - `data/countries/` contains **3 country JSON files** (GER /
   FRA / JPN). RFC-090 §3.2 calls for 10 countries; §3.3 calls
@@ -338,16 +339,18 @@ That is a valid implementation milestone — a complete event
 composition helper, and monthly wiring — but it is **not the
 same scope** as RFC-090's original M5 event-engine milestone.
 
-Concretely, on current main:
+Concretely, at the issue #105 baseline snapshot before the
+compliance recovery PRs:
 
-- There is **no `WeightModifier` type and no event-weight
-  system**. RFC-090 §5.3 / §5.6 unmet. The current
+- There was **no `WeightModifier` type and no event-weight
+  system**. RFC-090 §5.3 / §5.6 unmet. The baseline
   evaluator uses an "ANY-entity-satisfies / AND across
   triggers" Boolean match, not weighted selection.
-- There is **no `EventOption` type and no event-options /
+- There was **no `EventOption` type and no event-options /
   event-choices system**. RFC-090 §5.4 / §5.8 unmet. The
-  applicator path applies a fixed `definition.effects`
-  list; there is no player-choice surface on `EventInstance`.
+  applicator path applied a fixed `definition.effects`
+  list; the later issue #112 fix adds player-choice resolution via
+  `PendingPlayerEvent` and `PlayerCommandKind::ChooseEventOption`.
 - There are **2 event definitions**, not 10. RFC-090 §5.10
   unmet. `docs/milestone-5-result.md` §5.7 acknowledges
   that the canonical events are deliberately tuned to NOT
@@ -910,13 +913,10 @@ Pointers (read the RFCs directly):
   WarDamage / InequalityProxy / WarWeariness /
   BudgetCrisis still deferred).
 
-## 7. What the RCR-1 PR explicitly does NOT do
+## 7. What the compliance recovery still does NOT do
 
-(This section was originally written for the PR #106
-governance-alignment PR; it has been rewritten for the
-RCR-1 corrective PR that landed on top.)
-
-RCR-1 deliberately does NOT:
+RCR-1 plus the issue #108 / #110 / #112 follow-up fixes deliberately
+do NOT:
 
 - Resume M6.6 work or any M6 sub-milestone. M6.6 is paused
   while the corrective PR runs; it resumes per RFC-090 §6.6
@@ -928,14 +928,14 @@ RCR-1 deliberately does NOT:
   (RFC-090 §6.8 / §6.9, separate M6 work).
 - Add UI / map visualisation / SVG renderer changes.
 - Add war or full diplomacy AI (M9 / RFC-040 territory).
-- Consume `state.rng` from any new RCR-1 system. RCR-1
-  preserves the M5 RNG-free guarantee for the event
-  engine, and the new `ai_policy` / `annual_stats` /
-  `rank_weighted_events` / `select_default_option` /
-  `resolve_followup_ids` helpers are all RNG-free.
-- Add a weighted-random event draw (the new
-  `rank_weighted_events` is the deterministic primitive;
-  a future RNG-consuming draw would sit on top of it).
+- Make the event pipeline globally RNG-free. The legacy helper
+  APIs (`rank_weighted_events`, `select_weighted_event`,
+  `select_default_option`, `resolve_followup_ids`) remain
+  deterministic, but PR #111's production `tick_events` path
+  consumes `state.rng` through `random::weighted_choice` whenever
+  a scenario produces selectable events or followups. The canonical
+  1930_minimal scenario preserves byte-identical baselines because
+  its authored events still do not match, so no draw is consumed.
 - Rewrite `rfc/RFC-090-roadmap.md` or
   `rfc/RFC-010-prototype-v0_1.md` themselves. The roadmap
   RFC stays the source of truth for the intended scope;

@@ -276,15 +276,13 @@ struct EventTrigger {
     double      value = 0.0;
 };
 
-// RCR-1: RFC-090 §5.3 WeightModifier. Per-event multiplicative-or-
-// additive adjustment to event firing weight when a target field
-// (country.* / interest_group.*, same allowlist as EventTrigger)
-// satisfies a comparison. Schema-only at the LOAD layer in RCR-1;
-// `event_evaluator::rank_weighted_events` consumes them to produce
-// a deterministic descending-weight ranking (tie-break = original
-// event vector order). No RNG-based random draw is performed —
-// RCR-1 keeps the existing match_events evaluator unchanged and
-// adds rank_weighted_events as a separate read-only helper.
+// RFC-090 §5.3 WeightModifier. Per-event additive adjustment to
+// event firing weight when a target field (country.* /
+// interest_group.*, same allowlist as EventTrigger) satisfies a
+// comparison. `event_evaluator::rank_weighted_events` computes the
+// current numeric weights; `event_engine::tick_events` consumes those
+// weights via `random::weighted_choice(state.rng, ...)` for the
+// RFC-090 §5.7 event draw.
 //
 // `target` / `op` allowlist matches EventTrigger (5 targets, 4
 // ops). `value` is the comparison threshold (finite). `weight_delta`
@@ -365,17 +363,14 @@ enum class EventOptionEffectMode {
 // second step of M6 "hidden truth / information distortion".
 // Field ordering reflects public-to-private narrative: name →
 // description → visible_report → true_cause → triggers → effects.
-// RCR-1 (RFC-090 §5.3 / §5.4 / §5.12) appended three optional
-// vectors at the end: `weight_modifiers`, `options`,
-// `followup_event_ids`. All three may be empty; pre-RCR-1 event
-// JSONs that omit them still load (loader treats them as
-// optional). Save layer (v17) requires each block to be present
-// as a JSON array (possibly empty) so save round-trip is
-// byte-stable. RCR-1 itself is schema-mostly: a thin set of
-// helpers consumes the new fields (`rank_weighted_events`,
-// `select_default_option`, `resolve_followup_ids`); the
-// canonical evaluator / firer / applicator / monthly wiring
-// stays unchanged.
+// The compliance recovery added `weight_modifiers`, `options`, and
+// `followup_event_ids`. All three may be empty; older event JSONs
+// that omit them still load (loader treats them as optional). The
+// save layer requires each block to be present as a JSON array
+// (possibly empty) so save round-trip is byte-stable. Current
+// production event flow consumes these fields through
+// `event_engine::tick_events`: weighted draw, AI/player option
+// handling, and recursive conditional followups.
 //
 // M0 had an `{ EventId id; std::string name; }` stub here; M5.1
 // upgraded it in place. `id_code` is the natural string identifier

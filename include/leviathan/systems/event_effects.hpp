@@ -1,19 +1,9 @@
 // EventEffects - apply an EventDefinition's effects against an
 // EventInstance's matched actors.
 //
-// M5.6 ships the effects-applicator skeleton: a free-function
-// bridge that takes a fired M5.4 `core::EventInstance` (produced
-// by the M5.5 firer) plus the matching M5.1 `core::EventDefinition`
-// and runs the definition's `effects` through the shared M1.5
-// policy machinery (`policy::apply_effects_to_actor`).
-//
-// M5.6 still does NOT integrate with the runner or monthly
-// pipeline, NOT change `events.jsonl` semantics, NOT add any new
-// artefact, NOT bump the save format. It is the missing
-// effects-application brick — the runner-integration sub-milestone
-// will compose evaluator (M5.2) + actor binding (M5.3) + firer
-// (M5.5) + this applicator into a `tick_events(state)` style call
-// in its own dedicated PR.
+// M5.6 introduced the base effects applicator. The current event
+// engine calls this module from `event_engine::tick_events` and from
+// `commands::dispatch_one` when a deferred player option resolves.
 //
 // Actor-selection policy (M5.6-era):
 //
@@ -47,24 +37,10 @@
 //   atomicity from M1.5 is inherited: any failure leaves state
 //   untouched.
 //
-// What M5.6 does NOT do:
-//
-//   no runner / monthly integration
-//   no events.jsonl change
-//   no log entry on apply (no state.logs append)
-//   no state.applied_commands append
-//   no new artefact (still 10)
-//   no save format bump (still v14)
-//   no per-effect actor selection (single-actor policy)
-//   no multi-actor cross-product / weighted / random selection
-//   no broader trigger ops / targets in the effect grammar
-//     (effects inherit the M1.5 grammar; that's the contract)
-//   no cooldown / historical-once gating (caller policy)
-//   no auto-firing — the caller must have already invoked
-//     event_firer::record_match (or hand-built the
-//     EventInstance) before calling apply_event_effects
-//   no new state field
-//   no event_evaluator / event_firer / scenario_loader changes
+// This module still does not decide which events fire, which option
+// is presented to the player, or which followup continues a chain.
+// Those policies live in `event_engine` / `commands`; this module
+// applies already-chosen effects with the M1.5 pre-flight contract.
 
 #ifndef LEVIATHAN_SYSTEMS_EVENT_EFFECTS_HPP
 #define LEVIATHAN_SYSTEMS_EVENT_EFFECTS_HPP
@@ -111,25 +87,23 @@ core::Result<ApplyOutcome> apply_event_effects(
     const core::EventInstance&   instance,
     const core::EventDefinition& definition);
 
-// RCR-1: RFC-090 §5.4 / §5.8 — deterministic default option
-// selector. Returns a pointer into `definition.options[0]` if the
-// options vector is non-empty, or `nullptr` if the definition has
-// no options (which mirrors the M5.6-era contract where
-// `definition.effects` was the only effect path).
+// Legacy deterministic option selector retained for tests and
+// diagnostics. Returns a pointer into `definition.options[0]` if the
+// options vector is non-empty, or `nullptr` if the definition has no
+// options.
 //
 // Pure read; never mutates `definition`. The returned pointer is
 // non-owning and stable across the call but invalidated by any
 // subsequent mutation of `definition.options`.
 //
-// Future expansion: a smarter selector could take a player choice
-// or AI heuristic. RCR-1 ships the deterministic first-option
-// rule per the user's instruction "deterministic default option
-// selection helper".
+// Production event firing does NOT use this helper: non-player
+// countries use `select_best_option_for_country`, and player-country
+// events are resolved by `PlayerCommandKind::ChooseEventOption`.
 const core::EventOption*
 select_default_option(const core::EventDefinition& definition);
 
-// RCR-1: RFC-090 §5.4 / §5.8 — apply the default option's
-// effects to the actor's country.
+// Legacy helper: apply the deterministic first option's effects to
+// the actor's country.
 //
 // Composes `select_default_option(definition)` with the M1.5 /
 // M5.6 `policy::apply_effects_to_actor` machinery. The actor is
@@ -146,14 +120,9 @@ select_default_option(const core::EventDefinition& definition);
 //     atomicity. On failure the whole call returns Result::failure
 //     with `state` unchanged.
 //
-// The applicator deliberately does NOT call `apply_event_effects`
-// in addition — `definition.effects` (the base effect list) and
-// `options[i].effects` are independent surfaces. A future runner-
-// policy that wants to fire both base + option-default effects
-// would call this helper alongside `apply_event_effects`. RCR-1
-// ships the deterministic primitive; runner wiring is intentionally
-// out of scope (consistent with the rest of the event-engine
-// surface in this corrective batch).
+// The production engine uses `apply_option_effects_with_mode`
+// instead so authors can choose OptionOnly / BaseThenOption /
+// OptionThenBase. Keep this helper out of the main event path.
 core::Result<ApplyOutcome> apply_default_option_effects(
     core::GameState&             state,
     const core::EventInstance&   instance,
@@ -202,7 +171,7 @@ apply_option_effects_with_mode(
     const core::EventOption&     option,
     core::EventOptionEffectMode  mode);
 
-// RCR-1: RFC-090 §5.12 — followup-event-id resolver. Given a
+// RFC-090 §5.12 — followup-event-id resolver. Given a
 // definition's `followup_event_ids` vector, returns the matching
 // `state.events` indices for every id_code that resolves
 // successfully. Unresolvable id_codes are skipped (the M5.4-era
@@ -220,14 +189,10 @@ apply_option_effects_with_mode(
 //   - `event_firer::record_followup` is the matching firing
 //     primitive: takes one resolved followup definition + the
 //     parent instance + a date, and appends one EventInstance
-//     to event_history plus one `event_fired` LogEntry to
-//     state.logs (RCR-1 deterministic chain firing).
-//   - Automatic recursive runner cascade (looping
-//     record_followup over resolved chains every tick) remains
-//     out of scope for RCR-1 — wiring it into
-//     `event_engine::tick_events` would change M5.7
-//     snapshot-evaluation semantics and is intentionally
-//     deferred.
+//     to event_history plus one `event_fired` LogEntry to state.logs.
+//   - `event_engine::tick_events` and
+//     `event_engine::recurse_followups_from_event` own recursive,
+//     conditional followup selection and depth/cycle guards.
 std::vector<std::size_t>
 resolve_followup_ids(const core::GameState&       state,
                      const core::EventDefinition& definition);

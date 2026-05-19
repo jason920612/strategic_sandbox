@@ -23,6 +23,7 @@
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/ids.hpp"
 #include "leviathan/systems/ai_policy.hpp"
+#include "leviathan/systems/effect_desire.hpp"
 #include "leviathan/systems/policy_system.hpp"
 
 using leviathan::core::ActivePolicy;
@@ -36,6 +37,7 @@ using leviathan::core::InterestGroupState;
 using leviathan::core::PolicyData;
 using leviathan::core::PolicyEffect;
 namespace ai = leviathan::systems::ai_policy;
+namespace desire = leviathan::systems::effect_desire;
 
 namespace {
 
@@ -241,6 +243,49 @@ TEST_CASE("Issue #110: military_strength disparity also drives military pick"
     // increase_military_budget score 0.03 × 0.4 = 0.012, dominating
     // the near-zero alternatives.
     CHECK(r.value()[0].policy_id_code == "increase_military_budget");
+}
+
+TEST_CASE("Issue #112 residual: stronger friendly neighbour does NOT create military-gap desire") {
+    auto target = make_country_with_id(0, "POL");
+    target.stability         = 0.775;
+    target.legitimacy        = 0.775;
+    target.gdp               = 1000.0;
+    target.budget_balance    = 0.0;
+    target.legal_tax_burden  = 0.20;
+    target.threat_perception = 0.0;
+    target.military_strength = 10.0;
+
+    auto ally = make_country_with_id(1, "FRA");
+    ally.military_strength = 90.0;
+
+    CountryRelation friendly;
+    friendly.from         = CountryId{1};
+    friendly.to           = CountryId{0};
+    friendly.relationship = 0.80;
+    friendly.threat       = 0.0;
+
+    auto state = make_state_with(
+        {target, std::move(ally)}, realistic_policy_set());
+    state.relationships.push_back(friendly);
+    state.player_country = CountryId{1};
+
+    CHECK(desire::for_country(state.countries[0],
+                              "country.military_power",
+                              state) == doctest::Approx(0.0));
+
+    const auto r = ai::select_policies(state);
+    REQUIRE(r);
+    CHECK(r.value().empty());
+
+    friendly.relationship = -0.20;
+    state.relationships[0] = friendly;
+    CHECK(desire::for_country(state.countries[0],
+                              "country.military_power",
+                              state) == doctest::Approx(0.4));
+    const auto hostile = ai::select_policies(state);
+    REQUIRE(hostile);
+    REQUIRE(hostile.value().size() >= 1u);
+    CHECK(hostile.value()[0].policy_id_code == "increase_military_budget");
 }
 
 TEST_CASE("Issue #110: high-radicalism interest groups sway AI toward welfare") {
