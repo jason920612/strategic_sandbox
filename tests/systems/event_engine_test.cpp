@@ -523,7 +523,8 @@ TEST_CASE("Hardening: tick_events FAILS LOUDLY on malformed modifier target") {
     const auto r = eng::tick_events(s);
     REQUIRE(r.failed());
     CHECK(r.error().find("country.notarealfield") != std::string::npos);
-    CHECK(r.error().find("not in the country/interest_group allowlist")
+    CHECK(r.error().find("not in the country / interest_group /"
+                         " faction allowlist")
           != std::string::npos);
     CHECK(s.rng.counter == counter_before);
 }

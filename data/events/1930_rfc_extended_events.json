@@ -248,6 +248,28 @@
           "value": -0.03
         }
       ]
+    },
+    {
+      "id": "faction_radicalism_crisis",
+      "name": "Faction Radicalism Crisis",
+      "description": "A faction's radicalism has climbed to a politically dangerous level.",
+      "visible_report": "Reports describe an organised faction agitating openly against the current direction of policy.",
+      "true_cause": "A FactionState.radicalism has crossed the faction-radicalism-crisis threshold (M7.2, RFC-090 §7.2).",
+      "category": "political",
+      "triggers": [
+        {
+          "target": "faction.radicalism",
+          "op": "gt",
+          "value": 0.85
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.stability",
+          "op": "add",
+          "value": -0.01
+        }
+      ]
     }
   ]
 }

@@ -2504,6 +2504,11 @@ TEST_CASE("M5.4 deserialize: bad fired_on date rejected") {
 }
 
 TEST_CASE("M5.4 deserialize: actor kind not in allowlist rejected") {
+    // M7.2 (RFC-090 §7.2) widened the actor-kind allowlist to
+    // {"country", "interest_group", "faction"}. The original
+    // M5.4 test used "faction" as the negative case; post-M7.2
+    // that string is valid. The negative example here is now
+    // a string that has never been in the allowlist.
     const std::string text = R"({
         "save_version": 18,
         "rng_algorithm_version": 1,
@@ -2518,14 +2523,14 @@ TEST_CASE("M5.4 deserialize: actor kind not in allowlist rejected") {
         "event_history": [
           { "event_id_code": "x", "fired_on": "1930-03-15",
             "actors": [
-              { "kind": "faction", "id_code": "GER_mil",
+              { "kind": "media_org", "id_code": "GER_press",
                 "country_id_code": "GER", "index": 0 }
             ] }
         ]
     })";
     const auto r = ss::deserialize(text);
     REQUIRE(r.failed());
-    CHECK(r.error().find("'faction' is not in the M5.4 allowlist")
+    CHECK(r.error().find("'media_org' is not in the M5.4 allowlist")
           != std::string::npos);
 }
 

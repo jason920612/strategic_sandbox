@@ -1530,12 +1530,17 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
     // load-time rules — required target/op strings, finite
     // value, no target/op allowlist at load). Cross-save
     // duplicate id_code rejected.
+    // Trigger-target allowlist at the save layer mirrors the
+    // scenario_loader allowlist. M7.2 (RFC-090 §7.2) adds
+    // `faction.radicalism` so saves carrying faction-radicalism
+    // events round-trip without rejection.
     static const std::vector<std::string> kTriggerTargetsSave = {
         "country.stability",
         "country.legitimacy",
         "country.government_authority.bureaucratic_compliance",
         "interest_group.radicalism",
         "interest_group.loyalty",
+        "faction.radicalism",  // M7.2 (RFC-090 §7.2)
     };
     static const std::vector<std::string> kTriggerOpsSave = {
         "lt", "lte", "gt", "gte",
@@ -1962,14 +1967,19 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
     // outright) fails loudly rather than silently dropping any
     // hand-authored M5.4 history fixtures or future M5.x firer
     // output. Each entry: { event_id_code, fired_on, actors[] }.
-    // Actor kind allowlist {"country", "interest_group"}; id_code
-    // and country_id_code required non-empty; index required
-    // non-negative integer. M5.4 does NOT cross-check that
-    // event_id_code resolves to an entry in state.events — that
-    // would prevent the legitimate "load this save into a
-    // different scenario manifest" case.
+    // Actor kind allowlist {"country", "interest_group", "faction"};
+    // id_code and country_id_code required non-empty; index
+    // required non-negative integer. M7.2 (RFC-090 §7.2) adds
+    // "faction" to the allowlist so events bound to factions can
+    // round-trip (extending the allowlist with a new value is
+    // backward-compatible: pre-M7.2 saves do not carry "faction"
+    // actors, and post-M7.2 saves still parse the older two
+    // kinds). M5.4 does NOT cross-check that event_id_code
+    // resolves to an entry in state.events — that would prevent
+    // the legitimate "load this save into a different scenario
+    // manifest" case.
     static const std::vector<std::string> kEventHistoryActorKindsSave = {
-        "country", "interest_group",
+        "country", "interest_group", "faction",   // M7.2 adds "faction"
     };
     auto is_actor_kind_allowed = [](const std::string& v) {
         for (const auto& s : kEventHistoryActorKindsSave) {

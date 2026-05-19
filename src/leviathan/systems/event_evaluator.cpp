@@ -52,6 +52,18 @@ double pick_interest_group_value(const std::string&              target,
     return std::nan("");
 }
 
+// M7.2 (RFC-090 §7.2): project a target string + a faction
+// into the faction-side double it names. Returns nan for
+// non-faction targets. Only `faction.radicalism` is in the
+// M7.2 allowlist; `faction.loyalty` / `faction.support` /
+// `faction.influence` remain unreachable until a future
+// sub-milestone widens the allowlist.
+double pick_faction_value(const std::string&        target,
+                          const core::FactionState& f) {
+    if (target == "faction.radicalism") { return f.radicalism; }
+    return std::nan("");
+}
+
 bool target_is_country_scope(const std::string& target) {
     return target == "country.stability"
         || target == "country.legitimacy"
@@ -61,6 +73,14 @@ bool target_is_country_scope(const std::string& target) {
 bool target_is_interest_group_scope(const std::string& target) {
     return target == "interest_group.radicalism"
         || target == "interest_group.loyalty";
+}
+
+// M7.2 (RFC-090 §7.2): faction.* targets bind to
+// `state.factions`. Only one field is in the M7.2 allowlist;
+// the predicate is small but documented as a separate function
+// for parity with the country / interest_group scope predicates.
+bool target_is_faction_scope(const std::string& target) {
+    return target == "faction.radicalism";
 }
 
 // M5.3: find the index of the first country (in vector order)
@@ -94,6 +114,27 @@ first_interest_group_index_satisfying(const core::GameState&    state,
     for (std::size_t i = 0; i < state.interest_groups.size(); ++i) {
         const double v = pick_interest_group_value(
             trig.target, state.interest_groups[i]);
+        if (op_compare(trig.op, v, trig.value)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+// M7.2: find the index of the first faction (in vector order)
+// that satisfies the trigger; returns std::nullopt if none do
+// or if the target is not faction-scoped. Mirrors the M5.3
+// IG variant in shape so the existing ANY-entity-satisfies
+// aggregation stays consistent.
+std::optional<std::size_t>
+first_faction_index_satisfying(const core::GameState&    state,
+                               const core::EventTrigger& trig) {
+    if (!target_is_faction_scope(trig.target)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < state.factions.size(); ++i) {
+        const double v = pick_faction_value(
+            trig.target, state.factions[i]);
         if (op_compare(trig.op, v, trig.value)) {
             return i;
         }
@@ -144,6 +185,28 @@ ig_index_satisfying_for(const core::GameState&    state,
     return std::nullopt;
 }
 
+// M7.2 (RFC-090 §7.2): per-country scoped faction satisfaction.
+// Mirrors `ig_index_satisfying_for` shape so issue #112's
+// "one country's match cannot bleed into another's pool" rule
+// continues to hold for the new faction-scoped trigger.
+std::optional<std::size_t>
+faction_index_satisfying_for(const core::GameState&    state,
+                             core::CountryId           cid,
+                             const core::EventTrigger& trig) {
+    if (!target_is_faction_scope(trig.target)) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < state.factions.size(); ++i) {
+        const auto& f = state.factions[i];
+        if (f.country != cid) { continue; }
+        const double v = pick_faction_value(trig.target, f);
+        if (op_compare(trig.op, v, trig.value)) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 bool trigger_matches(const core::GameState&    state,
@@ -156,6 +219,9 @@ bool trigger_matches(const core::GameState&    state,
     }
     if (target_is_interest_group_scope(trig.target)) {
         return first_interest_group_index_satisfying(state, trig).has_value();
+    }
+    if (target_is_faction_scope(trig.target)) {
+        return first_faction_index_satisfying(state, trig).has_value();
     }
     return false;
 }
@@ -190,6 +256,20 @@ trigger_actor(const core::GameState&    state,
         a.kind    = TriggerActorKind::InterestGroup;
         a.id_code = g.id_code;
         a.country = g.country;
+        a.index   = *idx;
+        return a;
+    }
+    if (target_is_faction_scope(trig.target)) {
+        const auto idx =
+            first_faction_index_satisfying(state, trig);
+        if (!idx.has_value()) {
+            return std::nullopt;
+        }
+        const auto& f = state.factions[*idx];
+        TriggerActor a;
+        a.kind    = TriggerActorKind::Faction;
+        a.id_code = f.id_code;
+        a.country = f.country;
         a.index   = *idx;
         return a;
     }
@@ -286,6 +366,22 @@ evaluate_match_for_country(const core::GameState&       state,
             te.actor.id_code = g.id_code;
             te.actor.country = g.country;
             te.actor.index   = *idx;
+        } else if (target_is_faction_scope(trig.target)) {
+            // M7.2 (RFC-090 §7.2): faction.* triggers bind to
+            // factions whose owning country matches `country_id`.
+            // Per-country scoping mirrors the interest_group.*
+            // path so issue #112's "one country's match cannot
+            // bleed into another's pool" rule continues to hold.
+            const auto idx =
+                faction_index_satisfying_for(state, country_id, trig);
+            if (!idx.has_value()) {
+                return std::nullopt;
+            }
+            const auto& f = state.factions[*idx];
+            te.actor.kind    = TriggerActorKind::Faction;
+            te.actor.id_code = f.id_code;
+            te.actor.country = f.country;
+            te.actor.index   = *idx;
         } else {
             return std::nullopt;
         }
@@ -335,7 +431,8 @@ rank_weighted_events(const core::GameState& state) {
     };
     const auto valid_target = [](const std::string& target) {
         return target_is_country_scope(target)
-            || target_is_interest_group_scope(target);
+            || target_is_interest_group_scope(target)
+            || target_is_faction_scope(target);  // M7.2 (RFC-090 §7.2)
     };
 
     for (std::size_t i = 0; i < state.events.size(); ++i) {
@@ -360,7 +457,8 @@ rank_weighted_events(const core::GameState& state) {
                     "rank_weighted_events: event '" + def.id_code +
                     "' weight_modifiers[" + std::to_string(mi) +
                     "].target = '" + wm.target +
-                    "' is not in the country/interest_group allowlist");
+                    "' is not in the country / interest_group /"
+                    " faction allowlist");
             }
             if (!valid_op(wm.op)) {
                 return R::failure(

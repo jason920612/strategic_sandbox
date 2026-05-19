@@ -73,16 +73,32 @@
 > started.** Issues #105 / #108 / #110 / #112 stay open
 > until the reviewer confirms strict compliance.
 
-- Phase: **Milestone 6 — Hidden truth /
-  information distortion (M6 CLOSEOUT AUDIT RUN — M6
-  REMAINS OPEN, RFC-090 §M6).**
-  M0 / M1 / M2 / M3 / M4 / M5 all closed; M6.1 – M6.9
-  all shipped; the M6 closeout audit has now run
-  (`docs/m6-closeout-audit.md`) and explicitly does NOT
-  close M6 — see §1 of the audit doc and §9 for the
-  remaining-blockers list. M6 follows RFC-090 §M6
-  (隱藏真相與資訊失真): the player will not always see
-  the truth. Shipped so far:
+- Phase: **Milestone 7 — Faction deepening (IN PROGRESS,
+  RFC-090 §M7).** M0 / M1 / M2 / M3 / M4 / M5 all
+  closed; M6.1 – M6.9 + M6 closeout audit shipped but
+  **M6 REMAINS OPEN** (`docs/m6-closeout-audit.md`);
+  M7 work has started — **M7.1 加入派系要求** lives on
+  PR #119, **M7.2 加入派系激進度事件** lives on this
+  branch (`feature/m7-02-faction-radicalism-events`).
+  M7.2 extends the event-engine trigger-target
+  allowlist with `faction.radicalism`, adds a
+  `TriggerActorKind::Faction` variant, and authors one
+  canonical `faction_radicalism_crisis` event in
+  `data/events/1930_rfc_extended_events.json` (per
+  RFC-090 §7.2 strict reading: only `faction.radicalism`
+  is added; other faction fields stay out of the
+  allowlist until a future sub-milestone authorises
+  them). Save schema version unchanged by M7.2 itself
+  (the actor-kind allowlist extension is
+  backward-compatible).
+
+- Phase (historical, RFC-090 §M6): **Hidden truth /
+  information distortion.** M6.1 – M6.9 all shipped;
+  the M6 closeout audit ran (`docs/m6-closeout-audit.md`)
+  and explicitly does NOT close M6 — see §1 of the
+  audit doc and §9 for the remaining-blockers list.
+  M6 follows RFC-090 §M6 (隱藏真相與資訊失真): the
+  player will not always see the truth. Shipped so far:
   - **M6.1** added a required non-empty `true_cause`
     string field on `core::EventDefinition` (save
     v14 → v15).
@@ -228,7 +244,40 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped change: **M6 closeout audit +
+- Latest shipped change on this branch: **M7.2 — 加入派系
+  激進度事件** (faction-radicalism events;
+  RFC-090 §7.2 + RFC-020 §6 / §7). Second M7
+  sub-milestone (M7.1 lives on PR #119). Extends the
+  event-engine trigger-target allowlist with
+  `faction.radicalism`; adds `TriggerActorKind::Faction`
+  + `faction_index_satisfying_for` per-country scoping;
+  routes `Faction` trigger actors through
+  `event_firer::to_actor` as `"faction"` kind strings;
+  extends the save-layer `event_history` actor-kind
+  allowlist with `"faction"` (backward-compatible — **no
+  save schema version bump in M7.2 itself**). One
+  canonical `faction_radicalism_crisis` event added to
+  `data/events/1930_rfc_extended_events.json` (fires on
+  `faction.radicalism > 0.85`). Game-model threshold
+  per RFC-080 §1 / §11; direction grounding cited in
+  M7.1's design note (Alesina-Perotti). **No new
+  player-facing command, no new CLI flag, no new
+  artefact, no new RFC-090 milestone feature beyond
+  §7.2.** Canonical `1930_minimal` 365-day sweep:
+  `Sanity issues : 0`; compliance `1930_rfc_compliance`
+  25 567-day sweep: `Sanity issues : 0` — neither
+  scenario's faction radicalism reaches 0.85 in 70
+  years, so the new event is not fired by either
+  sweep; the wiring is exercised by 10 new unit tests
+  in `tests/systems/faction_radicalism_events_test.cpp`
+  against hand-built above-threshold states. **1311
+  cases / 96 264 assertions / 0 failed**, verified via
+  direct `build/bin/Debug/leviathan_tests.exe` run per
+  `feedback_ctest_masks_doctest`. **No "M6 closed"
+  claim** — M6 remains OPEN per
+  `docs/m6-closeout-audit.md` §1. Design note:
+  `docs/m7-2-faction-radicalism-events.md`. Previous
+  landed change (still on main): **M6 closeout audit +
   representative RFC-080 §8 residual implementation
   (M6 REMAINS OPEN).** Not a numbered RFC-090
   sub-milestone — the M6.1 – M6.9 numbered sequence
