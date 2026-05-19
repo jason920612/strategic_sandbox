@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <limits>
 #include <string>
 
 #include "leviathan/core/entities.hpp"
@@ -240,6 +242,140 @@ TEST_CASE("M6.6 compute_for_country: out-of-range inputs clamped defensively") {
     REQUIRE(r_over);
     CHECK(r_under.value() == doctest::Approx(ia::kMinInformationAccuracy));
     CHECK(r_over.value()  == doctest::Approx(1.0));
+}
+
+// =====================================================================
+// M6.6 non-finite rejection: NaN / +Inf / -Inf inputs return failure
+// =====================================================================
+//
+// `std::clamp(NaN, 0.0, 1.0)` returns NaN, so a silent clamp would
+// leak a NaN accuracy past the documented closed range
+// [kMinInformationAccuracy, 1.0]. The helper rejects non-finite
+// intelligence inputs with `Result::failure` so a corrupted state
+// surfaces loudly instead of poisoning downstream consumers
+// (M6.9's reported_value + bias_noise composition).
+
+TEST_CASE("M6.6 compute_for_country: NaN intelligence_capability rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/std::numeric_limits<double>::quiet_NaN(),
+        /*budget_intelligence*/   0.3));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("GER") != std::string::npos);
+    CHECK(r.error().find("intelligence_capability")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: +Inf intelligence_capability rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/std::numeric_limits<double>::infinity(),
+        /*budget_intelligence*/   0.3));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("intelligence_capability")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: -Inf intelligence_capability rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/-std::numeric_limits<double>::infinity(),
+        /*budget_intelligence*/   0.3));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("intelligence_capability")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: NaN budget.intelligence rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/0.5,
+        /*budget_intelligence*/   std::numeric_limits<double>::quiet_NaN()));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("GER") != std::string::npos);
+    CHECK(r.error().find("budget.intelligence")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: +Inf budget.intelligence rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/0.5,
+        /*budget_intelligence*/   std::numeric_limits<double>::infinity()));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("budget.intelligence")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: -Inf budget.intelligence rejected") {
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/0.5,
+        /*budget_intelligence*/   -std::numeric_limits<double>::infinity()));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("budget.intelligence")
+          != std::string::npos);
+    CHECK(r.error().find("not finite") != std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: capability NaN rejected before budget NaN") {
+    // When both inputs are non-finite, the helper short-circuits on
+    // the first (intelligence_capability) so the error message
+    // names that field rather than budget.intelligence — keeps the
+    // diagnostic deterministic.
+    GameState s;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/std::numeric_limits<double>::quiet_NaN(),
+        /*budget_intelligence*/   std::numeric_limits<double>::quiet_NaN()));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("intelligence_capability")
+          != std::string::npos);
+    CHECK(r.error().find("budget.intelligence")
+          == std::string::npos);
+}
+
+TEST_CASE("M6.6 compute_for_country: non-finite failure does not mutate state") {
+    // Even when the helper bails out via non-finite rejection, the
+    // pure-read contract holds. Pin the two raw intelligence
+    // fields before/after the failing call — save-layer serialize
+    // is avoided here because nlohmann::json's behaviour on
+    // non-finite doubles is implementation-defined and unrelated
+    // to what we're trying to assert.
+    GameState s;
+    const double bad_cap = std::numeric_limits<double>::quiet_NaN();
+    const double good_bud = 0.3;
+    s.countries.push_back(make_country(
+        0, "GER",
+        /*intelligence_capability*/bad_cap,
+        /*budget_intelligence*/   good_bud));
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    // NaN cannot be compared with == so use std::isnan; the budget
+    // field is finite and stable.
+    CHECK(std::isnan(
+        s.countries[0].government_authority.intelligence_capability));
+    CHECK(s.countries[0].budget.intelligence ==
+          doctest::Approx(good_bud));
+    CHECK(s.countries[0].id_code == "GER");
 }
 
 TEST_CASE("M6.6 compute_for_country: does NOT consume corruption (M6.7 scope)") {

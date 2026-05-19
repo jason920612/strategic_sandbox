@@ -11,9 +11,9 @@
 //        apparatus at producing accurate reports". Direct signal.
 //   2. country.budget.intelligence
 //        [0, 1] — "share of the budget allocated to intelligence".
-//        Funding side; would feed capability over time once a
-//        future M-driver wires it. Currently read directly because
-//        no such driver exists yet.
+//        Per RFC-030 §4 the intelligence budget raises information
+//        accuracy directly; M6.6 reads it as a second input
+//        alongside intelligence_capability.
 //
 // Composition (weighted sum, both inputs in [0, 1]):
 //
@@ -28,22 +28,26 @@
 //
 // where `kMinAccuracy = 0.4` (a country with literally zero
 // intelligence is still not flat-blind — the player gets a
-// degraded report, not nothing). M6.7 will further reduce
-// accuracy via the `-corruption` term and may push the effective
-// floor below 0.4 when corruption is high; M6.9 will be the
-// first downstream caller (consuming accuracy through
-// `reported_value::from_true_value` + `bias_noise::sample_for_event`
-// in the non-debug hiding path).
+// degraded report, not nothing).
 //
-// What M6.6 deliberately does NOT do (per the M6 invariant chain
-// the user pinned):
+// M6.6 is a stripped-down subset of RFC-080 §8 (full formula:
+// `BaseAccuracy + IntelligenceCapacity + MediaFreedomSignal +
+// BureaucraticProfessionalism + AuditCapacity - Corruption -
+// FactionCapture - LeaderIsolation - LocalAutonomyOpacity`).
+// M6.6 ships only the BaseAccuracy + IntelligenceCapacity terms
+// (with capability split into `intelligence_capability` weight
+// and `budget.intelligence` weight). The remaining RFC-080 §8
+// terms are deferred to future RFC-090 sub-milestones — RFC-090
+// §6.7 covers the corruption term; the other terms have no
+// RFC-090 task assigned yet.
+//
+// What M6.6 deliberately does NOT do:
 //
 //   no save schema bump — both fields already exist on CountryState
 //   no new state field
-//   no caller wiring (no system reads compute_for_country yet;
-//     M6.9 is the first caller)
-//   no corruption term (M6.7)
-//   no debug-mode bypass (M6.8)
+//   no caller wiring (compute_for_country has no consumer yet)
+//   no corruption term (RFC-090 §6.7 scope)
+//   no debug-mode bypass (RFC-090 §6.8 scope)
 //   no event_evaluator / event_firer / event_effects / event_engine
 //     / monthly_pipeline / runner change
 //   no RNG consumption (kept deterministic — same state +
@@ -61,6 +65,7 @@
 #include "leviathan/systems/information_accuracy.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 
@@ -83,14 +88,39 @@ core::Result<double> compute_for_country(
     const auto& c = state.countries[
         static_cast<std::size_t>(country.value())];
 
+    // M6.6: reject non-finite intelligence inputs before clamping.
+    // `std::clamp(NaN, 0, 1)` returns NaN — a silent clamp would
+    // leak a NaN accuracy past the documented closed range and
+    // mask a state-corruption bug. The load layer already requires
+    // finite ratios; reaching this branch means the state was
+    // mutated to a bad value at runtime, which the caller needs to
+    // see surfaced as a failure.
+    const double raw_cap =
+        c.government_authority.intelligence_capability;
+    const double raw_bud = c.budget.intelligence;
+    if (!std::isfinite(raw_cap)) {
+        return core::Result<double>::failure(
+            "information_accuracy::compute_for_country: "
+            "country '" + c.id_code +
+            "' government_authority.intelligence_capability "
+            "is not finite");
+    }
+    if (!std::isfinite(raw_bud)) {
+        return core::Result<double>::failure(
+            "information_accuracy::compute_for_country: "
+            "country '" + c.id_code +
+            "' budget.intelligence is not finite");
+    }
+
     // M6.6: weighted combination of the two intelligence inputs.
     // Clamp each input to [0, 1] defensively — the load layer
     // already pins ratios in range, but a hand-built test fixture
     // or a future schema change shouldn't be able to push the
-    // result outside [kMinInformationAccuracy, 1.0].
-    const double cap = std::clamp(
-        c.government_authority.intelligence_capability, 0.0, 1.0);
-    const double bud = std::clamp(c.budget.intelligence, 0.0, 1.0);
+    // result outside [kMinInformationAccuracy, 1.0]. Non-finite
+    // inputs were already rejected above, so clamp here only
+    // narrows finite out-of-range values.
+    const double cap = std::clamp(raw_cap, 0.0, 1.0);
+    const double bud = std::clamp(raw_bud, 0.0, 1.0);
     const double intel_score =
         kInformationAccuracyCapabilityWeight * cap +
         kInformationAccuracyBudgetWeight     * bud;

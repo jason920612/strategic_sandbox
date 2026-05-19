@@ -32,6 +32,17 @@ future schema drift). The result is then clamped one more time
 into `[kMinInformationAccuracy, 1.0] = [0.4, 1.0]` for the same
 defensive reason.
 
+Non-finite inputs are handled separately. `std::clamp(NaN, 0, 1)`
+returns NaN, so the helper first checks each raw intelligence
+input with `std::isfinite` and returns `Result::failure` (naming
+the offending `country.id_code` and the offending field) if
+either value is NaN or ±Inf. This prevents a corrupted state
+from leaking a NaN accuracy past the documented closed range and
+poisoning the downstream consumer (M6.4 `reported_value::from_true_value`,
+which propagates the NaN into reported numeric values). Finite
+out-of-range values still clamp defensively — only non-finite
+inputs fail loudly.
+
 Two existing CountryState fields feed the formula:
 
 - `country.government_authority.intelligence_capability`
@@ -84,29 +95,38 @@ The naive interpretation of RFC-090 §6.6 ("加入情報預算影響") is
 `accuracy = intel_score` directly. M6.6 deliberately wraps that
 in `0.4 + 0.6 × intel_score`:
 
-- A country with literally zero intelligence apparatus should
-  still get a degraded but interpretable report, not a complete
-  blackout. The M6.5 bias / noise primitive layers on top of the
-  M6.6 accuracy, and a zero-floor here would collapse the noise
-  band's signal too aggressively (the player would receive
-  pure-noise reports indistinguishable from random data).
-- M6.7 corruption is the *explicit* mechanism for pushing the
-  visible report below the M6.6 floor — corruption is the
-  "intentional manipulation by inside actors" surface, distinct
-  from "lack of intelligence capacity to produce a report."
-  Keeping the floor at 0.4 in M6.6 alone preserves that
-  distinction.
+- RFC-080 §8 lays out the full accuracy formula starting with a
+  `BaseAccuracy` term: `BaseAccuracy + IntelligenceCapacity +
+  MediaFreedomSignal + BureaucraticProfessionalism +
+  AuditCapacity - Corruption - FactionCapture - LeaderIsolation
+  - LocalAutonomyOpacity`. The M6.6 affine wrap reserves the 0.4
+  floor as that BaseAccuracy contribution — a country with no
+  intelligence apparatus still gets a baseline-grade report
+  rather than a complete blackout.
+- The 0.6 multiplier on `intel_score` keeps the per-input
+  contribution bounded in `[0, 0.6]`, leaving headroom for the
+  remaining RFC-080 §8 terms when their own RFC-090
+  sub-milestones land (RFC-090 §6.7 covers corruption; the
+  other terms have no §M6 task assigned yet). Sub-milestones
+  that *subtract* from accuracy can push the effective result
+  below the M6.6 floor — only the M6.6 contribution itself
+  stays at or above 0.4.
 
 ## 4. Composition with the M6 pipeline
 
 ```
-M6.3 helper (NOW M6.6 body)          M6.4 reported_value           M6.5 bias_noise          M6.9 non-debug hiding (first caller)
-information_accuracy::                reported_value::               bias_noise::             consumes accuracy +
-compute_for_country(state, country)   from_true_value(true, acc)    sample_for_event(...)    reported + noise to hide
+M6.3 helper (NOW M6.6 body)          M6.4 reported_value           M6.5 bias_noise          RFC-090 §6.9 (future)
+information_accuracy::                reported_value::               bias_noise::             composes M6.4 reported +
+compute_for_country(state, country)   from_true_value(true, acc)    sample_for_event(...)    M6.5 noise to hide
   ↳ returns accuracy ∈ [0.4, 1.0]      ↳ returns true × accuracy     ↳ returns deterministic   visible_report toward
                                                                        hash noise in           true_cause
                                                                        [-amp, +amp]
 ```
+
+`compute_for_country` is the upstream accuracy producer; M6.4
+`from_true_value` is the only direct consumer. M6.5
+`sample_for_event` runs in parallel and does *not* depend on
+accuracy.
 
 M6.4's reported-value test was rewritten to assert the M6.6
 contract: a country with maxed intelligence
@@ -138,8 +158,10 @@ The M6.6 PR strictly does NOT:
 - modify the M6.5 bias / noise hash design. The noise primitive
   uses its own FNV-1a + splitmix64 path (per M6.5's load-bearing
   decision); M6.6 doesn't touch it.
-- add a `compute_for_event` variant. The event-actor lookup is
-  M6.9 scope.
+- add a `compute_for_event` variant. RFC-090 §6.6's task is the
+  per-country influence; a per-event helper would belong to
+  whichever future sub-milestone wires the helper into the
+  event pipeline.
 - mutate any scenario / data file. The compliance scenario's
   20-country fixture already authors both intelligence inputs
   from its 1930 baseline values; M6.6 reads what's already
@@ -147,9 +169,9 @@ The M6.6 PR strictly does NOT:
 
 ## 6. Verification
 
-- **1208 doctest cases / 64169 assertions** (verified via direct
+- **1216 doctest cases / 64196 assertions** (verified via direct
   `leviathan_tests.exe` per the `feedback_ctest_masks_doctest`
-  rule). The M6.6 test set is 18 cases:
+  rule). The M6.6 test set is 26 cases:
   - maxed-input → 1.0; zero-input → 0.4
   - pinned affine formula across seven `(cap, bud)` samples
   - range invariant over a swept `(cap, bud)` grid
@@ -158,6 +180,16 @@ The M6.6 PR strictly does NOT:
   - capability weight dominates budget weight
   - monotonic in both axes (sweep test, prev ≤ current)
   - out-of-range inputs clamped defensively (negative + >1)
+  - **non-finite intelligence_capability rejected** for NaN /
+    +Inf / -Inf — error message names the offending country
+    `id_code` and the offending field
+  - **non-finite budget.intelligence rejected** for NaN /
+    +Inf / -Inf — error message names the offending country
+    `id_code` and the offending field
+  - **capability-NaN short-circuits before budget-NaN** so the
+    failure message is deterministic when both inputs are bad
+  - **non-finite failure does not mutate state** (raw field
+    values unchanged after a failing call)
   - does NOT consume corruption (M6.7 scope) — two states
     differing only in corruption return identical accuracy
   - preserved validation surface: invalid CountryId / empty
@@ -193,9 +225,12 @@ The M6.6 PR strictly does NOT:
 - **No save format bump unless adding persistent field**: per
   `feedback_save_version`, M6.6 reads two existing fields and
   adds none, so the save schema stays at v18.
-- **Helper-only is fine**: M6.6 deliberately ships the body
-  without wiring a consumer; M6.9 will be the first downstream
-  caller. The corrective-batch standard of "behaviour observable
-  from an ordinary headless run" applies once a consumer wires
-  in (M6.9). For M6.6 alone, the helper is observable from tests
-  and reachable via the public API.
+- **Helper-only vs. wired behaviour**: per `feedback_rfc_is_contract`,
+  an RFC item is complete only when wired into ordinary
+  simulation. RFC-090 §6.6 covers the *intelligence-budget
+  influence on `information_accuracy`* only; the §M6 family as
+  a whole is wired when RFC-090 §6.9 (`非 debug 模式隱藏真相`)
+  consumes the accuracy in normal play. M6.6 on its own is
+  observable through tests and the public API; the audit-doc
+  row for §6.6 should mark as wired only when a downstream
+  caller exists.

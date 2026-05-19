@@ -139,11 +139,12 @@
   maxed intelligence on both axes returns the old
   no-distortion ceiling (1.0); a country with zero
   intelligence capability AND zero intelligence budget
-  hits the new floor (0.4) — degraded but not blank, so
-  the M6.5 bias / noise primitive that will layer on top
-  retains a signal band. New public header constants
-  expose every load-bearing number for tests + future
-  M6.7 / M6.9 callers: `kMinInformationAccuracy = 0.4`,
+  hits the new floor (0.4) — degraded but not blank,
+  matching RFC-080 §8's `BaseAccuracy` slot in the full
+  accuracy formula (`BaseAccuracy + IntelligenceCapacity +
+  ... - Corruption - ...`). New public header constants
+  expose every load-bearing number:
+  `kMinInformationAccuracy = 0.4`,
   `kInformationAccuracyCapabilityWeight = 0.7`,
   `kInformationAccuracyBudgetWeight = 0.3`. The
   `kPlaceholderInformationAccuracy = 1.0` constant
@@ -158,47 +159,54 @@
   **No production caller wired.** `compute_for_country`
   remains uncalled outside tests — `event_evaluator` /
   `event_firer` / `event_effects` / `event_engine` /
-  `monthly_pipeline` / `runner` all unchanged; M6.9 will
-  be the first downstream caller. Canonical
+  `monthly_pipeline` / `runner` all unchanged. Canonical
   `1930_minimal` 365-day run still produces a byte-
   identical save to the PR #111 baseline (verified):
   M1.17 / M2 / M3 / M4 / M5 byte-identical determinism
   baselines stay green.
   **No `state.rng` consumption.** Helper is pure / read-
   only; same state + same country → same result.
-  **18 new doctest cases (1208 total, 64169 assertions;
+  **26 new doctest cases (1216 total, 64196 assertions;
   verified via direct `leviathan_tests.exe` run** per
   the `feedback_ctest_masks_doctest` rule): maxed-input
   → 1.0; zero-input → 0.4; pinned affine formula across
   seven `(cap, bud)` samples; range invariant over a
   swept grid; capability weight dominates budget weight;
   monotonicity in both axes; defensive clamping of
-  out-of-range inputs; non-consumption of corruption
-  (M6.7 scope); preserved validation surface (invalid
-  CountryId / empty state.countries / `CountryId::invalid()`);
-  preserved purity (no GameState mutation across two
-  countries + a failed call); preserved determinism
-  (three repeated calls); stable public constants
+  finite out-of-range inputs; **non-finite intelligence
+  inputs (NaN / +Inf / -Inf) rejected with
+  `Result::failure` naming the offending country
+  `id_code` and the offending field** — covers both
+  `intelligence_capability` and `budget.intelligence`,
+  with the capability check short-circuiting first when
+  both are bad so the diagnostic is deterministic; raw
+  field values unchanged after a failing call;
+  non-consumption of corruption (M6.7 scope); preserved
+  validation surface (invalid CountryId / empty
+  state.countries / `CountryId::invalid()`); preserved
+  purity (no GameState mutation across two countries +
+  a failed call); preserved determinism (three repeated
+  calls); stable public constants
   (`kPlaceholderInformationAccuracy = 1.0`,
   `kMinInformationAccuracy = 0.4`, weights sum to 1.0).
   Reported-value composition test rewritten to assert
   the M6.6 contract: full-intelligence country still
   yields `reported = true_value` verbatim; zero-intel
   country damps reported to `0.4 × true_value`.
-  **What M6.6 deliberately does NOT do (forward-stable):**
+  **What M6.6 deliberately does NOT do:**
   no save format bump, no new state field, no
-  corruption term (M6.7), no debug-mode bypass (M6.8),
-  no non-debug hiding consumer (M6.9), no new artefact,
-  no new `RunnerOptions` field / CLI flag, no new
+  corruption term (RFC-090 §6.7 scope), no debug-mode
+  bypass (RFC-090 §6.8 scope), no non-debug hiding
+  consumer (RFC-090 §6.9 scope), no new artefact, no
+  new `RunnerOptions` field / CLI flag, no new
   `PlayerCommandKind`, no scenario_loader change, no
   event-module / monthly_pipeline / runner code change,
   no `random_service` consumption, no
-  `compute_for_event` variant (deferred to M6.9), no
+  `compute_for_event` variant, no
   `docs/milestone-6-checkpoint.md`, no
   `docs/milestone-6-result.md`, no "M6 closed" wording.
-  M6 remains in progress; M6.7 (corruption) /
-  M6.8 (debug) / M6.9 (first non-debug caller) follow
-  per RFC-090 §M6.
+  M6 remains in progress; RFC-090 §6.7 / §6.8 / §6.9
+  remain as listed in RFC-090 §M6.
 - Previously shipped: **M6.5 — bias_noise
   helper skeleton.** Fifth M6 PR. Implements only
   RFC-090 §6.5 (`6.5 實作 bias/noise`). New
