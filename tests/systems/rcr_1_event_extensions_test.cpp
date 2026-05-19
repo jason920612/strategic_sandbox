@@ -412,7 +412,8 @@ TEST_CASE("RCR-1 event_firer: record_match appends one LogEntry with event_fired
     REQUIRE(matches.size() == 1u);
 
     const auto before = state.logs.size();
-    ev_fi::record_match(state, matches.front(), GameDate(1930, 3, 15));
+    REQUIRE(ev_fi::record_match(
+        state, matches.front(), GameDate(1930, 3, 15)));
     CHECK(state.logs.size() == before + 1);
 
     const auto& last = state.logs.back();

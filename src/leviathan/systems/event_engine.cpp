@@ -252,10 +252,23 @@ recurse_followups_impl(core::GameState&                  state,
         // `followup_of` metadata points to the direct chain
         // parent — chain A → B → C records C.followup_of = B,
         // not C.followup_of = A.
+        //
+        // M6.9: record_followup is now Result-bearing
+        // (`information_accuracy` / `reported_value` /
+        // `bias_noise` composition can fail on a non-finite
+        // country state). Per-event atomicity: on failure the
+        // followup EventInstance + LogEntry are NOT appended;
+        // we propagate the error with the followup id_code in
+        // context.
         const auto& current_instance =
             state.event_history[current.instance_index];
-        event_firer::record_followup(
+        auto fu_r = event_firer::record_followup(
             state, current_instance, fdef, state.current_date);
+        if (!fu_r) {
+            return core::Result<FollowupOutcome>::failure(
+                "tick_events: followup " + fdef.id_code + ": " +
+                std::move(fu_r.error()));
+        }
         const std::size_t child_instance_index =
             state.event_history.size() - 1;
         out.followups_recorded += 1;
@@ -419,7 +432,19 @@ core::Result<TickOutcome> tick_events(core::GameState& state) {
             // Record the parent event (always — including the
             // player-country pending case, so events.jsonl shows
             // what was offered).
-            event_firer::record_match(state, match, state.current_date);
+            //
+            // M6.9: record_match is now Result-bearing. On
+            // failure the EventInstance + LogEntry are not
+            // appended; propagate with the event id_code in
+            // context.
+            auto rec_r =
+                event_firer::record_match(state, match, state.current_date);
+            if (!rec_r) {
+                return core::Result<TickOutcome>::failure(
+                    "tick_events: country " + country.id_code +
+                    " event " + def.id_code + ": " +
+                    std::move(rec_r.error()));
+            }
             const std::size_t parent_instance_index =
                 state.event_history.size() - 1;
             out.events_recorded += 1;
