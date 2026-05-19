@@ -20,8 +20,13 @@ docs cross-link here rather than re-litigating the gap.
 ## 1. Status
 
 Current implementation milestones **M0 – M5 are closed as
-implementation milestones**. M6 is in progress at M6.5
-(`bias_noise` helper skeleton).
+implementation milestones**. M6 is in progress at M6.6
+(`information_accuracy` body now reads
+`government_authority.intelligence_capability` and
+`budget.intelligence` per RFC-090 §6.6 "加入情報預算影響";
+range graduated from M6.3's constant 1.0 to
+`[kMinInformationAccuracy=0.4, 1.0]`; helper still has no
+production caller — M6.9 will be the first).
 
 **Issue #112 strict-RFC corrective PR** is the final step in
 the compliance recovery sequence: RCR-1 (PR #107) shipped the
@@ -378,9 +383,10 @@ acceptance (which expects weights + options + 10 events +
 stress test + followup chains).
 
 The M6 hidden-truth work currently in progress (M6.1 / M6.2
-schema fields, M6.3 / M6.4 / M6.5 helper skeletons) layers
-on top of this skeleton event engine. It does not retroactively
-satisfy the deferred RFC-090 §M5 scope.
+schema fields, M6.3 / M6.4 / M6.5 helper skeletons, M6.6
+intelligence-budget formula body for `information_accuracy`)
+layers on top of this skeleton event engine. It does not
+retroactively satisfy the deferred RFC-090 §M5 scope.
 
 ## 4. Finding 3 — RFC-010 v0.1 acceptance floors remain deferred (issue #105 baseline; see §6.3 for post-RCR-1 + #108 state)
 
@@ -905,7 +911,7 @@ Pointers (read the RFCs directly):
 - `rfc/RFC-040-diplomacy-war-ai.md` — diplomacy, world AI,
   war (overlaps §3.5 / §3.6 / §3.7 / §3.8 above).
 - `rfc/RFC-050-events-hidden-truth.md` — event content
-  and hidden-truth direction (M6 in progress at M6.5
+  and hidden-truth direction (M6 in progress at M6.6
   covers part of the hidden-truth side).
 - `rfc/RFC-080-research-formulas.md` — formula expansions
   M1.7 / M1.8 stripped down (WelfareSatisfaction /
@@ -918,12 +924,20 @@ Pointers (read the RFCs directly):
 RCR-1 plus the issue #108 / #110 / #112 follow-up fixes deliberately
 do NOT:
 
-- Resume M6.6 work or any M6 sub-milestone. M6.6 is paused
-  while the corrective PR runs; it resumes per RFC-090 §6.6
-  on explicit go-ahead after this PR lands.
-- Modify M6 hidden-truth helper behaviour
-  (`information_accuracy`, `reported_value`, `bias_noise`
-  bodies are untouched).
+- Modify M6 hidden-truth helper behaviour beyond what
+  RCR-1 / #108 / #110 / #112 already documented.
+  M6.6 — RFC-090 §6.6 "加入情報預算影響" — has now landed in
+  its own PR following this corrective batch, replacing the
+  M6.3 constant-1.0 placeholder body of
+  `information_accuracy::compute_for_country` with the affine
+  `accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability +
+  0.3 × budget.intelligence)` formula (range
+  `[kMinInformationAccuracy=0.4, 1.0]`). `reported_value` and
+  `bias_noise` bodies are unchanged; M6.7 (corruption term) /
+  M6.8 (debug bypass) / M6.9 (first non-debug caller) remain
+  out of scope. Canonical `1930_minimal` byte-identical
+  baselines stay green because no production code path calls
+  `compute_for_country` yet.
 - Add debug-mode / non-debug-mode hidden-truth display
   (RFC-090 §6.8 / §6.9, separate M6 work).
 - Add UI / map visualisation / SVG renderer changes.

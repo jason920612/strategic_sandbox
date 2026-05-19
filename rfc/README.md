@@ -114,13 +114,20 @@ under issue #105's audit umbrella:
      `pending_player_events` + `event_history`),
    - save schema bump v17 → v18.
 
-After issue #112 lands, execution returns to the M-numbered
-milestone sequence; M6.6 resumes per RFC-090 §6.6 on
-explicit go-ahead. `RCR` is **not** an RFC milestone number
-and does not consume M0–M9 numbering. **There is no RCR-2
-track and no planned recovery follow-up.** Issues #105 /
-#108 / #110 / #112 stay open until the reviewer confirms
-strict compliance on PR #111.
+Issue #112 has now landed (PR #111 squash-merged) and
+execution has returned to the M-numbered milestone
+sequence. **M6.6** (RFC-090 §6.6 "加入情報預算影響") then
+shipped the
+`information_accuracy::compute_for_country` body that reads
+`government_authority.intelligence_capability` and
+`budget.intelligence`, replacing the M6.3 constant-1.0
+placeholder with the affine
+`accuracy = 0.4 + 0.6 × (0.7 × intelligence_capability +
+0.3 × budget.intelligence)` formula in range `[0.4, 1.0]`.
+`RCR` is **not** an RFC milestone number and does not
+consume M0–M9 numbering. **There is no RCR-2 track and no
+planned recovery follow-up.** Issues #105 / #108 / #110 /
+#112 stay open until the reviewer confirms strict compliance.
 
 What RCR-1 shipped:
 
@@ -353,7 +360,110 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.5
+  information distortion）** — **M6.6
+  （intelligence-budget influence on
+  `information_accuracy`）** 是 M6 的第六個
+  sub-milestone。完全照 RFC-090 §6.6
+  （`6.6 加入情報預算影響`）實作：把 M6.3 的
+  placeholder body
+  （`compute_for_country` 永遠回傳
+  `kPlaceholderInformationAccuracy = 1.0`）換成
+  intelligence-budget 公式：
+
+  ```
+  intel_score = 0.7 × country.government_authority.intelligence_capability
+              + 0.3 × country.budget.intelligence
+  accuracy    = 0.4 + 0.6 × intel_score
+  ```
+
+  兩個輸入在加權之前都先 clamp 到 `[0, 1]` 防禦性
+  地保護一遍；結果再 clamp 到
+  `[kMinInformationAccuracy, 1.0] = [0.4, 1.0]`。
+  **range** 從 M6.3 的單點 `{1.0}` 升級到閉區間
+  `[0.4, 1.0]`：兩個情報輸入都拉滿（1.0）的國家回傳
+  舊的 no-distortion ceiling（1.0）；
+  `intelligence_capability = 0` 且
+  `budget.intelligence = 0` 的國家落到 floor（0.4）──
+  資訊降級但不空白。0.4 對應 RFC-080 §8 完整公式裡的
+  `BaseAccuracy` slot；0.6 乘子讓 `intel_score` 貢獻
+  落在 `[0, 0.6]`，留出 headroom 給 RFC-080 §8 的其餘
+  項（`-Corruption` / `-FactionCapture` /
+  `-LeaderIsolation` / `-LocalAutonomyOpacity` 等）在
+  各自的未來 RFC-090 sub-milestone 落地（RFC-090 §6.7
+  覆蓋 corruption）。
+  **`kPlaceholderInformationAccuracy` 的語意升級**
+  從「always returned」(M6.3) 到「no-distortion
+  ceiling — 兩個情報輸入都 1.0 時的回傳值」(M6.6+)；
+  數值 1.0 不變。**新增三個 public header 常數**
+  把每一個 load-bearing 數字暴露出來：
+  `kMinInformationAccuracy = 0.4`、
+  `kInformationAccuracyCapabilityWeight = 0.7`、
+  `kInformationAccuracyBudgetWeight = 0.3`。
+  **沒有 save schema bump** ── 兩個情報輸入
+  （M2.16 的 `intelligence_capability` + M1.3 的
+  `budget.intelligence`）已經在 `CountryState` 上，
+  M6.6 沒新增 persistent field；save format 保持
+  **v18**；artefact contract 保持 **11**。
+  **沒有 production caller** ── `compute_for_country`
+  仍然沒被 production 程式碼路徑呼叫；
+  `event_evaluator` / `event_firer` / `event_effects`
+  / `event_engine` / `monthly_pipeline` / `runner`
+  全部不動。
+  **沒有 `state.rng` 消耗** ── helper 是純讀；
+  同樣的 state + 同樣的 country → 同樣的 result。
+  Canonical `1930_minimal` 365 天 run 產出
+  byte-identical 的 save.json 對照 PR #111 baseline
+  （以 `diff` 驗證）；M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baseline 全部維持。
+  **26 個新 doctest case（1216 total，64196
+  assertions；per `feedback_ctest_masks_doctest`
+  規則直接跑 `leviathan_tests.exe` 驗證**）：滿輸入
+  → 1.0；零輸入 → 0.4；七組 `(cap, bud)` sample 對
+  affine 公式的釘值；range 在 `(cap, bud)` 網格上
+  不變；DOES consult `intelligence_capability`
+  （低/高比較）；DOES consult `budget.intelligence`
+  （低/高比較）；capability 權重 > budget 權重；
+  兩個維度都單調；finite 越界輸入防禦性 clamp
+  （負值與 >1）；**非有限情報輸入 (NaN / +Inf /
+  -Inf) 以 `Result::failure` 拒絕，錯誤訊息帶出
+  違規 country `id_code` 與違規欄位 ──
+  `intelligence_capability` 與 `budget.intelligence`
+  兩個欄位都覆蓋；兩者皆壞時 capability 檢查先
+  short-circuit 讓診斷訊息 deterministic；失敗
+  call 後 raw field 數值不變**；NOT consult
+  corruption（RFC-090 §6.7 scope）── 只有 corruption
+  不同的兩個 state 回相同 accuracy；保留 validation
+  surface（無效 CountryId / 空 state.countries /
+  `CountryId::invalid()`）；保留 purity（兩個
+  國家 + 一個失敗 call 跑完後 state save-layer
+  序列化 diff 為空）；保留 determinism（三次重複
+  call）；穩定 public 常數
+  （`kPlaceholderInformationAccuracy = 1.0`、
+  `kMinInformationAccuracy = 0.4`、權重和為 1.0）。
+  **重寫了 reported_value 組合測試**：滿情報 country
+  仍回 `accuracy=1.0`、reported = true_value 原值；
+  零情報 country 落到 `accuracy=0.4`、reported =
+  `0.4 × true_value`。新
+  `docs/m6-6-intelligence-budget-influence.md`
+  design note。**沒有 save format bump（仍 v18）/
+  新 state field / 新 artefact（仍 11）/ 新
+  `RunnerOptions` field / CLI flag / 新
+  `PlayerCommandKind` / scenario_loader 變動 /
+  event-module / monthly_pipeline / runner 程式變動
+  / `random_service` 消耗 / canonical fixture 變動 /
+  任何系統消費此 helper /
+  `compute_for_event` 變體 / corruption 項
+  （RFC-090 §6.7 scope）/ debug 模式 bypass
+  （RFC-090 §6.8 scope）/ 非 debug 隱藏
+  （RFC-090 §6.9 scope）/ `bias_noise` body 變動 /
+  `reported_value` body 變動 / EventReport 類型或
+  artefact / events.jsonl 語意變動 / UI / map 整合 /
+  balance pass / 對 M1.17 / M2 / M3 / M4 / M5
+  byte-identical determinism baseline 的變動 /
+  `docs/milestone-6-checkpoint.md` /
+  `docs/milestone-6-result.md` / 「M6 closed」
+  字樣**。M6 remains in progress。
+- **M6（歷史進行中）** — **M6.5
   （bias_noise helper skeleton）** 是 M6 的第五個
   sub-milestone。完全照 RFC-090 §6.5（`6.5 實作
   bias/noise`）實作：新增
