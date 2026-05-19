@@ -529,18 +529,39 @@ explicitly disclosed as a game-model assumption per RFC-080 §11.
 
 What this PR deliberately does NOT do:
 
-- No save schema bump (still v18; both residuals reuse
-  pre-existing CountryState surface).
-- No new state field.
-- No new persistent artefact in this PR.
+- No new RFC-090 milestone feature. M6.1 – M6.9 are the §M6
+  task list; this is a closeout-audit PR, not a new numbered
+  sub-milestone.
+- No new player command. No additions to `PlayerCommandKind`;
+  no new `--commands` script syntax; no new CLI flag.
+- No new save schema field. Still save format v18; both
+  residuals reuse pre-existing CountryState surface; no new
+  persistent struct fields; no loader changes.
+- No new artefact. Artefact contract stays at 11.
 - No `EventDefinition.true_intensity` field (per-event TrueValue
   remains a remaining blocker — see §5.3).
 - No claim that M6 is closed. M6 remains OPEN.
 - No new RFC milestone number. This PR is an M6 closeout audit,
   NOT M7 (per `feedback_milestone_direction_gate`) and NOT
   RCR-2 (per `feedback_rcr_recovery_track`).
-- No new player-facing command, no new player-facing CLI flag,
-  no new gameplay mechanic.
+
+What this PR DOES change (intentionally, as the representative
+RFC-080 §8 residual implementation called for by the goal):
+
+- The information-accuracy formula in
+  `information_accuracy::compute_for_country` (a new positive
+  contributor — MediaFreedomSignal — composed via an outer
+  weighted blend with the existing intel pair).
+- The per-fire event metadata surface emitted by
+  `event_firer::record_match` / `record_followup` (a new
+  `propaganda_bias_sample` key on country-anchored fires,
+  sourced from the new `propaganda_bias::compute_for_country`
+  helper).
+
+Per `feedback_pr_framing_precision`, these mechanical changes
+are called out precisely as formula / metadata surface
+changes — they are NOT hidden under "no new gameplay
+mechanic" or "no gameplay system module" framing.
 
 The shipped numeric changes are:
 
@@ -549,14 +570,28 @@ The shipped numeric changes are:
   numeric value for any country with non-zero `media_control`.
 - `propaganda_bias::compute_for_country` is a new helper.
 - `event_firer::record_match` / `record_followup` emit
-  `propaganda_bias_sample` as a new metadata key (10th key on
-  country-anchored fires; 6th on vacuous-actor fires).
-
-Per `feedback_pr_framing_precision`: this PR DOES change a
-mechanics surface (the information-accuracy formula and the
-per-fire metadata schema). It does NOT introduce a new RFC-090
-milestone feature, a new player-facing command, a new save
-schema field, or a new artefact.
+  `propaganda_bias_sample` as a new metadata key on
+  **country-anchored fires only** (sits between
+  `information_accuracy` and `reported_intensity`,
+  inside the same `dist.emit_distortion == true` guard
+  that gates the existing M6.9 numeric distortion keys).
+  Per-fire key sets:
+  - **Country-anchored fire (5 numeric distortion
+    keys after publicText)**: `event_id_code`,
+    `actor_kind`, `actor_id_code`, `country_id_code`,
+    `true_cause`, `publicText`, `information_accuracy`,
+    `propaganda_bias_sample`, `reported_intensity`,
+    `noise_sample` — **10 keys**.
+  - **Vacuous-actor hand-built fire (test-only
+    degenerate case; not reachable through scenario
+    load)**: `event_id_code`, `actor_kind` (= `<none>`),
+    `actor_id_code` (= empty), `country_id_code` (=
+    empty), `true_cause`, `publicText` — **6 keys**;
+    **NO `information_accuracy`, NO
+    `propaganda_bias_sample`, NO `reported_intensity`,
+    NO `noise_sample`** (all four are gated by
+    `dist.emit_distortion == true`, which is only set
+    on country-anchored fires).
 
 ## 7. Tests and verification
 
@@ -564,13 +599,20 @@ Test totals on the M6 closeout-audit tree:
 
 - `cmake --build build --config Debug` succeeds.
 - `build/bin/Debug/leviathan_tests.exe` reports
-  **1301 test cases, 96221 assertions, 0 failed**.
+  **1301 test cases, 96228 assertions, 0 failed**.
 - The pre-audit count was 1276 test cases, 96033 assertions
   (per memory `project_milestone_state.md`). Delta:
   - +13 new tests in `propaganda_bias_test.cpp`.
   - +6 new MediaFreedomSignal tests in `information_accuracy_test.cpp`.
   - +6 renamed / extended tests in `information_accuracy_test.cpp`
     pre-existing surface (no functional regression).
+  - +7 assertions on existing vacuous-actor tests in
+    `event_firer_test.cpp` (review-driven: pin that
+    vacuous-actor fires emit `publicText` only — no
+    `propaganda_bias_sample`, no other numeric distortion
+    key — and pin exact metadata key counts of 6 for
+    `record_match` vacuous and 7 for `record_followup`
+    vacuous).
 - Canonical `1930_minimal` 365-day sweep: byte-identical
   determinism baseline preserved (canonical events tuned not to
   fire; no event-firer-emitted metadata changes; no information_accuracy

@@ -37,15 +37,30 @@
 //      runner::run_state. Effect lands on the right country.
 //      Save round-trip preserves the entry.
 //
-//   C. No new artefact appears when events fire. Still 10 files
-//      on disk after a firing run. events.jsonl semantics
-//      unchanged (no event id_codes leak into the lifecycle log).
-//      state.applied_commands stays empty (events aren't player
-//      commands). country.active_policies stays empty (events
-//      aren't policies).
+//   C. No new artefact appears when events fire. The artefact
+//      set verified by this test is unchanged (still the 10
+//      files this test originally pinned at M5.9 — `save.json`,
+//      `events.jsonl`, optional `summary.csv` / `countries.csv`
+//      / `factions.csv`, `interest_groups.csv`, the two
+//      interest-group trace CSVs, `provinces.svg`, `map.html`).
+//      The 11th unconditional artefact added by RCR-1
+//      (`annual_world_stats.csv`, RFC-090 §3.9) is the
+//      `rcr_1_rfc_compliance_test.cpp` integration's
+//      responsibility, NOT this M5 pipeline test's — this case
+//      verifies M5's existing contract still holds, not the
+//      project-wide artefact list. events.jsonl now carries
+//      per-fire LogEntries (RCR-1 RFC-090 §5.9) and the M6.9 /
+//      M6 closeout-audit metadata keys; the M5 invariant about
+//      "events.jsonl semantics unchanged" was superseded by the
+//      RCR-1 corrective batch. state.applied_commands stays
+//      empty (events aren't player commands).
+//      country.active_policies stays empty (events aren't
+//      policies).
 //
 //   D. Two byte-for-byte identical hand-built states with the
-//      same options produce byte-identical 10 artefacts even
+//      same options produce byte-identical output (across the
+//      same 10 artefacts case C verifies, plus the 11th
+//      `annual_world_stats.csv` written unconditionally) even
 //      WITH events firing. The M5 pipeline is deterministic.
 //
 //   E. Pipeline failure path through the runner: an event with
@@ -195,7 +210,7 @@ const fs::path kCanonicalScenario =
 // =====================================================================
 // A. canonical scenario at M5.9 still produces event_history: []
 // =====================================================================
-TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty, save_version 14") {
+TEST_CASE("M5 integration: canonical scenario -> event_history is empty, save_version 18") {
     TempDir td("leviathan_m5_canonical_no_fire");
     rn::RunnerOptions opts;
     opts.config_path   = kCanonicalConfig;
@@ -220,8 +235,10 @@ TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty,
     CHECK(ev_log.find("low_stability_unrest")             == std::string::npos);
     CHECK(ev_log.find("radical_interest_group_warning")   == std::string::npos);
 
-    // All 10 unconditional artefacts present (no new artefact
-    // shipped in M5).
+    // All unconditional artefacts present. M5 originally
+    // pinned 10 files here; RCR-1 (RFC-090 §3.9) added an
+    // 11th (`annual_world_stats.csv`). PR #118 (M6 closeout
+    // audit) adds NO new artefact.
     CHECK(fs::exists(td.path / "save.json"));
     CHECK(fs::exists(td.path / "events.jsonl"));
     CHECK(fs::exists(td.path / "interest_groups.csv"));
@@ -229,6 +246,7 @@ TEST_CASE("M5 integration: canonical scenario at M5.9 -> event_history is empty,
     CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
     CHECK(fs::exists(td.path / "provinces.svg"));
     CHECK(fs::exists(td.path / "map.html"));
+    CHECK(fs::exists(td.path / "annual_world_stats.csv"));
     // No event_history artefact exists in M5.x.
     CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
     CHECK_FALSE(fs::exists(td.path / "event_history.json"));
@@ -279,7 +297,7 @@ TEST_CASE("M5 integration: a firing event lands its effect and round-trips throu
 // C. no new artefact when events fire; events.jsonl semantics
 //    unchanged; applied_commands / active_policies untouched
 // =====================================================================
-TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefact set") {
+TEST_CASE("M5 integration: firing run still produces the M5 artefact set (no new artefact added)") {
     TempDir td("leviathan_m5_firing_artefact_set");
 
     GameState state = make_m5_firing_state();
@@ -293,7 +311,11 @@ TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefac
 
     REQUIRE(rn::run_state(state, opts).ok());
 
-    // The 10-file artefact contract holds.
+    // The M5-era artefact set (10 files when summary /
+    // countries / factions CSV opts are all enabled) still
+    // holds, plus the RCR-1 `annual_world_stats.csv` 11th
+    // unconditional artefact. PR #118 (M6 closeout audit)
+    // adds NO new artefact.
     CHECK(fs::exists(td.path / "save.json"));
     CHECK(fs::exists(td.path / "events.jsonl"));
     CHECK(fs::exists(td.path / "summary.csv"));
@@ -304,6 +326,7 @@ TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefac
     CHECK(fs::exists(td.path / "interest_group_authority_pressure.csv"));
     CHECK(fs::exists(td.path / "provinces.svg"));
     CHECK(fs::exists(td.path / "map.html"));
+    CHECK(fs::exists(td.path / "annual_world_stats.csv"));
 
     // No new artefact appeared for event_history.
     CHECK_FALSE(fs::exists(td.path / "event_history.csv"));
@@ -336,9 +359,13 @@ TEST_CASE("M5 integration: firing run still produces exactly the same 10-artefac
 
 // =====================================================================
 // D. determinism: same hand-built state + same options ->
-//    byte-identical 10 artefacts WITH events firing
+//    byte-identical artefacts WITH events firing. The artefact
+//    list compared here is the same 10 files M5 originally
+//    pinned, plus the RCR-1 `annual_world_stats.csv` 11th
+//    unconditional artefact. PR #118 (M6 closeout audit) adds
+//    NO new artefact.
 // =====================================================================
-TEST_CASE("M5 integration: firing run is deterministic ??two runs produce byte-identical 10 artefacts") {
+TEST_CASE("M5 integration: firing run is deterministic — two runs produce byte-identical artefacts") {
     auto run_once = [](const fs::path& output_dir) {
         GameState state = make_m5_firing_state();
         rn::RunnerOptions opts;
@@ -362,6 +389,7 @@ TEST_CASE("M5 integration: firing run is deterministic ??two runs produce byte-i
         "interest_group_country_feedback.csv",
         "interest_group_authority_pressure.csv",
         "provinces.svg", "map.html",
+        "annual_world_stats.csv",
     };
     for (const char* name : kFiles) {
         CAPTURE(name);
