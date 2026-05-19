@@ -223,6 +223,33 @@
       ]
     },
     {
+      "id": "media_scandal",
+      "name": "Media Scandal",
+      "description": "Investigative media break a story that humiliates the regime in public.",
+      "visible_report": "A high-circulation press exposé alleges malfeasance at the heart of the government, drawing scrutiny from interest groups.",
+      "true_cause": "Combined legitimacy slip + interest-group radicalism crossing the media-scandal thresholds satisfy the M7.6 trigger (RFC-090 §7.6).",
+      "category": "media",
+      "triggers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.45
+        },
+        {
+          "target": "interest_group.radicalism",
+          "op": "gt",
+          "value": 0.70
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.legitimacy",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
       "id": "economic_slowdown_warning",
       "name": "Economic Slowdown Warning",
       "description": "A combined stability + legitimacy slip signals economic confidence loss.",
