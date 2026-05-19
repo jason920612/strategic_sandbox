@@ -29,8 +29,12 @@
 //      tuned to NOT fire on canonical state (GER stability 0.55+;
 //      canonical IG radicalism 0.10). M1.17's 365-day soak + the
 //      M5.4 1-day runner regression test already pin parts of
-//      this; here we pin the explicit "canonical run at M5.9 ->
-//      event_history is empty AND save_version is 14".
+//      this; here we pin the explicit "canonical run ->
+//      event_history is empty AND save_version is at the
+//      current save format" (the asserted version below tracks
+//      whatever the current save-format bump is — save v18 as
+//      of PR #118; subsequent save bumps update the assertion
+//      in lock-step).
 //
 //   B. A hand-built state whose event DOES fire on its first
 //      monthly tick produces non-empty event_history through
@@ -258,7 +262,7 @@ TEST_CASE("M5 integration: canonical scenario -> event_history is empty, save_ve
 // =====================================================================
 // B. hand-built event that fires through runner::run_state
 // =====================================================================
-TEST_CASE("M5 integration: a firing event lands its effect and round-trips through save (current v15)") {
+TEST_CASE("M5 integration: a firing event lands its effect and round-trips through current save format") {
     TempDir td("leviathan_m5_firing_event_apply");
 
     GameState state = make_m5_firing_state();
