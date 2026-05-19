@@ -1,25 +1,35 @@
-{
-  "id":                        "USA",
-  "name":                      "United States",
-  "display_name":              "United States of America",
-  "initial_gdp":               150.0,
-  "initial_stability":         0.70,
-  "legal_tax_burden":          0.15,
-  "fiscal_capacity":           0.65,
-  "administrative_efficiency": 0.60,
-  "central_control":           0.55,
-  "corruption":                0.18,
-  "legitimacy":                0.70,
-  "military_power":            0.45,
-  "threat_perception":         0.20,
-  "military_strength":         90.0,
-  "budget": {
-    "administration":  0.22,
-    "military":        0.20,
-    "education":       0.15,
-    "welfare":         0.15,
-    "intelligence":    0.05,
-    "infrastructure":  0.13,
-    "industry":        0.10
-  }
+﻿{
+    "id":  "USA",
+    "name":  "United States",
+    "display_name":  "United States of America",
+    "initial_gdp":  150.0,
+    "initial_stability":  0.70,
+    "legal_tax_burden":  0.15,
+    "fiscal_capacity":  0.65,
+    "administrative_efficiency":  0.60,
+    "central_control":  0.55,
+    "corruption":  0.18,
+    "legitimacy":  0.70,
+    "military_power":  0.45,
+    "threat_perception":  0.20,
+    "military_strength":  90.0,
+    "budget":  {
+                   "administration":  0.22,
+                   "military":  0.20,
+                   "education":  0.15,
+                   "welfare":  0.15,
+                   "intelligence":  0.05,
+                   "infrastructure":  0.13,
+                   "industry":  0.10
+               },
+    "government_authority":  {
+                                 "bureaucratic_compliance":  0.5,
+                                 "military_loyalty":  0.5,
+                                 "intelligence_capability":  0.5,
+                                 "media_control":  0.5,
+                                 "bureaucratic_professionalism":  0.6,
+                                 "audit_capacity":  0.65,
+                                 "leader_isolation":  0.5
+                             }
 }
+

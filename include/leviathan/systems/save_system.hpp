@@ -255,7 +255,14 @@ namespace leviathan::systems::save_system {
 //                {event_history_index, option_id_code} payload.
 //                Pre-v18 saves are rejected with a migration
 //                message naming the three new fields.
-inline constexpr std::uint32_t kSaveFormatVersion   = 18;
+//   v18 -> v19:  M6 RFC-080 §8 closeout. Adds
+//                EventDefinition.true_intensity, required
+//                faction_interest_bias rows on each event, and three
+//                GovernmentAuthorityState fields:
+//                bureaucratic_professionalism, audit_capacity,
+//                leader_isolation. Pre-v19 saves are rejected rather
+//                than silently fabricating RFC-080 §8 inputs.
+inline constexpr std::uint32_t kSaveFormatVersion   = 19;
 inline constexpr std::uint32_t kRngAlgorithmVersion = 1;
 
 // Serialise a GameState to a pretty-printed JSON string. Always

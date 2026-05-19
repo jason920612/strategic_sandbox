@@ -456,6 +456,15 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
             check_double(out, prefix + ".government_authority.media_control",
                          ca.government_authority.media_control,
                          cb.government_authority.media_control, tol);
+            check_double(out, prefix + ".government_authority.bureaucratic_professionalism",
+                         ca.government_authority.bureaucratic_professionalism,
+                         cb.government_authority.bureaucratic_professionalism, tol);
+            check_double(out, prefix + ".government_authority.audit_capacity",
+                         ca.government_authority.audit_capacity,
+                         cb.government_authority.audit_capacity, tol);
+            check_double(out, prefix + ".government_authority.leader_isolation",
+                         ca.government_authority.leader_isolation,
+                         cb.government_authority.leader_isolation, tol);
 
             // active_policies block
             if (ca.active_policies.size() != cb.active_policies.size()) {
@@ -618,8 +627,27 @@ std::vector<StateMismatch> compare_states(const core::GameState& a,
                          ea.visible_report, eb.visible_report);   // M6.2
             check_string(out, prefix + ".true_cause",
                          ea.true_cause, eb.true_cause);   // M6.1
+            check_double(out, prefix + ".true_intensity",
+                         ea.true_intensity, eb.true_intensity, tol);
             check_string(out, prefix + ".category",
                          ea.category, eb.category);   // issue #112
+
+            if (ea.faction_interest_bias.size() != eb.faction_interest_bias.size()) {
+                push_mismatch(out, prefix + ".faction_interest_bias.size()",
+                              std::to_string(ea.faction_interest_bias.size()) + " != " +
+                              std::to_string(eb.faction_interest_bias.size()));
+            } else {
+                for (std::size_t bi = 0; bi < ea.faction_interest_bias.size(); ++bi) {
+                    const auto& ba = ea.faction_interest_bias[bi];
+                    const auto& bb = eb.faction_interest_bias[bi];
+                    const std::string bprefix =
+                        prefix + ".faction_interest_bias[" + std::to_string(bi) + "]";
+                    check_string(out, bprefix + ".interest_group_kind",
+                                 ba.interest_group_kind, bb.interest_group_kind);
+                    check_double(out, bprefix + ".alignment",
+                                 ba.alignment, bb.alignment, tol);
+                }
+            }
 
             // Issue #112: option_effect_mode only meaningful when
             // options non-empty. Compare via canonical string mapping.

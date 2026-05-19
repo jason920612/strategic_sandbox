@@ -26,6 +26,10 @@
 
 ## RFC compliance / milestone drift
 
+Current M6 branch note: RFC-080 section 8 implementation is complete and
+awaiting Jason final close approval. This branch does not start M7, does not
+create RCR-2, and does not declare M6 closed.
+
 RFC-090 remains the roadmap reference, but **implementation
 milestone close-outs have diverged from some original RFC
 milestone scopes**. Closed implementation milestones are

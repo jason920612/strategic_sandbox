@@ -91,6 +91,7 @@ struct RunnerOptions {
     // is `<output_dir>/annual_world_stats.csv`). Bumps the
     // unconditional artefact contract from 10 to 11. No CLI flag.
     std::optional<std::filesystem::path> annual_world_stats_csv_path;
+    std::optional<std::filesystem::path> event_reports_path;
     std::optional<std::string>           player_id_code;      // M2.1: --player COUNTRY_IDCODE; unset = headless run
     std::optional<std::filesystem::path> replay_path;         // M2.8: --replay PATH; load this save's command log and replay onto a fresh scenario
     bool                                 verify      = false; // M2.11: --verify; requires --replay; compare replayed state to source after end_tick
@@ -220,6 +221,7 @@ struct RunOutcome {
     // written across every year-boundary snapshot.
     std::filesystem::path  annual_world_stats_csv_path;
     std::size_t            annual_world_stats_csv_rows = 0;
+    std::filesystem::path  event_reports_path;
 };
 
 // Execute one simulation run.

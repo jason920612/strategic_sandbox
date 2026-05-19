@@ -1,25 +1,35 @@
-{
-  "id":                        "JPN",
-  "name":                      "Japan",
-  "display_name":              "Empire of Japan",
-  "initial_gdp":               60.0,
-  "initial_stability":         0.50,
-  "legal_tax_burden":          0.18,
-  "fiscal_capacity":           0.50,
-  "administrative_efficiency": 0.65,
-  "central_control":           0.70,
-  "corruption":                0.30,
-  "legitimacy":                0.50,
-  "military_power":            0.60,
-  "threat_perception":         0.40,
-  "military_strength":         55.0,
-  "budget": {
-    "administration":  0.20,
-    "military":        0.40,
-    "education":       0.10,
-    "welfare":         0.05,
-    "intelligence":    0.08,
-    "infrastructure":  0.07,
-    "industry":        0.10
-  }
+﻿{
+    "id":  "JPN",
+    "name":  "Japan",
+    "display_name":  "Empire of Japan",
+    "initial_gdp":  60.0,
+    "initial_stability":  0.50,
+    "legal_tax_burden":  0.18,
+    "fiscal_capacity":  0.50,
+    "administrative_efficiency":  0.65,
+    "central_control":  0.70,
+    "corruption":  0.30,
+    "legitimacy":  0.50,
+    "military_power":  0.60,
+    "threat_perception":  0.40,
+    "military_strength":  55.0,
+    "budget":  {
+                   "administration":  0.20,
+                   "military":  0.40,
+                   "education":  0.10,
+                   "welfare":  0.05,
+                   "intelligence":  0.08,
+                   "infrastructure":  0.07,
+                   "industry":  0.10
+               },
+    "government_authority":  {
+                                 "bureaucratic_compliance":  0.5,
+                                 "military_loyalty":  0.5,
+                                 "intelligence_capability":  0.5,
+                                 "media_control":  0.5,
+                                 "bureaucratic_professionalism":  0.65,
+                                 "audit_capacity":  0.5,
+                                 "leader_isolation":  0.5
+                             }
 }
+

@@ -324,41 +324,58 @@ core::Result<core::CountryState> parse_country(
     // round-trips this block in full. The DataLoader leniency only
     // applies to authored country fixtures.
     const json* authority_node = navigate(root, "government_authority");
-    if (authority_node != nullptr) {
-        if (!authority_node->is_object()) {
-            return core::Result<core::CountryState>::failure(
-                fmt_err(source_label,
-                        "'government_authority' has wrong type"
-                        " (expected JSON object)"));
-        }
-        const std::string auth_ctx =
-            std::string(source_label) + ": government_authority";
-        auto read_auth = [&](const char* key, double& dst) -> core::Result<bool> {
-            auto r = require_ratio(*authority_node, key, auth_ctx);
-            if (!r) return core::Result<bool>::failure(std::move(r.error()));
-            dst = r.value();
-            return core::Result<bool>::success(true);
-        };
-        if (auto r = read_auth("bureaucratic_compliance",
-                               country.government_authority.bureaucratic_compliance);
-            !r) {
-            return core::Result<core::CountryState>::failure(std::move(r.error()));
-        }
-        if (auto r = read_auth("military_loyalty",
-                               country.government_authority.military_loyalty);
-            !r) {
-            return core::Result<core::CountryState>::failure(std::move(r.error()));
-        }
-        if (auto r = read_auth("intelligence_capability",
-                               country.government_authority.intelligence_capability);
-            !r) {
-            return core::Result<core::CountryState>::failure(std::move(r.error()));
-        }
-        if (auto r = read_auth("media_control",
-                               country.government_authority.media_control);
-            !r) {
-            return core::Result<core::CountryState>::failure(std::move(r.error()));
-        }
+    if (authority_node == nullptr) {
+        return core::Result<core::CountryState>::failure(
+            fmt_err(source_label, "missing required field 'government_authority'"));
+    }
+    if (!authority_node->is_object()) {
+        return core::Result<core::CountryState>::failure(
+            fmt_err(source_label,
+                    "'government_authority' has wrong type"
+                    " (expected JSON object)"));
+    }
+    const std::string auth_ctx =
+        std::string(source_label) + ": government_authority";
+    auto read_auth = [&](const char* key, double& dst) -> core::Result<bool> {
+        auto r = require_ratio(*authority_node, key, auth_ctx);
+        if (!r) return core::Result<bool>::failure(std::move(r.error()));
+        dst = r.value();
+        return core::Result<bool>::success(true);
+    };
+    if (auto r = read_auth("bureaucratic_compliance",
+                           country.government_authority.bureaucratic_compliance);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("military_loyalty",
+                           country.government_authority.military_loyalty);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("intelligence_capability",
+                           country.government_authority.intelligence_capability);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("media_control",
+                           country.government_authority.media_control);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("bureaucratic_professionalism",
+                           country.government_authority.bureaucratic_professionalism);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("audit_capacity",
+                           country.government_authority.audit_capacity);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
+    }
+    if (auto r = read_auth("leader_isolation",
+                           country.government_authority.leader_isolation);
+        !r) {
+        return core::Result<core::CountryState>::failure(std::move(r.error()));
     }
 
     return core::Result<core::CountryState>::success(std::move(country));

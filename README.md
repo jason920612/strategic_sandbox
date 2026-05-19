@@ -6,6 +6,12 @@
 
 ## Status
 
+> **M6 current branch status:** M6 implementation complete; awaiting Jason
+> final close approval. RFC-080 §8 blockers from PR #118 are implemented:
+> all bias terms, all accuracy modifiers, per-event `true_intensity`, and
+> player-facing `event_reports.jsonl`. Save format is v19 and the
+> unconditional artifact contract is 12. No M7 work and no RCR-2.
+
 > **Governance note.** M0 / M1 / M2 / M3 / M4 / M5 are
 > closed as **implementation milestones**, not as full
 > original RFC-090 / RFC-010 acceptance milestones. The

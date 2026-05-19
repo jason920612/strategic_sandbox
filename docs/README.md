@@ -16,6 +16,10 @@ Per-milestone design notes and PR description drafts.
 
 ## Governance reference
 
+Current M6 branch note: RFC-080 §8 implementation is complete and awaiting
+Jason final close approval. Save format is v19; artifact contract is 12 with
+`event_reports.jsonl`. No M7 work and no RCR-2.
+
 | File | Covers |
 |------|--------|
 | [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 originally closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. The compliance recovery sequence (RCR-1 PR #107 → issue #108 fix PR #109 → issue #110 / #112 strict-RFC corrective PR #111) closed the RFC-090 §M3 / §M5 + RFC-010 v0.1 floor gap end-to-end. RFC-090 §6.8 / §6.9 hidden-truth wiring then shipped through M6.1 – M6.9 (PRs #100 – #117). The audit doc remains the canonical reference for what shipped vs. is still genuinely deferred (full RFC-080 §8 residuals — see the M6 closeout-audit entry below — plus war / full diplomacy AI, UI, etc.). **Read this before opening any new milestone work.** Companion to issue #105. |

@@ -210,6 +210,16 @@ inline constexpr double kInformationAccuracyCorruptionWeight = 0.4;
 // pair.
 inline constexpr double kInformationAccuracyMediaFreedomWeight = 0.20;
 
+inline constexpr double kInformationAccuracyBase = 0.40;
+inline constexpr double kInformationAccuracyIntelligenceWeight = 0.30;
+inline constexpr double kInformationAccuracyMediaFreedomSignalWeight = 0.10;
+inline constexpr double kInformationAccuracyBureaucraticProfessionalismWeight = 0.10;
+inline constexpr double kInformationAccuracyAuditCapacityWeight = 0.10;
+inline constexpr double kInformationAccuracyFullCorruptionWeight = 0.16;
+inline constexpr double kInformationAccuracyFactionCaptureWeight = 0.08;
+inline constexpr double kInformationAccuracyLeaderIsolationWeight = 0.08;
+inline constexpr double kInformationAccuracyLocalAutonomyOpacityWeight = 0.08;
+
 // Compute the player's information accuracy for events in the
 // given country.
 //

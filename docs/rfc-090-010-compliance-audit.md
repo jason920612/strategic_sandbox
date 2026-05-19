@@ -1,5 +1,11 @@
 # RFC-090 / RFC-010 Compliance Audit
 
+> M6 update: RFC-080 §8 M6 implementation is complete in the current branch
+> and awaits Jason final close approval. The branch adds per-event
+> `true_intensity`, all remaining bias and accuracy terms, save v19, and the
+> twelfth unconditional artifact `event_reports.jsonl`. No M7 work has started
+> and no RCR-2 exists.
+
 Companion to issue #105
 (*"RFC audit: closed milestones drift from RFC-090 roadmap scope"*).
 

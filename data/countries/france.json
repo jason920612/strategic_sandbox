@@ -1,25 +1,35 @@
-{
-  "id":                        "FRA",
-  "name":                      "France",
-  "display_name":              "French Republic",
-  "initial_gdp":               80.0,
-  "initial_stability":         0.60,
-  "legal_tax_burden":          0.22,
-  "fiscal_capacity":           0.55,
-  "administrative_efficiency": 0.60,
-  "central_control":           0.65,
-  "corruption":                0.20,
-  "legitimacy":                0.65,
-  "military_power":            0.55,
-  "threat_perception":         0.40,
-  "military_strength":         60.0,
-  "budget": {
-    "administration":  0.25,
-    "military":        0.30,
-    "education":       0.15,
-    "welfare":         0.15,
-    "intelligence":    0.04,
-    "infrastructure":  0.06,
-    "industry":        0.05
-  }
+﻿{
+    "id":  "FRA",
+    "name":  "France",
+    "display_name":  "French Republic",
+    "initial_gdp":  80.0,
+    "initial_stability":  0.60,
+    "legal_tax_burden":  0.22,
+    "fiscal_capacity":  0.55,
+    "administrative_efficiency":  0.60,
+    "central_control":  0.65,
+    "corruption":  0.20,
+    "legitimacy":  0.65,
+    "military_power":  0.55,
+    "threat_perception":  0.40,
+    "military_strength":  60.0,
+    "budget":  {
+                   "administration":  0.25,
+                   "military":  0.30,
+                   "education":  0.15,
+                   "welfare":  0.15,
+                   "intelligence":  0.04,
+                   "infrastructure":  0.06,
+                   "industry":  0.05
+               },
+    "government_authority":  {
+                                 "bureaucratic_compliance":  0.5,
+                                 "military_loyalty":  0.5,
+                                 "intelligence_capability":  0.5,
+                                 "media_control":  0.5,
+                                 "bureaucratic_professionalism":  0.6,
+                                 "audit_capacity":  0.55,
+                                 "leader_isolation":  0.5
+                             }
 }
+

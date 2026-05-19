@@ -282,7 +282,6 @@ parse_event_file(std::string_view json_text,
             return core::Result<std::vector<ManifestEvent>>::failure(
                 std::move(r.error()));
         }
-
         // Issue #112: category is required non-empty. The event
         // engine groups matched events by category and draws one
         // per (country, category) bucket per tick — so an absent /
@@ -612,6 +611,70 @@ parse_event_file(std::string_view json_text,
                 }
                 ev.followup_event_ids.push_back(std::move(s));
             }
+        }
+
+        if (!e.contains("true_intensity") ||
+            !e.at("true_intensity").is_number()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".true_intensity missing or not a number"));
+        }
+        ev.true_intensity = e.at("true_intensity").get<double>();
+        if (!std::isfinite(ev.true_intensity) ||
+            ev.true_intensity < 0.01 ||
+            ev.true_intensity > 10.0) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".true_intensity out of range"
+                        " (expected finite [0.01, 10])"));
+        }
+
+        if (!e.contains("faction_interest_bias") ||
+            !e.at("faction_interest_bias").is_array()) {
+            return core::Result<std::vector<ManifestEvent>>::failure(
+                fmt_err(source_label,
+                        ctx + ".faction_interest_bias missing or not an array"));
+        }
+        const json& fib_arr = e.at("faction_interest_bias");
+        ev.faction_interest_bias.reserve(fib_arr.size());
+        for (std::size_t bi = 0; bi < fib_arr.size(); ++bi) {
+            const std::string bctx =
+                ctx + ".faction_interest_bias[" + std::to_string(bi) + "]";
+            if (!fib_arr[bi].is_object()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label, bctx + " is not an object"));
+            }
+            const json& b = fib_arr[bi];
+            core::EventFactionInterestAlignment align;
+            if (!b.contains("interest_group_kind") ||
+                !b.at("interest_group_kind").is_string()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            bctx + ".interest_group_kind missing or not a string"));
+            }
+            align.interest_group_kind =
+                b.at("interest_group_kind").get<std::string>();
+            auto kind_r =
+                core::interest_group_kind_from_string(align.interest_group_kind);
+            if (!kind_r) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label, bctx + ": " + std::move(kind_r.error())));
+            }
+            if (!b.contains("alignment") || !b.at("alignment").is_number()) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            bctx + ".alignment missing or not a number"));
+            }
+            align.alignment = b.at("alignment").get<double>();
+            if (!std::isfinite(align.alignment) ||
+                align.alignment < -1.0 ||
+                align.alignment > 1.0) {
+                return core::Result<std::vector<ManifestEvent>>::failure(
+                    fmt_err(source_label,
+                            bctx + ".alignment out of range"
+                            " (expected finite [-1, 1])"));
+            }
+            ev.faction_interest_bias.push_back(std::move(align));
         }
 
         out.push_back(std::move(ev));
@@ -1293,6 +1356,8 @@ core::Result<ScenarioLoadOutcome> load_into_state(
                 ev.description        = entry.description;
                 ev.visible_report     = entry.visible_report;   // M6.2
                 ev.true_cause         = entry.true_cause;
+                ev.true_intensity     = entry.true_intensity;
+                ev.faction_interest_bias = entry.faction_interest_bias;
                 ev.category           = entry.category;         // issue #112
                 ev.triggers           = entry.triggers;
                 ev.effects            = entry.effects;

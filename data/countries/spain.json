@@ -1,25 +1,35 @@
-{
-  "id":                        "ESP",
-  "name":                      "Spain",
-  "display_name":              "Kingdom of Spain",
-  "initial_gdp":               30.0,
-  "initial_stability":         0.45,
-  "legal_tax_burden":          0.17,
-  "fiscal_capacity":           0.45,
-  "administrative_efficiency": 0.45,
-  "central_control":           0.50,
-  "corruption":                0.30,
-  "legitimacy":                0.45,
-  "military_power":            0.35,
-  "threat_perception":         0.30,
-  "military_strength":         18.0,
-  "budget": {
-    "administration":  0.25,
-    "military":        0.28,
-    "education":       0.10,
-    "welfare":         0.12,
-    "intelligence":    0.05,
-    "infrastructure":  0.12,
-    "industry":        0.08
-  }
+﻿{
+    "id":  "ESP",
+    "name":  "Spain",
+    "display_name":  "Kingdom of Spain",
+    "initial_gdp":  30.0,
+    "initial_stability":  0.45,
+    "legal_tax_burden":  0.17,
+    "fiscal_capacity":  0.45,
+    "administrative_efficiency":  0.45,
+    "central_control":  0.50,
+    "corruption":  0.30,
+    "legitimacy":  0.45,
+    "military_power":  0.35,
+    "threat_perception":  0.30,
+    "military_strength":  18.0,
+    "budget":  {
+                   "administration":  0.25,
+                   "military":  0.28,
+                   "education":  0.10,
+                   "welfare":  0.12,
+                   "intelligence":  0.05,
+                   "infrastructure":  0.12,
+                   "industry":  0.08
+               },
+    "government_authority":  {
+                                 "bureaucratic_compliance":  0.5,
+                                 "military_loyalty":  0.5,
+                                 "intelligence_capability":  0.5,
+                                 "media_control":  0.5,
+                                 "bureaucratic_professionalism":  0.45,
+                                 "audit_capacity":  0.45,
+                                 "leader_isolation":  0.5
+                             }
 }
+

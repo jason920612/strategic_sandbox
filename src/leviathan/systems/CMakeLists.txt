@@ -31,7 +31,9 @@ FetchContent_MakeAvailable(nlohmann_json)
 add_library(leviathan_systems STATIC
     ai_policy.cpp
     annual_stats.cpp
+    bias_total.cpp
     bias_noise.cpp
+    bureaucratic_self_protection.cpp
     commands.cpp
     data_loader.cpp
     diagnostics.cpp
@@ -41,6 +43,7 @@ add_library(leviathan_systems STATIC
     event_engine.cpp
     event_evaluator.cpp
     event_firer.cpp
+    faction_interest_bias.cpp
     information_accuracy.cpp
     internal/json_helpers.cpp
     logging_system.cpp

@@ -1,7 +1,9 @@
 #include "leviathan/systems/logging_system.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -54,6 +56,56 @@ void append_metadata(std::string& out, const core::LogMetadata& metadata) {
         append_json_string(out, value);
     }
     out += '}';
+}
+
+const std::string* metadata_value(const core::LogMetadata& metadata,
+                                  std::string_view key) {
+    for (const auto& [k, v] : metadata) {
+        if (k == key) {
+            return &v;
+        }
+    }
+    return nullptr;
+}
+
+core::Result<double> parse_required_number(const core::LogEntry& entry,
+                                           std::string_view key) {
+    const std::string* text = metadata_value(entry.metadata, key);
+    if (text == nullptr) {
+        return core::Result<double>::failure(
+            "event_reports.jsonl: event_fired '" + entry.message +
+            "' missing required metadata '" + std::string(key) + "'");
+    }
+    char* end = nullptr;
+    const double value = std::strtod(text->c_str(), &end);
+    if (end == text->c_str() || end == nullptr || *end != '\0' ||
+        !std::isfinite(value)) {
+        return core::Result<double>::failure(
+            "event_reports.jsonl: event_fired '" + entry.message +
+            "' metadata '" + std::string(key) +
+            "' is not a finite number");
+    }
+    return core::Result<double>::success(value);
+}
+
+core::Result<std::string> parse_required_string(const core::LogEntry& entry,
+                                                std::string_view key) {
+    const std::string* text = metadata_value(entry.metadata, key);
+    if (text == nullptr || text->empty()) {
+        return core::Result<std::string>::failure(
+            "event_reports.jsonl: event_fired '" + entry.message +
+            "' missing required non-empty metadata '" +
+            std::string(key) + "'");
+    }
+    return core::Result<std::string>::success(*text);
+}
+
+void append_json_number(std::string& out, double value) {
+    char buf[32];
+    const int n = std::snprintf(buf, sizeof(buf), "%.17g", value);
+    if (n > 0) {
+        out.append(buf, static_cast<std::size_t>(n));
+    }
 }
 
 }  // namespace
@@ -177,6 +229,76 @@ void export_jsonl(std::ostream& out, const core::GameState& state,
     for (const auto& entry : state.logs) {
         write_jsonl_line(out, entry, debug_mode);
     }
+}
+
+core::Result<bool> export_event_reports_jsonl(
+        std::ostream& out,
+        const core::GameState& state) {
+    for (const auto& entry : state.logs) {
+        if (entry.category != "event_fired") {
+            continue;
+        }
+
+        auto event_id = parse_required_string(entry, "event_id_code");
+        if (!event_id) {
+            return core::Result<bool>::failure(std::move(event_id.error()));
+        }
+        auto country_id = parse_required_string(entry, "country_id_code");
+        if (!country_id) {
+            return core::Result<bool>::failure(std::move(country_id.error()));
+        }
+        auto public_text = parse_required_string(entry, "publicText");
+        if (!public_text) {
+            return core::Result<bool>::failure(std::move(public_text.error()));
+        }
+        auto true_intensity = parse_required_number(entry, "true_intensity");
+        if (!true_intensity) {
+            return core::Result<bool>::failure(std::move(true_intensity.error()));
+        }
+        auto reported_intensity =
+            parse_required_number(entry, "reported_intensity");
+        if (!reported_intensity) {
+            return core::Result<bool>::failure(
+                std::move(reported_intensity.error()));
+        }
+        auto bias_total = parse_required_number(entry, "bias_total");
+        if (!bias_total) {
+            return core::Result<bool>::failure(std::move(bias_total.error()));
+        }
+        auto noise_sample = parse_required_number(entry, "noise_sample");
+        if (!noise_sample) {
+            return core::Result<bool>::failure(std::move(noise_sample.error()));
+        }
+        auto perceived_intensity =
+            parse_required_number(entry, "perceived_intensity");
+        if (!perceived_intensity) {
+            return core::Result<bool>::failure(
+                std::move(perceived_intensity.error()));
+        }
+
+        std::string line;
+        line += "{\"date\":";
+        append_json_string(line, entry.date.to_string());
+        line += ",\"event_id_code\":";
+        append_json_string(line, event_id.value());
+        line += ",\"country_id_code\":";
+        append_json_string(line, country_id.value());
+        line += ",\"publicText\":";
+        append_json_string(line, public_text.value());
+        line += ",\"true_intensity\":";
+        append_json_number(line, true_intensity.value());
+        line += ",\"reported_intensity\":";
+        append_json_number(line, reported_intensity.value());
+        line += ",\"bias_total\":";
+        append_json_number(line, bias_total.value());
+        line += ",\"noise_sample\":";
+        append_json_number(line, noise_sample.value());
+        line += ",\"perceived_intensity\":";
+        append_json_number(line, perceived_intensity.value());
+        line += "}\n";
+        out.write(line.data(), static_cast<std::streamsize>(line.size()));
+    }
+    return core::Result<bool>::success(true);
 }
 
 }  // namespace leviathan::systems::logging

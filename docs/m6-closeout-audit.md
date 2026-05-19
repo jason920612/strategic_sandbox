@@ -1,5 +1,33 @@
 # M6 closeout audit
 
+> Current branch update: **M6 implementation complete; awaiting Jason close
+> approval.** This branch implements every remaining RFC-080 §8 M6 blocker
+> identified by PR #118. It does not declare M6 closed.
+>
+> Implemented blockers: `FactionInterestBias`,
+> `BureaucraticSelfProtection`, preserved `PropagandaBias`, full
+> `information_accuracy` formula
+> (`BaseAccuracy + IntelligenceCapacity + MediaFreedomSignal +
+> BureaucraticProfessionalism + AuditCapacity - Corruption -
+> FactionCapture - LeaderIsolation - LocalAutonomyOpacity`), per-event
+> `EventDefinition.true_intensity`, and separate player-facing
+> `event_reports.jsonl`.
+>
+> Save/artifact changes: save format v18 -> v19; unconditional artifact
+> contract 11 -> 12 via `event_reports.jsonl`. No M7 work. No RCR-2.
+>
+> Coefficients are game-model assumptions unless an RFC field mapping is
+> explicitly named: BaseAccuracy `0.40`; IntelligenceCapacity
+> `0.30 * (0.70 * intelligence_capability + 0.30 * budget.intelligence)`;
+> MediaFreedomSignal `0.10 * (1 - media_control)`;
+> BureaucraticProfessionalism `0.10`; AuditCapacity `0.10`; Corruption
+> `-0.16`; FactionCapture `-0.08 * max(influence * radicalism)`;
+> LeaderIsolation `-0.08`; LocalAutonomyOpacity
+> `-0.08 * (1 - central_control)`; FactionInterestBias
+> `0.25 * influence-weighted authored alignment`;
+> BureaucraticSelfProtection `0.20 * (1 - bureaucratic_compliance)`;
+> PropagandaBias `0.30 * media_control`.
+
 - Status: **AUDIT COMPLETE — M6 REMAINS OPEN**
 - Type: Closeout audit + representative residual implementation
 - Scope: RFC-090 §M6 (hidden truth / information distortion) and

@@ -1,25 +1,35 @@
-{
-  "id":                        "ARG",
-  "name":                      "Argentina",
-  "display_name":              "Argentine Republic",
-  "initial_gdp":               25.0,
-  "initial_stability":         0.55,
-  "legal_tax_burden":          0.14,
-  "fiscal_capacity":           0.45,
-  "administrative_efficiency": 0.50,
-  "central_control":           0.55,
-  "corruption":                0.30,
-  "legitimacy":                0.55,
-  "military_power":            0.25,
-  "threat_perception":         0.20,
-  "military_strength":         12.0,
-  "budget": {
-    "administration":  0.25,
-    "military":        0.20,
-    "education":       0.15,
-    "welfare":         0.12,
-    "intelligence":    0.05,
-    "infrastructure":  0.15,
-    "industry":        0.08
-  }
+﻿{
+    "id":  "ARG",
+    "name":  "Argentina",
+    "display_name":  "Argentine Republic",
+    "initial_gdp":  25.0,
+    "initial_stability":  0.55,
+    "legal_tax_burden":  0.14,
+    "fiscal_capacity":  0.45,
+    "administrative_efficiency":  0.50,
+    "central_control":  0.55,
+    "corruption":  0.30,
+    "legitimacy":  0.55,
+    "military_power":  0.25,
+    "threat_perception":  0.20,
+    "military_strength":  12.0,
+    "budget":  {
+                   "administration":  0.25,
+                   "military":  0.20,
+                   "education":  0.15,
+                   "welfare":  0.12,
+                   "intelligence":  0.05,
+                   "infrastructure":  0.15,
+                   "industry":  0.08
+               },
+    "government_authority":  {
+                                 "bureaucratic_compliance":  0.5,
+                                 "military_loyalty":  0.5,
+                                 "intelligence_capability":  0.5,
+                                 "media_control":  0.5,
+                                 "bureaucratic_professionalism":  0.5,
+                                 "audit_capacity":  0.45,
+                                 "leader_isolation":  0.5
+                             }
 }
+

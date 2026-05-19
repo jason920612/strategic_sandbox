@@ -7,6 +7,7 @@
 
 #include "leviathan/systems/event_firer.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <string>
@@ -15,9 +16,8 @@
 
 #include "leviathan/core/log_entry.hpp"
 #include "leviathan/systems/bias_noise.hpp"
+#include "leviathan/systems/bias_total.hpp"
 #include "leviathan/systems/information_accuracy.hpp"
-#include "leviathan/systems/propaganda_bias.hpp"
-#include "leviathan/systems/reported_value.hpp"
 
 namespace leviathan::systems::event_firer {
 namespace {
@@ -96,10 +96,15 @@ core::EventInstanceActor to_actor(
 struct DistortionFields {
     bool         emit_distortion         = false;
     std::string  visible_report;
+    double       true_intensity          = 0.0;
     double       information_accuracy    = 0.0;
-    double       propaganda_bias_sample  = 0.0;   // M6 closeout audit
+    double       faction_interest_bias   = 0.0;
+    double       bureaucratic_self_protection = 0.0;
+    double       propaganda_bias_sample  = 0.0;
+    double       bias_total              = 0.0;
     double       reported_intensity      = 0.0;
     double       noise_sample            = 0.0;
+    double       perceived_intensity     = 0.0;
 };
 
 // Compose the M6.3 / M6.4 / M6.5 pipeline into the
@@ -140,10 +145,6 @@ core::Result<DistortionFields> compute_distortion_fields(
     out.visible_report = definition.visible_report;
 
     if (!has_actor) {
-        // Vacuous-actor event: no country anchor; emit only
-        // the publicText string (still useful for the player
-        // as the public-facing text) but skip the numeric
-        // distortion fields. Not an error.
         return R::success(std::move(out));
     }
     if (first_actor_country_id_code.empty()) {
@@ -186,6 +187,15 @@ core::Result<DistortionFields> compute_distortion_fields(
     }
     const core::CountryId cid{static_cast<int>(country_index)};
 
+    if (!std::isfinite(definition.true_intensity) ||
+        definition.true_intensity < 0.01 ||
+        definition.true_intensity > 10.0) {
+        return R::failure(
+            "event_firer::record_match (M6 RFC-080 §8): event '" +
+            definition.id_code +
+            "' true_intensity is not finite in [0.01, 10]");
+    }
+
     auto acc_r =
         information_accuracy::compute_for_country(state, cid);
     if (!acc_r) {
@@ -204,11 +214,12 @@ core::Result<DistortionFields> compute_distortion_fields(
     // `true_intensity` field on EventDefinition with a save
     // schema bump). M6 remains OPEN; this PR does not invent a
     // per-event TrueValue source.
-    auto rep_r = reported_value::from_true_value(1.0, accuracy);
-    if (!rep_r) {
+    auto bias_r = bias_total::compute_for_event_country(
+        state, definition, cid);
+    if (!bias_r) {
         return R::failure(
-            "event_firer::record_match (M6.9 reported_value): " +
-            std::move(rep_r.error()));
+            "event_firer::record_match (M6 RFC-080 §8 bias_total): " +
+            std::move(bias_r.error()));
     }
 
     // M6 closeout-audit PropagandaBias (RFC-080 §8
@@ -223,14 +234,6 @@ core::Result<DistortionFields> compute_distortion_fields(
     // placeholder (TrueValue × accuracy); replacing it with the
     // additive RFC-strict form is documented as a separate
     // remaining blocker in the audit doc.
-    auto bias_r =
-        propaganda_bias::compute_for_country(state, cid);
-    if (!bias_r) {
-        return R::failure(
-            "event_firer::record_match (M6 closeout-audit "
-            "propaganda_bias): " +
-            std::move(bias_r.error()));
-    }
 
     // M6.5 noise: amplitude = 1 - accuracy. At accuracy 1.0
     // (intelligence maxed, no corruption) the amplitude is 0
@@ -254,10 +257,18 @@ core::Result<DistortionFields> compute_distortion_fields(
     }
 
     out.emit_distortion         = true;
+    out.true_intensity          = definition.true_intensity;
     out.information_accuracy    = accuracy;
-    out.propaganda_bias_sample  = bias_r.value();
-    out.reported_intensity      = rep_r.value();
+    out.faction_interest_bias   = bias_r.value().faction_interest_bias;
+    out.bureaucratic_self_protection =
+        bias_r.value().bureaucratic_self_protection;
+    out.propaganda_bias_sample  = bias_r.value().propaganda_bias;
+    out.bias_total              = bias_r.value().total;
+    out.reported_intensity      =
+        definition.true_intensity + bias_r.value().total;
     out.noise_sample            = noise_r.value();
+    out.perceived_intensity     =
+        out.reported_intensity + out.noise_sample;
     return R::success(std::move(out));
 }
 
@@ -413,18 +424,24 @@ core::Result<bool> record_match(
     entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
-            {"information_accuracy",   format_double(dist.information_accuracy)});
-        // M6 closeout-audit (RFC-080 §8 `+ PropagandaBias`):
-        // emitted between `information_accuracy` and
-        // `reported_intensity` so a future EventReport artefact
-        // can compose the strict `TrueValue + Bias + Noise`
-        // expression directly from the emitted keys.
+            {"true_intensity",         format_double(dist.true_intensity)});
         entry.metadata.push_back(
-            {"propaganda_bias_sample", format_double(dist.propaganda_bias_sample)});
+            {"information_accuracy",   format_double(dist.information_accuracy)});
+        entry.metadata.push_back(
+            {"faction_interest_bias",  format_double(dist.faction_interest_bias)});
+        entry.metadata.push_back(
+            {"bureaucratic_self_protection",
+             format_double(dist.bureaucratic_self_protection)});
+        entry.metadata.push_back(
+            {"propaganda_bias",        format_double(dist.propaganda_bias_sample)});
+        entry.metadata.push_back(
+            {"bias_total",             format_double(dist.bias_total)});
         entry.metadata.push_back(
             {"reported_intensity",     format_double(dist.reported_intensity)});
         entry.metadata.push_back(
             {"noise_sample",           format_double(dist.noise_sample)});
+        entry.metadata.push_back(
+            {"perceived_intensity",    format_double(dist.perceived_intensity)});
     }
     state.logs.push_back(std::move(entry));
 
@@ -526,18 +543,24 @@ core::Result<bool> record_followup(
     entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
-            {"information_accuracy",   format_double(dist.information_accuracy)});
-        // M6 closeout-audit (RFC-080 §8 `+ PropagandaBias`):
-        // emitted between `information_accuracy` and
-        // `reported_intensity` so a future EventReport artefact
-        // can compose the strict `TrueValue + Bias + Noise`
-        // expression directly from the emitted keys.
+            {"true_intensity",         format_double(dist.true_intensity)});
         entry.metadata.push_back(
-            {"propaganda_bias_sample", format_double(dist.propaganda_bias_sample)});
+            {"information_accuracy",   format_double(dist.information_accuracy)});
+        entry.metadata.push_back(
+            {"faction_interest_bias",  format_double(dist.faction_interest_bias)});
+        entry.metadata.push_back(
+            {"bureaucratic_self_protection",
+             format_double(dist.bureaucratic_self_protection)});
+        entry.metadata.push_back(
+            {"propaganda_bias",        format_double(dist.propaganda_bias_sample)});
+        entry.metadata.push_back(
+            {"bias_total",             format_double(dist.bias_total)});
         entry.metadata.push_back(
             {"reported_intensity",     format_double(dist.reported_intensity)});
         entry.metadata.push_back(
             {"noise_sample",           format_double(dist.noise_sample)});
+        entry.metadata.push_back(
+            {"perceived_intensity",    format_double(dist.perceived_intensity)});
     }
     state.logs.push_back(std::move(entry));
 

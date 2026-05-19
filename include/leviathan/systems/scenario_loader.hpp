@@ -211,6 +211,9 @@ struct ManifestEvent {
     std::string                      description;
     std::string                      visible_report;   // M6.2
     std::string                      true_cause;       // M6.1
+    double                           true_intensity = 1.0;
+    std::vector<core::EventFactionInterestAlignment>
+        faction_interest_bias;
     std::string                      category;         // issue #112 — required non-empty
     std::vector<core::EventTrigger>  triggers;
     std::vector<core::PolicyEffect>  effects;

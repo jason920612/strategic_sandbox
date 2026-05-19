@@ -1,48 +1,71 @@
-{
-  "events": [
-    {
-      "id": "low_stability_unrest",
-      "name": "Low Stability Unrest",
-      "description": "Low stability creates unrest pressure.",
-      "visible_report": "Reports indicate growing unrest among the population; stability appears to be slipping.",
-      "true_cause": "The country's actual stability has fallen below the unrest threshold.",
-      "category": "domestic_unrest",
-      "triggers": [
-        {
-          "target": "country.stability",
-          "op": "lt",
-          "value": 0.30
-        }
-      ],
-      "effects": [
-        {
-          "target": "country.stability",
-          "op": "add",
-          "value": -0.02
-        }
-      ]
-    },
-    {
-      "id": "radical_interest_group_warning",
-      "name": "Radical Interest Group Warning",
-      "description": "A highly radical interest group signals political risk.",
-      "visible_report": "Intelligence reports a sharp uptick in radical rhetoric from one of the country's interest groups.",
-      "true_cause": "An interest group's actual radicalism has crossed the warning threshold.",
-      "category": "domestic_unrest",
-      "triggers": [
-        {
-          "target": "interest_group.radicalism",
-          "op": "gt",
-          "value": 0.75
-        }
-      ],
-      "effects": [
-        {
-          "target": "country.legitimacy",
-          "op": "add",
-          "value": -0.01
-        }
-      ]
-    }
-  ]
+﻿{
+    "events":  [
+                   {
+                       "id":  "low_stability_unrest",
+                       "name":  "Low Stability Unrest",
+                       "description":  "Low stability creates unrest pressure.",
+                       "visible_report":  "Reports indicate growing unrest among the population; stability appears to be slipping.",
+                       "true_cause":  "The country\u0027s actual stability has fallen below the unrest threshold.",
+                       "category":  "domestic_unrest",
+                       "triggers":  [
+                                        {
+                                            "target":  "country.stability",
+                                            "op":  "lt",
+                                            "value":  0.30
+                                        }
+                                    ],
+                       "effects":  [
+                                       {
+                                           "target":  "country.stability",
+                                           "op":  "add",
+                                           "value":  -0.02
+                                       }
+                                   ],
+                       "true_intensity":  1.2,
+                       "faction_interest_bias":  [
+                                                     {
+                                                         "alignment":  0.4,
+                                                         "interest_group_kind":  "Workers"
+                                                     },
+                                                     {
+                                                         "alignment":  -0.2,
+                                                         "interest_group_kind":  "Bureaucracy"
+                                                     }
+                                                 ]
+                   },
+                   {
+                       "id":  "radical_interest_group_warning",
+                       "name":  "Radical Interest Group Warning",
+                       "description":  "A highly radical interest group signals political risk.",
+                       "visible_report":  "Intelligence reports a sharp uptick in radical rhetoric from one of the country\u0027s interest groups.",
+                       "true_cause":  "An interest group\u0027s actual radicalism has crossed the warning threshold.",
+                       "category":  "domestic_unrest",
+                       "triggers":  [
+                                        {
+                                            "target":  "interest_group.radicalism",
+                                            "op":  "gt",
+                                            "value":  0.75
+                                        }
+                                    ],
+                       "effects":  [
+                                       {
+                                           "target":  "country.legitimacy",
+                                           "op":  "add",
+                                           "value":  -0.01
+                                       }
+                                   ],
+                       "true_intensity":  0.75,
+                       "faction_interest_bias":  [
+                                                     {
+                                                         "alignment":  0.2,
+                                                         "interest_group_kind":  "Bureaucracy"
+                                                     },
+                                                     {
+                                                         "alignment":  0.3,
+                                                         "interest_group_kind":  "Students"
+                                                     }
+                                                 ]
+                   }
+               ]
 }
+

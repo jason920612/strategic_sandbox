@@ -21,6 +21,7 @@
 
 #include "leviathan/core/game_state.hpp"
 #include "leviathan/core/log_entry.hpp"
+#include "leviathan/core/result.hpp"
 
 namespace leviathan::systems::logging {
 
@@ -86,6 +87,14 @@ void write_jsonl_line(std::ostream& out, const core::LogEntry& entry,
 // `write_jsonl_line` call; see that function for the M6.8 filter.
 void export_jsonl(std::ostream& out, const core::GameState& state,
                   bool debug_mode = false);
+
+// Writes the player-facing EventReport JSONL artefact. Only
+// `event_fired` entries are exported. Required fields are emitted
+// as top-level report fields and `true_cause` is never emitted,
+// regardless of debug mode.
+core::Result<bool> export_event_reports_jsonl(
+    std::ostream& out,
+    const core::GameState& state);
 
 // Converts severity to its canonical lowercase string form.
 // "debug" | "info" | "warn" | "error".

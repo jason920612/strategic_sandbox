@@ -148,6 +148,9 @@ json country_to_json(const core::CountryState& c) {
     authority["military_loyalty"]        = c.government_authority.military_loyalty;
     authority["intelligence_capability"] = c.government_authority.intelligence_capability;
     authority["media_control"]           = c.government_authority.media_control;
+    authority["bureaucratic_professionalism"] = c.government_authority.bureaucratic_professionalism;
+    authority["audit_capacity"]               = c.government_authority.audit_capacity;
+    authority["leader_isolation"]             = c.government_authority.leader_isolation;
     j["government_authority"] = std::move(authority);
 
     // M1.15 active_policies block - array of {policy_id_code,
@@ -396,6 +399,15 @@ core::Result<core::CountryState> country_from_json(const json& j,
         !r) return r;
     if (auto r = load_authority("media_control",
                                 c.government_authority.media_control);
+        !r) return r;
+    if (auto r = load_authority("bureaucratic_professionalism",
+                                c.government_authority.bureaucratic_professionalism);
+        !r) return r;
+    if (auto r = load_authority("audit_capacity",
+                                c.government_authority.audit_capacity);
+        !r) return r;
+    if (auto r = load_authority("leader_isolation",
+                                c.government_authority.leader_isolation);
         !r) return r;
 
     // M1.15 active_policies block. Required as of save format v7.
@@ -799,6 +811,7 @@ std::string serialize(const core::GameState& state) {
         entry["description"]    = ev.description;
         entry["visible_report"] = ev.visible_report;   // M6.2 (RFC-090 §6.2)
         entry["true_cause"]     = ev.true_cause;       // M6.1 (RFC-090 §6.1)
+        entry["true_intensity"] = ev.true_intensity;
         entry["category"]       = ev.category;         // issue #112 — non-empty
         json triggers_arr = json::array();
         for (const auto& t : ev.triggers) {
@@ -859,6 +872,15 @@ std::string serialize(const core::GameState& state) {
             followup_arr.push_back(s);
         }
         entry["followup_event_ids"] = std::move(followup_arr);
+
+        json fib_arr = json::array();
+        for (const auto& row : ev.faction_interest_bias) {
+            json r = json::object();
+            r["interest_group_kind"] = row.interest_group_kind;
+            r["alignment"]           = row.alignment;
+            fib_arr.push_back(std::move(r));
+        }
+        entry["faction_interest_bias"] = std::move(fib_arr);
 
         // Issue #112: option_effect_mode is SERIALISED ONLY when
         // `options` is non-empty. Pre-v18 saves did not have this
@@ -1048,6 +1070,13 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                    "base_then_option / option_then_base), and a "
                    "top-level `pending_player_events` array on "
                    "GameState";
+        } else if (save_v.value() == 18u) {
+            msg += "; v18 -> v19 (M6 RFC-080 §8 closeout) requires "
+                   "EventDefinition.true_intensity, "
+                   "EventDefinition.faction_interest_bias, and "
+                   "GovernmentAuthorityState "
+                   "bureaucratic_professionalism/audit_capacity/"
+                   "leader_isolation";
         }
         return core::Result<core::GameState>::failure(fmt_err(source_label, msg));
     }
@@ -1632,6 +1661,18 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
                 ev_ctx + ": 'true_cause' must be non-empty");
         }
 
+        auto true_intensity_r =
+            require_number(entry, "true_intensity", ev_ctx);
+        if (!true_intensity_r) {
+            return core::Result<core::GameState>::failure(
+                std::move(true_intensity_r.error()));
+        }
+        const double true_intensity = true_intensity_r.value();
+        if (true_intensity < 0.01 || true_intensity > 10.0) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'true_intensity' must be finite and in [0.01, 10]");
+        }
+
         // Issue #112 (save v18): category is required non-empty.
         if (!entry.contains("category")
             || !entry.at("category").is_string()) {
@@ -1894,6 +1935,48 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
             followup_event_ids.push_back(std::move(s));
         }
 
+        if (!entry.contains("faction_interest_bias")
+            || !entry.at("faction_interest_bias").is_array()) {
+            return core::Result<core::GameState>::failure(
+                ev_ctx + ": 'faction_interest_bias' missing or not an array");
+        }
+        const auto& fib_arr = entry.at("faction_interest_bias");
+        std::vector<core::EventFactionInterestAlignment> faction_interest_bias;
+        faction_interest_bias.reserve(fib_arr.size());
+        for (std::size_t bi = 0; bi < fib_arr.size(); ++bi) {
+            const std::string bctx =
+                ev_ctx + ": faction_interest_bias[" + std::to_string(bi) + "]";
+            const auto& row = fib_arr[bi];
+            if (!row.is_object()) {
+                return core::Result<core::GameState>::failure(
+                    bctx + ": expected JSON object");
+            }
+            auto kind_r = require_string(row, "interest_group_kind", bctx);
+            if (!kind_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(kind_r.error()));
+            }
+            if (!core::interest_group_kind_from_string(kind_r.value())) {
+                return core::Result<core::GameState>::failure(
+                    bctx + ": 'interest_group_kind' '" + kind_r.value() +
+                    "' is not a known InterestGroupKind");
+            }
+            auto alignment_r = require_number(row, "alignment", bctx);
+            if (!alignment_r) {
+                return core::Result<core::GameState>::failure(
+                    std::move(alignment_r.error()));
+            }
+            const double alignment = alignment_r.value();
+            if (alignment < -1.0 || alignment > 1.0) {
+                return core::Result<core::GameState>::failure(
+                    bctx + ": 'alignment' must be finite and in [-1, 1]");
+            }
+            core::EventFactionInterestAlignment align;
+            align.interest_group_kind = std::move(kind_r).value();
+            align.alignment           = alignment;
+            faction_interest_bias.push_back(std::move(align));
+        }
+
         // Issue #112 (save v18): option_effect_mode is required
         // iff `options` is non-empty; rejected if present alongside
         // empty options.
@@ -1947,12 +2030,14 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         ev.description        = desc;
         ev.visible_report     = visible_report;   // M6.2
         ev.true_cause         = true_cause;       // M6.1
+        ev.true_intensity     = true_intensity;
         ev.category           = category;         // issue #112
         ev.triggers           = std::move(triggers);
         ev.effects            = std::move(effects);
         ev.weight_modifiers   = std::move(weight_modifiers);   // RCR-1
         ev.options            = std::move(options);            // RCR-1
         ev.followup_event_ids = std::move(followup_event_ids); // RCR-1
+        ev.faction_interest_bias = std::move(faction_interest_bias);
         ev.option_effect_mode = option_mode;                   // issue #112
         state.events.push_back(std::move(ev));
     }

@@ -96,6 +96,9 @@ struct GovernmentAuthorityState {
     double military_loyalty         = 0.5;
     double intelligence_capability  = 0.5;
     double media_control            = 0.5;
+    double bureaucratic_professionalism = 0.5;
+    double audit_capacity               = 0.5;
+    double leader_isolation             = 0.5;
 };
 
 struct CountryState {
@@ -353,6 +356,11 @@ enum class EventOptionEffectMode {
     OptionThenBase,
 };
 
+struct EventFactionInterestAlignment {
+    std::string interest_group_kind;
+    double      alignment = 0.0;
+};
+
 // One event definition loaded from a scenario fixture and stored
 // in `GameState::events`. M5.1 shipped the schema (loader + save
 // round-trip); M5.2-M5.8 added evaluator + firer + effects
@@ -382,6 +390,7 @@ struct EventDefinition {
     std::string               description;
     std::string               visible_report;   // M6.2 (RFC-090 §6.2) — non-empty at load
     std::string               true_cause;   // M6.1 (RFC-090 §6.1) — non-empty at load
+    double                    true_intensity = 1.0;
     // Issue #112: category gates per-category event selection in
     // `event_engine::tick_events`. Required non-empty at load.
     // One category per definition; the per-country event tick groups
@@ -395,6 +404,7 @@ struct EventDefinition {
     std::vector<EventOption>    options;             // may be empty
     std::vector<std::string>    followup_event_ids;  // may be empty;
                                                      // entries are non-empty strings
+    std::vector<EventFactionInterestAlignment> faction_interest_bias;
 
     // Issue #112: base / option effect composition mode. Required
     // when `options` is non-empty; rejected at load when present

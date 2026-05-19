@@ -890,6 +890,9 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     const auto annual_world_stats_csv_path =
         opts.annual_world_stats_csv_path.value_or(
             opts.output_dir / "annual_world_stats.csv");
+    const auto event_reports_path =
+        opts.event_reports_path.value_or(
+            opts.output_dir / "event_reports.jsonl");
 
     auto save_r = ss::save(state, save_path);
     if (!save_r) {
@@ -906,6 +909,17 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     auto log_w = write_string_to_file(log_path, ss_log.str());
     if (!log_w) {
         return core::Result<RunOutcome>::failure(std::move(log_w.error()));
+    }
+
+    std::ostringstream ss_event_reports;
+    auto reports_r = lg::export_event_reports_jsonl(ss_event_reports, state);
+    if (!reports_r) {
+        return core::Result<RunOutcome>::failure(std::move(reports_r.error()));
+    }
+    auto reports_w =
+        write_string_to_file(event_reports_path, ss_event_reports.str());
+    if (!reports_w) {
+        return core::Result<RunOutcome>::failure(std::move(reports_w.error()));
     }
 
     if (opts.summary_csv_path.has_value()) {
@@ -1055,6 +1069,7 @@ core::Result<RunOutcome> end_tick(core::GameState& state,
     // RCR-1 (RFC-090 §3.9 / RFC-010 §5):
     outcome.annual_world_stats_csv_path = annual_world_stats_csv_path;
     outcome.annual_world_stats_csv_rows = ctrl.annual_rows.size();
+    outcome.event_reports_path = event_reports_path;
 
     ctrl.ended = true;
     return core::Result<RunOutcome>::success(std::move(outcome));
