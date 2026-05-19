@@ -16,7 +16,7 @@
 // Semantics (unchanged from M5.2):
 //
 //   * Per-trigger evaluation is a small predicate (target + op +
-//     value) against a state slice. The post-M7.2 allowlist:
+//     value) against a state slice. The post-M7.3 allowlist:
 //
 //       country.stability                                          double
 //       country.legitimacy                                         double
@@ -24,6 +24,7 @@
 //       interest_group.radicalism                                  double
 //       interest_group.loyalty                                     double
 //       faction.radicalism                                         double  (M7.2, RFC-090 §7.2)
+//       faction.influence                                          double  (M7.3, RFC-090 §7.3)
 //
 //     Operators: lt / lte / gt / gte. NaN / +-Inf state values are
 //     treated as non-matching.

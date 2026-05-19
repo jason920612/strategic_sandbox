@@ -1531,8 +1531,9 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
     // value, no target/op allowlist at load). Cross-save
     // duplicate id_code rejected.
     // Trigger-target allowlist at the save layer mirrors the
-    // scenario_loader allowlist. M7.2 (RFC-090 §7.2) adds
-    // `faction.radicalism` so saves carrying faction-radicalism
+    // scenario_loader allowlist. M7.2 (RFC-090 §7.2) added
+    // `faction.radicalism`; M7.3 (RFC-090 §7.3) adds
+    // `faction.influence` so saves carrying influence-weighted
     // events round-trip without rejection.
     static const std::vector<std::string> kTriggerTargetsSave = {
         "country.stability",
@@ -1541,6 +1542,7 @@ core::Result<core::GameState> deserialize(std::string_view json_text,
         "interest_group.radicalism",
         "interest_group.loyalty",
         "faction.radicalism",  // M7.2 (RFC-090 §7.2)
+        "faction.influence",   // M7.3 (RFC-090 §7.3)
     };
     static const std::vector<std::string> kTriggerOpsSave = {
         "lt", "lte", "gt", "gte",
