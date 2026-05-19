@@ -321,8 +321,14 @@ value of every ratio-target `add`. The new baselines are
 **self-consistent within this branch**:
 
 - `cmake --build build --config Debug` produces a clean build.
-- `build/bin/Debug/leviathan_tests.exe` reports `1235 / 1235`
-  passing test cases, `69 706` assertions, `0` failures.
+- `build/bin/Debug/leviathan_tests.exe` reports `1251 / 1251`
+  passing test cases, `95 876` assertions, `0` failures. The
+  jump from the initial `1235 / 69 706` snapshot covers the
+  17 additional hardening cases that landed alongside the
+  Result-promotion of `weighted_choice`,
+  `rank_weighted_events`, and `select_weighted_event` (NaN /
+  ±Inf / negative / empty rejection + `state.rng.counter`
+  stable on failure).
 - `leviathan.exe --scenario data/scenarios/1930_minimal.json --days 365`
   completes with `Sanity issues : 0` and is byte-identical across
   repeated same-seed runs (same-branch determinism pin).

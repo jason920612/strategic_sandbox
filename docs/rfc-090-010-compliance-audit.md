@@ -316,12 +316,19 @@ linear-`add`. Same-branch / same-seed determinism is preserved
 (running the canonical `1930_minimal` 365-day scenario twice
 produces byte-identical save / events.jsonl / CSVs). Compliance
 `1930_rfc_compliance` 25 567-day (1930→2000) sweep completes
-with `Sanity issues : 0`. Test count is 1 235 / 1 235 cases,
-69 706 assertions, 0 failed, including 4 new trajectory-shape
+with `Sanity issues : 0`. Test count is 1 251 / 1 251 cases,
+95 876 assertions, 0 failed, including 4 new trajectory-shape
 tests in `tests/systems/asymptotic_add_trajectory_test.cpp`
 per `feedback_trajectory_observation_tests` (bounded-from-
 above approach; bounded-from-below approach;
-1 000-input no-overshoot fuzz; symmetry around the midpoint).
+1 000-input no-overshoot fuzz; symmetry around the midpoint),
+plus 17 additional hardening cases pinning Result propagation
+on `random_service::weighted_choice`,
+`event_evaluator::rank_weighted_events`,
+`event_evaluator::select_weighted_event`, and
+`event_engine::tick_events` (malformed weights / non-finite
+modifier inputs reject loudly; `state.rng.counter` is stable
+on every failure path).
 
 Design note:
 [`hardening-strict-numeric-validation.md`](hardening-strict-numeric-validation.md).

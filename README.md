@@ -260,9 +260,14 @@
   byte-identical output across repeated runs). Compliance
   `1930_rfc_compliance` 25 567-day (1930→2000) sweep
   completes with `Sanity issues : 0`. Test count
-  1 235 / 1 235 (69 706 assertions, 0 failed) including
+  1 251 / 1 251 (95 876 assertions, 0 failed) including
   4 new trajectory-shape tests in
-  `tests/systems/asymptotic_add_trajectory_test.cpp`.
+  `tests/systems/asymptotic_add_trajectory_test.cpp` plus
+  17 additional hardening cases pinning `weighted_choice` /
+  `rank_weighted_events` / `select_weighted_event` /
+  `tick_events` Result propagation (NaN / ±Inf / negative /
+  empty input rejected; `state.rng.counter` stable on every
+  failure path).
   Design note:
   [`docs/hardening-strict-numeric-validation.md`](docs/hardening-strict-numeric-validation.md).
   Companion CI: `.github/workflows/random-player-intervention.yml`
