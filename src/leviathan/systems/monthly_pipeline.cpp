@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <string>
 
+#include "leviathan/systems/faction_conflict.hpp"
+
 namespace leviathan::systems::monthly {
 
 core::Result<CountryMonthlyOutcome> tick_country(core::GameState& state,
@@ -130,7 +132,28 @@ core::Result<MonthlyOutcome> tick_all_countries(core::GameState& state) {
     out.ai_policies_failed =
         static_cast<int>(ai.value().failed_countries.size());
 
-    // ---- 8. M5.8: event_engine::tick_events --------------------------
+    // ---- 8. M7.4 faction_conflict::tick_apply_pressure ---------------
+    // RFC-090 §7.4 + RFC-020 §8 `派系鬥爭`. Walks state.factions
+    // per country; for each (country, RFC-020 §8 rivalry-pair)
+    // where BOTH sides of the pair have at least one faction in
+    // the country with influence > threshold, applies
+    // asymptotic radicalism+ on every participating faction.
+    // Runs AFTER ai_policy::apply so AI-driven influence
+    // mutations are visible; runs BEFORE event_engine::tick_events
+    // so M5 events keyed off faction radicalism (M7.2
+    // `faction.radicalism` trigger) observe the drift.
+    auto fc = faction_conflict::tick_apply_pressure(state);
+    if (!fc.ok()) {
+        return core::Result<MonthlyOutcome>::failure(
+            "monthly::tick_all_countries: faction_conflict::"
+            "tick_apply_pressure failed: " + fc.error());
+    }
+    out.faction_conflict_pairs_active =
+        fc.value().pairs_active;
+    out.faction_conflict_factions_drifted =
+        fc.value().factions_drifted;
+
+    // ---- 9. M5.8: event_engine::tick_events --------------------------
     // Final global step: evaluate every state.events trigger
     // against the post-M3.4 + post-AI-apply state snapshot, fire
     // every matching event, and apply each fired event's effects.

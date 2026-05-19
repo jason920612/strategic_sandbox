@@ -41,6 +41,7 @@ add_library(leviathan_systems STATIC
     event_engine.cpp
     event_evaluator.cpp
     event_firer.cpp
+    faction_conflict.cpp
     information_accuracy.cpp
     internal/json_helpers.cpp
     logging_system.cpp

@@ -47,10 +47,28 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
-// The two final global steps AFTER M3.4 (issue #112 semantics):
+// The global steps AFTER M3.4 (issue #112 semantics + M7.4
+// faction-conflict insertion):
 //
-//   7.  ai_policy::apply_selected_policies (state)
-//   8.  event_engine::tick_events            (state)
+//   7.  ai_policy::apply_selected_policies   (state)
+//   8.  faction_conflict::tick_apply_pressure(state)
+//   9.  event_engine::tick_events            (state)
+//
+// Step 8 — M7.4 faction-conflict pressure (RFC-090 §7.4 +
+// RFC-020 §8 `派系鬥爭`):
+//   - For every (country, RFC-020 §8 rivalry-pair)
+//     combination where BOTH sides of the pair have at least
+//     one faction in that country with influence >
+//     `faction_conflict::kFactionConflictInfluenceThreshold`,
+//     apply asymptotic-add radicalism+
+//     `kFactionConflictAsymptoticRadicalismDelta` on every
+//     participating faction.
+//   - Runs AFTER ai_policy::apply so AI-driven influence
+//     mutations are visible; runs BEFORE
+//     event_engine::tick_events so M5 events keyed off
+//     faction radicalism (M7.2 `faction.radicalism` trigger
+//     target) observe the conflict drift.
+//   - Deterministic, RNG-free. No state.rng consumption.
 //
 // Step 7 — AI policy selection (RFC-090 §3.5 / RFC-040 §4):
 //   - PRESSURE-gated: countries whose `compute_total_pressure`
@@ -146,6 +164,7 @@
 #include "leviathan/systems/ai_policy.hpp"
 #include "leviathan/systems/economy_system.hpp"
 #include "leviathan/systems/event_engine.hpp"
+#include "leviathan/systems/faction_conflict.hpp"
 #include "leviathan/systems/faction_system.hpp"
 #include "leviathan/systems/interest_group_system.hpp"
 #include "leviathan/systems/stability_system.hpp"
@@ -225,6 +244,14 @@ struct MonthlyOutcome {
     int ai_policies_applied    = 0;
     int ai_policies_skipped    = 0;
     int ai_policies_failed     = 0;
+
+    // M7.4 (RFC-090 §7.4, RFC-020 §8) faction-conflict
+    // pressure counters. Populated by the new step 8 of
+    // tick_all_countries. Zero on a month where no (country,
+    // RFC-020 §8 rivalry-pair) combination has both sides at
+    // the influence threshold.
+    int faction_conflict_pairs_active     = 0;
+    int faction_conflict_factions_drifted = 0;
 
     // M5.8: final global step's outcome. Mirrors the fields of
     // `event_engine::TickOutcome` (events_matched / events_recorded
