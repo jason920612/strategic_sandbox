@@ -434,13 +434,17 @@ emits `true_cause` (the `debugTruth` side) and M6.9 emits
 
 RFC-080 §8 anchor: `ReportedValue = TrueValue + Bias + Noise`
 with `Noise = RandomNormal(0, 1 - InformationAccuracy)`.
-M6.9 ships Noise; the `Bias` term
-(`FactionInterestBias + BureaucraticSelfProtection +
-PropagandaBias`) and the remaining accuracy modifiers
-(`-FactionCapture` / `-LeaderIsolation` /
-`-LocalAutonomyOpacity` / `+MediaFreedomSignal` /
-`+BureaucraticProfessionalism` / `+AuditCapacity`) are
-RFC-090 backlog with no §6.x task today.
+M6.9 ships Noise. The remaining RFC-080 §8 residual
+classification — what is left of `Bias`, the missing accuracy
+modifiers, the per-event `TrueValue` source, and the
+separate `EventReport` artefact — is now tracked in
+`docs/m6-closeout-audit.md` (the closeout-audit doc that ran
+*after* M6.9 and explicitly does NOT close M6). The closeout
+audit additionally ships two representative residuals
+(`+ MediaFreedomSignal` accuracy positive term;
+`+ PropagandaBias` Bias term, emitted as a new
+`propaganda_bias_sample` metadata key alongside the M6.9
+distortion keys) — see §1.5 below.
 
 Per-event atomicity preserved: `event_firer::record_match`
 and `record_followup` are promoted to `Result<bool>` (per
@@ -476,6 +480,68 @@ save-layer surface; no new gameplay system module.
 
 Design note:
 [`m6-9-non-debug-mode-distortion.md`](m6-9-non-debug-mode-distortion.md).
+
+### 1.5 M6 closeout audit (after M6.9)
+
+After M6.9 landed (PR #117), an **M6 closeout audit** ran on
+the next branch. The audit is documented in
+[`m6-closeout-audit.md`](m6-closeout-audit.md); the closure
+decision lives there, not in this compliance-audit doc. The
+short summary:
+
+- **M6 REMAINS OPEN.** The audit's executive decision (§1 of
+  the audit doc) explicitly declines to close M6. Only Jason
+  may write "M6 closed".
+- The audit shipped **two representative RFC-080 §8 residuals**
+  on top of the M6.1 – M6.9 base:
+  1. **`+ MediaFreedomSignal`** — added to
+     `information_accuracy::compute_for_country` as an outer
+     weighted blend on the positive axis. Reads
+     `government_authority.media_control` (M2.16 field, [0, 1]
+     strict-validated). New constant
+     `kInformationAccuracyMediaFreedomWeight = 0.20`; the
+     existing inner intel-pair weight invariant
+     (`kInformationAccuracyCapabilityWeight +
+     kInformationAccuracyBudgetWeight = 1.0`) is preserved.
+     Coefficient is a game-model assumption per RFC-080 §11;
+     directional grounding cites V-Dem and Egorov-Guriev-Sonin
+     QJP 2009.
+  2. **`+ PropagandaBias`** — new
+     `leviathan::systems::propaganda_bias` helper sibling to
+     `information_accuracy`. Body:
+     `kPropagandaBiasMaxMagnitude × media_control` with
+     `kPropagandaBiasMaxMagnitude = 0.3`. Sign positive. Emitted
+     by `event_firer::record_match` / `record_followup` as a
+     new `propaganda_bias_sample` metadata key on every
+     country-anchored fire (between `information_accuracy` and
+     `reported_intensity`). Coefficient is a game-model
+     assumption per RFC-080 §11; directional grounding cites
+     V-Dem propaganda indicators, King-Pan-Roberts APSR 2013,
+     and DellaVigna-Kaplan QJE 2007.
+- **Remaining RFC-080 §8 residuals (closure blockers)**: the
+  audit doc §5 / §9 enumerates each with research grounding,
+  formula proposal, and implementation cost:
+  - Bias terms: `FactionInterestBias`,
+    `BureaucraticSelfProtection`.
+  - Accuracy modifiers: `-FactionCapture`, `-LeaderIsolation`,
+    `-LocalAutonomyOpacity`, `+BureaucraticProfessionalism`,
+    `+AuditCapacity`.
+  - Per-event TrueValue source (event_firer still pins
+    `TrueValue = 1.0`).
+  - Separate player-facing `event_reports.jsonl` artefact.
+- **No save schema bump** (still v18). **No artefact contract
+  change** (still 11). **No new player-facing command. No new
+  RFC-090 milestone feature.** Metadata count on country-
+  anchored fires bumped from 9 to 10 (the new
+  `propaganda_bias_sample` key).
+
+The audit is NOT M7 (per
+`feedback_milestone_direction_gate`) and NOT RCR-2 (per
+`feedback_rcr_recovery_track`). The compliance-audit doc here
+remains the canonical place to look for issue-#105 governance
+backlog; the closeout-audit doc remains the canonical place to
+look for the M6 closure decision and the RFC-080 §8 residual
+classification.
 
 ## 2. Finding 1 — RFC-090 original M3 drift (issue #105 baseline; see §6.1 for post-RCR-1 + #108 state)
 

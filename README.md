@@ -61,33 +61,28 @@
 >
 > Issue #112 has now landed (PR #111 squash-merged) and
 > execution has returned to the M-numbered milestone
-> sequence. **M6.9** (RFC-090 §6.9 "非 debug 模式隱藏真相")
-> is the latest shipped sub-milestone — every `event_fired`
-> LogEntry in events.jsonl now carries a `publicText`
-> metadata key sourced verbatim from
-> `EventDefinition.visible_report` (M6.2). Country-anchored
-> events additionally carry `information_accuracy` /
-> `reported_intensity` / `noise_sample` numerics composed
-> from the M6.3 / M6.6 / M6.7 + M6.4 + M6.5 helper pipeline.
-> The metadata key follows the RFC-060 §3 `publicText`
-> vocabulary; the schema-level field keeps its M6.2 name
-> (`visible_report`). The M6.8 `true_cause` reveal continues
-> to be `--debug`-gated. With M6.9 the RFC-060 §3
-> `EventLogEntry { ... publicText; debugTruth }` shape is
-> structurally satisfied: M6.8 emits `true_cause` (the
-> `debugTruth` side) and M6.9 emits `publicText` (the
-> player-facing side). Predecessor **M6.8**
-> (`debug 模式顯示真相`) added the `--debug` runner flag.
-> **There is no RCR-2 track.** Issues #105 / #108 / #110 /
-> #112 stay open until the reviewer confirms strict
-> compliance.
+> sequence. The RFC-090 §6.x sub-milestones M6.1 – M6.9 have
+> all shipped. **An M6 closeout audit has now run**
+> (`docs/m6-closeout-audit.md`): the audit ships two
+> representative RFC-080 §8 residuals (`+ MediaFreedomSignal`
+> on the accuracy side; `+ PropagandaBias` on the bias side)
+> and classifies the remaining residuals as M6 closure
+> blockers. **M6 REMAINS OPEN** — only Jason may write "M6
+> closed", and the audit's executive decision explicitly
+> declines to. **There is no RCR-2 track and no M7 work
+> started.** Issues #105 / #108 / #110 / #112 stay open
+> until the reviewer confirms strict compliance.
 
 - Phase: **Milestone 6 — Hidden truth /
-  information distortion (IN PROGRESS, RFC-090 §M6).**
-  M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at **M6.9**; M6.1 – M6.9 all shipped. M6
-  follows RFC-090 §M6 (隱藏真相與資訊失真): the player
-  will not always see the truth. Shipped so far:
+  information distortion (M6 CLOSEOUT AUDIT RUN — M6
+  REMAINS OPEN, RFC-090 §M6).**
+  M0 / M1 / M2 / M3 / M4 / M5 all closed; M6.1 – M6.9
+  all shipped; the M6 closeout audit has now run
+  (`docs/m6-closeout-audit.md`) and explicitly does NOT
+  close M6 — see §1 of the audit doc and §9 for the
+  remaining-blockers list. M6 follows RFC-090 §M6
+  (隱藏真相與資訊失真): the player will not always see
+  the truth. Shipped so far:
   - **M6.1** added a required non-empty `true_cause`
     string field on `core::EventDefinition` (save
     v14 → v15).
@@ -171,18 +166,56 @@
     surface; no event-engine change beyond Result
     propagation; no `state.rng` consumption.**
 
-  **Still deferred in M6:** none of the explicit
-  RFC-090 §6.x sub-milestones — M6.1 – M6.9 all
-  shipped. Backlog items NOT covered by any §6.x
-  task today: RFC-080 §8 Bias terms
-  (`FactionInterestBias` /
-  `BureaucraticSelfProtection` / `PropagandaBias`)
-  and the remaining accuracy modifiers
-  (`-FactionCapture` / `-LeaderIsolation` /
-  `-LocalAutonomyOpacity` / `+MediaFreedomSignal` /
-  `+BureaucraticProfessionalism` /
-  `+AuditCapacity`). These would each need a future
-  RFC-090 task assignment before shipping.
+  **M6 closeout audit (this PR)** shipped two
+  representative RFC-080 §8 residuals on top of the
+  M6.1 – M6.9 base:
+  - **`+ MediaFreedomSignal`** (accuracy positive
+    term). `information_accuracy::compute_for_country`
+    now composes the intel pair with `(1 - government_
+    authority.media_control)` via
+    `kInformationAccuracyMediaFreedomWeight = 0.20` as
+    an outer weighted blend, so the existing inner
+    intel-weight sum-to-1 invariant is preserved.
+    Reaches the `1.0` ceiling only with maxed intel
+    AND free press AND zero corruption.
+  - **`+ PropagandaBias`** (Bias term). New
+    `leviathan::systems::propaganda_bias` helper
+    `compute_for_country(state, country) →
+    Result<double>` returning
+    `kPropagandaBiasMaxMagnitude × media_control`
+    (max 0.3). Emitted by `event_firer::record_match`
+    / `record_followup` as a new
+    `propaganda_bias_sample` metadata key on
+    country-anchored fires, sitting between
+    `information_accuracy` and `reported_intensity`.
+  Coefficients are explicitly game-model assumptions
+  per RFC-080 §11 (cited research grounds direction:
+  V-Dem; Egorov-Guriev-Sonin QJP 2009; King-Pan-
+  Roberts APSR 2013; DellaVigna-Kaplan QJE 2007 on
+  the bias side).
+
+  **Still deferred under the M6 closeout audit** (see
+  `docs/m6-closeout-audit.md` §5 / §9 for the full
+  matrix of RFC-080 §8 residuals and `docs/rfc-090-
+  010-compliance-audit.md` for the deferred-scope
+  backlog):
+
+  - Two Bias terms (`FactionInterestBias`,
+    `BureaucraticSelfProtection`).
+  - Five accuracy modifiers (`-FactionCapture`,
+    `-LeaderIsolation`, `-LocalAutonomyOpacity`,
+    `+BureaucraticProfessionalism`, `+AuditCapacity`).
+  - Per-event TrueValue source (event_firer still
+    pins `TrueValue = 1.0`; the audit doc designs an
+    `EventDefinition.true_intensity` field + save
+    schema bump).
+  - Separate player-facing `event_reports.jsonl`
+    artefact (designed in the audit doc).
+
+  **All of the above are M6 closure blockers.** None
+  has an RFC-090 §6.x task number; each would need a
+  dedicated narrow PR before Jason can declare "M6
+  closed".
 
   **Canonical events still deliberately don't fire**
   on the canonical scenario; every M6.x sub-milestone
@@ -195,9 +228,94 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.9 — non-debug
-  mode hides the truth.** Ninth M6 PR. Implements
-  RFC-090 §6.9 (`6.9 非 debug 模式隱藏真相`). Composes
+- Latest shipped change: **M6 closeout audit +
+  representative RFC-080 §8 residual implementation
+  (M6 REMAINS OPEN).** Not a numbered RFC-090
+  sub-milestone — the M6.1 – M6.9 numbered sequence
+  already shipped through PR #117. This work is a
+  closeout audit per `docs/m6-closeout-audit.md`,
+  named "M6 closeout audit" (not M7, not RCR-2) and
+  scoped to: (1) audit existing RFC-090 §M6 / RFC-050
+  / RFC-060 / RFC-080 §8 compliance; (2) ship two
+  representative residual terms; (3) classify
+  remaining blockers. Code shipped here:
+  - `information_accuracy::compute_for_country` adds
+    the RFC-080 §8 `+ MediaFreedomSignal` positive
+    term. The helper now reads
+    `government_authority.media_control` (M2.16
+    field, [0, 1]) and composes
+    `1 - media_control` against the intel pair via
+    `kInformationAccuracyMediaFreedomWeight = 0.20`
+    as an outer weighted blend. The inner intel-pair
+    weight invariant
+    (`kInformationAccuracyCapabilityWeight +
+    kInformationAccuracyBudgetWeight = 1.0`) is
+    preserved. The "no-distortion ceiling" of 1.0 is
+    now reached only with maxed intel AND zero
+    corruption AND zero media_control (free press).
+  - New `leviathan::systems::propaganda_bias` module
+    with `compute_for_country(state, country) →
+    Result<double>` returning
+    `kPropagandaBiasMaxMagnitude × media_control`
+    (max 0.3). Sign is positive (propaganda inflates
+    the state-favoured narrative). The helper rejects
+    out-of-range / non-finite `media_control` loudly
+    per `feedback_no_silent_degradation`.
+  - `event_firer::record_match` /
+    `record_followup` emit a new
+    `propaganda_bias_sample` metadata key on every
+    country-anchored fire, between
+    `information_accuracy` and `reported_intensity`.
+    Metadata count on country-anchored fires:
+    **10 keys** (was 9; the new key sits at position 7).
+    Vacuous-actor fires still emit `publicText` only.
+  Coefficients are documented game-model assumptions
+  per RFC-080 §11 (cited research grounds direction
+  only — V-Dem methodology; Egorov, Guriev & Sonin
+  QJP 2009; King, Pan & Roberts APSR 2013;
+  DellaVigna & Kaplan QJE 2007 on the bias side).
+  **No save schema bump (still v18); artefact
+  contract unchanged (still 11); no `state.rng`
+  consumption; no new player-facing command; no new
+  RFC-090 milestone feature.** Canonical
+  `1930_minimal` 365-day events.jsonl byte-identical
+  with the M6.9 baseline (canonical events tuned not
+  to fire). Compliance `1930_rfc_compliance`
+  25 567-day (1930→2000) sweep completes with
+  `Sanity issues : 0`; events.jsonl gains the new
+  `propaganda_bias_sample` key per country-anchored
+  fire (numeric byte-values of `information_accuracy`
+  and downstream keys also change because the
+  accuracy formula now reads `media_control`). Tests:
+  1301 cases / 96 221 assertions / 0 failed,
+  verified via direct
+  `build/bin/Debug/leviathan_tests.exe` run per
+  `feedback_ctest_masks_doctest`. New tests: 13 new
+  doctest cases for `propaganda_bias` (formula
+  match, range bounds, monotonicity in
+  `media_control`, NaN/Inf/out-of-range rejection,
+  state-immutability, determinism, module surface
+  constants); 6+ MediaFreedomSignal test cases
+  (contribution monotonicity, ceiling / floor at
+  documented corners, formula match across a 7-case
+  sweep, NaN/Inf/out-of-range validation, ordering
+  short-circuit) plus 1 new integration assertion
+  pinning `propaganda_bias_sample` presence in
+  `events.jsonl` (both debug and non-debug). **What
+  this PR explicitly DOES NOT do** — no per-event
+  TrueValue source (still anchored at 1.0; designed
+  in audit doc as a closure blocker); no separate
+  `event_reports.jsonl` artefact (designed in audit
+  doc as a closure blocker); no other RFC-080 §8
+  residual terms (the remaining 2 bias + 5 accuracy
+  modifiers stay closure blockers, classified with
+  research grounding and formula proposals in audit
+  doc §5); no new RFC milestone number; no "M6
+  closed" wording anywhere; no plan to claim M6
+  closed without Jason's explicit approval. Latest
+  numbered sub-milestone (unchanged): **M6.9 —
+  non-debug mode hides the truth.** Ninth M6 PR.
+  Implements RFC-090 §6.9 (`6.9 非 debug 模式隱藏真相`). Composes
   the M6.3 / M6.6 / M6.7 `information_accuracy::compute_for_country`
   helper with the M6.4 `reported_value::from_true_value`
   helper and the M6.5 `bias_noise::sample_for_event`

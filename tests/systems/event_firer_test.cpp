@@ -519,7 +519,7 @@ TEST_CASE("M6.8 record_followup: appends `true_cause` metadata key sourced from 
     CHECK(*fu == "parent");
 }
 
-TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insertion order") {
+TEST_CASE("M6.8 + M6.9 + M6 closeout-audit record_match: metadata keys land in the documented insertion order") {
     GameState s;
     s.countries.push_back(make_country(0, "GER", /*stab*/0.20));
     s.events.push_back(make_event("low_stab",
@@ -531,15 +531,19 @@ TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insert
 
     const auto* entry = find_event_fired_log(s);
     REQUIRE(entry != nullptr);
-    // Stable insertion order (post-M6.9):
+    // Stable insertion order (post-M6.9 + M6 closeout audit):
     //   event_id_code, actor_kind, actor_id_code, country_id_code,
     //   true_cause (M6.8),
-    //   publicText, information_accuracy, reported_intensity,
-    //   noise_sample (M6.9). The publicText key uses the
-    //   RFC-060 §3 vocabulary; the source field is M6.2's
-    //   EventDefinition.visible_report, which keeps its
+    //   publicText, information_accuracy,
+    //   propaganda_bias_sample (M6 closeout audit — sits between
+    //   information_accuracy and reported_intensity so a future
+    //   EventReport artefact can compose RFC-080 §8 strict
+    //   `TrueValue + Bias + Noise` directly from the keys),
+    //   reported_intensity, noise_sample (M6.9). The publicText
+    //   key uses the RFC-060 §3 vocabulary; the source field is
+    //   M6.2's EventDefinition.visible_report, which keeps its
     //   schema-level name.
-    REQUIRE(entry->metadata.size() == 9u);
+    REQUIRE(entry->metadata.size() == 10u);
     CHECK(entry->metadata[0].first == "event_id_code");
     CHECK(entry->metadata[1].first == "actor_kind");
     CHECK(entry->metadata[2].first == "actor_id_code");
@@ -547,34 +551,80 @@ TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insert
     CHECK(entry->metadata[4].first == "true_cause");
     CHECK(entry->metadata[5].first == "publicText");
     CHECK(entry->metadata[6].first == "information_accuracy");
-    CHECK(entry->metadata[7].first == "reported_intensity");
-    CHECK(entry->metadata[8].first == "noise_sample");
+    CHECK(entry->metadata[7].first == "propaganda_bias_sample");
+    CHECK(entry->metadata[8].first == "reported_intensity");
+    CHECK(entry->metadata[9].first == "noise_sample");
 }
 
 // =====================================================================
-// M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") — record_match emits
-// the player-facing distortion fields sourced from the M6.3 / M6.6
-// / M6.7 information_accuracy + M6.4 reported_value + M6.5
-// bias_noise composition. `publicText` is emitted on EVERY
-// `event_fired` LogEntry (sourced verbatim from M6.2
-// `EventDefinition.visible_report` — the metadata key follows
-// the RFC-060 §3 `EventLogEntry.publicText` vocabulary; the
-// schema field keeps its M6.2 name). The three numeric
-// distortion keys (`information_accuracy`,
+// M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") + M6 closeout audit —
+// record_match emits the player-facing distortion fields. The
+// composition lives across multiple modules now that the closeout
+// audit shipped two representative RFC-080 §8 residuals on top of
+// M6.9's base wiring:
+//
+//   M6.3 / M6.6 / M6.7 information_accuracy::compute_for_country
+//     +  M6 closeout-audit MediaFreedomSignal positive term
+//     —  the `+ MediaFreedomSignal` term in RFC-080 §8 reads
+//        `government_authority.media_control` via an outer
+//        weighted blend with the intel pair; the closeout-audit
+//        PR is what wired this term into the engine path.
+//
+//   M6.4 reported_value::from_true_value(1.0, accuracy)
+//     —  unchanged from M6.9's `TrueValue = 1.0` anchor.
+//
+//   M6.5 bias_noise::sample_for_event(...)
+//     —  unchanged from M6.9; deterministic hash sample with
+//        amplitude `1 - accuracy`.
+//
+//   M6 closeout-audit propaganda_bias::compute_for_country
+//     —  NEW representative Bias term for RFC-080 §8 strict
+//        `Bias = ... + PropagandaBias`; reads
+//        `government_authority.media_control` and returns
+//        `kPropagandaBiasMaxMagnitude × media_control`. Emitted
+//        by event_firer as a new `propaganda_bias_sample`
+//        metadata key.
+//
+// Emitted keys on country-anchored fires (10 total):
+//
+//   event_id_code, actor_kind, actor_id_code, country_id_code,
+//   true_cause (M6.8), publicText (M6.9), information_accuracy
+//   (M6.9; now includes MediaFreedomSignal contribution),
+//   propaganda_bias_sample (M6 closeout audit — RFC-080 §8 Bias
+//   side),
+//   reported_intensity (M6.9), noise_sample (M6.9).
+//
+// `publicText` is emitted on EVERY `event_fired` LogEntry
+// (sourced verbatim from M6.2 `EventDefinition.visible_report` —
+// the metadata key follows the RFC-060 §3
+// `EventLogEntry.publicText` vocabulary; the schema field keeps
+// its M6.2 name). The FOUR numeric distortion keys
+// (`information_accuracy`, `propaganda_bias_sample`,
 // `reported_intensity`, `noise_sample`) appear ONLY when the
 // event has a first-actor country (country-anchored events,
-// which is every event the M5.1 schema accepts at load
-// time). Vacuous-actor hand-built matches still emit
-// `publicText` but skip the numeric distortion fields —
-// there is no country anchor for
-// `information_accuracy::compute_for_country` in that
-// degenerate case.
+// which is every event the M5.1 schema accepts at load time);
+// vacuous-actor hand-built matches emit `publicText` only and
+// skip all four numeric keys (the closeout-audit's
+// `propaganda_bias_sample` is gated by the same
+// `dist.emit_distortion == true` guard as the M6.9 keys).
 // `logging::write_jsonl_line` filters only the M6.8
 // `true_cause` key out of the events.jsonl artefact in
-// non-debug mode; the M6.9 keys are not filtered.
-// RFC-080 §8 `ReportedValue = TrueValue + Bias + Noise`
-// lives in (information_accuracy, reported_intensity,
-// noise_sample).
+// non-debug mode; the M6.9 keys and the closeout-audit
+// `propaganda_bias_sample` key are not filtered.
+// RFC-080 §8 strict mapping (post-closeout-audit):
+//   - InformationAccuracy → `information_accuracy` metadata
+//   - Bias              → `propaganda_bias_sample` metadata
+//                         (representative — M6 closeout audit
+//                         shipped this Bias term; the other
+//                         two RFC-080 §8 Bias terms remain
+//                         M6 closure blockers per the audit
+//                         doc §9)
+//   - Noise             → `noise_sample` metadata
+//   - ReportedValue     → `reported_intensity` metadata
+//                         (still M6.4 placeholder
+//                         `TrueValue × accuracy`; strict
+//                         RFC-080 §8 additive composition
+//                         remains a closure blocker)
 // =====================================================================
 
 namespace {
@@ -582,7 +632,21 @@ namespace {
 CountryState make_m69_country(int id, const std::string& code,
                               double intelligence_capability,
                               double budget_intelligence,
-                              double corruption) {
+                              double corruption,
+                              double media_control = 0.0) {
+    // M6 closeout audit added MediaFreedomSignal as a positive
+    // term in `information_accuracy::compute_for_country` and a
+    // PropagandaBias term shipped through
+    // `propaganda_bias::compute_for_country`. Both read
+    // `government_authority.media_control`, whose
+    // GovernmentAuthorityState default is 0.5 (mid). Tests that
+    // pin "the maxed-everything ceiling" or "the floor" now have
+    // to author media_control explicitly so the formula reaches
+    // its extreme corners. Default 0.0 matches the
+    // information_accuracy test's "free press" convention so the
+    // ceiling stays at the closeout-audit's documented
+    // boundaries (1.0 ceiling = maxed intel + free press + zero
+    // corruption + zero propaganda).
     CountryState c;
     c.id      = CountryId{id};
     c.id_code = code;
@@ -591,6 +655,7 @@ CountryState make_m69_country(int id, const std::string& code,
     c.legitimacy = 0.50;
     c.corruption = corruption;
     c.government_authority.intelligence_capability = intelligence_capability;
+    c.government_authority.media_control           = media_control;
     c.budget.intelligence                          = budget_intelligence;
     return c;
 }
@@ -654,14 +719,19 @@ TEST_CASE("M6.9 record_match: high accuracy -> reported_intensity close to 1.0 a
     CHECK(std::stod(*ns)  == doctest::Approx(0.0));
 }
 
-TEST_CASE("M6.9 record_match: low accuracy + high corruption -> larger distortion envelope (noise amplitude rises)") {
+TEST_CASE("M6.9 + M6 closeout-audit record_match: low accuracy + high corruption + max media-control -> larger distortion envelope (noise amplitude rises)") {
     // intelligence_capability = 0.0, budget.intelligence = 0.0,
-    // corruption = 1.0 -> accuracy = 0.4 - 0.4 = 0.0 (full
-    // blackout). amplitude = 1 - 0 = 1.0; bias_noise spans
-    // [-1, +1]; |noise| can be large.
+    // corruption = 1.0, media_control = 1.0 -> accuracy = 0.4 -
+    // 0.4 = 0.0 (full blackout). amplitude = 1 - 0 = 1.0;
+    // bias_noise spans [-1, +1]; |noise| can be large.
+    // media_control = 1.0 is required (post M6 closeout-audit) so
+    // the MediaFreedomSignal positive term contributes 0; the
+    // pre-audit test reached accuracy=0 without authoring this
+    // field because there was no media term.
     GameState s_lo;
     s_lo.countries.push_back(
-        make_m69_country(0, "LOW", /*cap*/0.0, /*bud*/0.0, /*corr*/1.0));
+        make_m69_country(0, "LOW", /*cap*/0.0, /*bud*/0.0,
+                         /*corr*/1.0, /*media_control*/1.0));
     s_lo.events.push_back(make_event("ev_lo",
         { make_trigger("country.stability", "lt", 0.30) }));
 
@@ -793,9 +863,16 @@ TEST_CASE("M6.9 record_followup: distortion uses parent's first-actor country") 
     REQUIRE(pt  != nullptr);
     REQUIRE(acc != nullptr);
     CHECK(*pt == "Follow-up report on the original disturbance.");
-    // Same accuracy as the parent country (GER's cap=0.5 / bud=0
-    // / corr=0 -> 0.4 + 0.6×0.35 = 0.61).
-    CHECK(std::stod(*acc) == doctest::Approx(0.61));
+    // Same accuracy as the parent country. Post M6 closeout
+    // audit, the helper composes intel_score with
+    // MediaFreedomSignal as an outer weighted blend:
+    //   intel_score   = 0.7×0.5 + 0.3×0 = 0.35
+    //   media_freedom = 1 - 0          = 1.0   (free press default in
+    //                                            make_m69_country)
+    //   positive_axis = 0.8×0.35 + 0.2×1.0     = 0.48
+    //   base          = 0.4 + 0.6×0.48          = 0.688
+    //   accuracy      = base - 0.4×corruption(0) = 0.688
+    CHECK(std::stod(*acc) == doctest::Approx(0.688));
 }
 
 // =====================================================================
@@ -842,9 +919,20 @@ TEST_CASE("M6.9 record_match (P2): vacuous-actor case (A) emits publicText only 
     REQUIRE(pt != nullptr);
     CHECK(*pt == "Vacuous-actor publicText.");
     // Numeric distortion fields are SKIPPED (no country anchor).
-    CHECK(metadata_value(*entry, "information_accuracy") == nullptr);
-    CHECK(metadata_value(*entry, "reported_intensity")   == nullptr);
-    CHECK(metadata_value(*entry, "noise_sample")         == nullptr);
+    // M6 closeout audit added `propaganda_bias_sample` inside the
+    // same `dist.emit_distortion` guard as the M6.9 numeric
+    // distortion keys; vacuous-actor fires skip ALL of them
+    // (publicText only is the spec).
+    CHECK(metadata_value(*entry, "information_accuracy")   == nullptr);
+    CHECK(metadata_value(*entry, "propaganda_bias_sample") == nullptr);
+    CHECK(metadata_value(*entry, "reported_intensity")     == nullptr);
+    CHECK(metadata_value(*entry, "noise_sample")           == nullptr);
+    // Total key count on a vacuous-actor fire: 6 keys
+    // (event_id_code, actor_kind = "<none>", actor_id_code = "",
+    // country_id_code = "", true_cause, publicText). The
+    // closeout-audit `propaganda_bias_sample` key is NOT among
+    // them.
+    CHECK(entry->metadata.size() == 6u);
 }
 
 TEST_CASE("M6.9 record_match (P2): malformed case (B) — non-empty actor with empty country_id_code FAILS LOUDLY") {
@@ -938,7 +1026,20 @@ TEST_CASE("M6.9 record_followup (P2): vacuous parent (actors.empty()) emits publ
     const auto* pt = metadata_value(*entry, "publicText");
     REQUIRE(pt != nullptr);
     CHECK(*pt == "Followup vacuous publicText.");
-    CHECK(metadata_value(*entry, "information_accuracy") == nullptr);
-    CHECK(metadata_value(*entry, "reported_intensity")   == nullptr);
-    CHECK(metadata_value(*entry, "noise_sample")         == nullptr);
+    // Same vacuous-actor key set as record_match's case A.
+    // M6 closeout audit's `propaganda_bias_sample` is gated by
+    // the same `dist.emit_distortion` guard as the M6.9 numeric
+    // distortion keys, so it is ALSO skipped on a vacuous
+    // followup fire.
+    CHECK(metadata_value(*entry, "information_accuracy")   == nullptr);
+    CHECK(metadata_value(*entry, "propaganda_bias_sample") == nullptr);
+    CHECK(metadata_value(*entry, "reported_intensity")     == nullptr);
+    CHECK(metadata_value(*entry, "noise_sample")           == nullptr);
+    // Vacuous followup metadata count: 7 keys
+    // (event_id_code, followup_of, actor_kind = "<none>",
+    // actor_id_code = "", country_id_code = "", true_cause,
+    // publicText). One extra key vs the record_match case A
+    // because record_followup adds `followup_of` after
+    // `event_id_code`.
+    CHECK(entry->metadata.size() == 7u);
 }

@@ -18,17 +18,24 @@ namespace ss = leviathan::systems::save_system;
 
 namespace {
 
-// M6.7 test helper: authors the three formula inputs explicitly
-// (intelligence_capability + budget.intelligence + corruption).
-// All three default to values that keep the result at the M6.7
-// formula's documented boundaries when their counterparts are
-// also at their defaults — see `expected_accuracy` for the exact
-// formula reproduction. `corruption` defaults to 0 so a test that
-// doesn't care about the M6.7 term still pins the M6.6 baseline.
+// M6 closeout-audit test helper: authors the four formula inputs
+// explicitly (intelligence_capability + budget.intelligence +
+// corruption + media_control). Defaults are chosen so a test that
+// only cares about one input still pins the rest deterministically:
+//   - intelligence_capability = 0.5 (mid)
+//   - budget_intelligence     = 0.0
+//   - corruption              = 0.0 (zero so a "M6.6 baseline" test
+//                                    still sees the documented value)
+//   - media_control           = 0.0 (free press; max
+//                                    MediaFreedomSignal contribution
+//                                    so a test that doesn't care about
+//                                    the M6 closeout-audit media term
+//                                    still pins it at its ceiling)
 CountryState make_country(int id, const std::string& code,
                           double intelligence_capability = 0.5,
                           double budget_intelligence     = 0.0,
                           double corruption              = 0.0,
+                          double media_control           = 0.0,
                           double stability               = 0.55) {
     CountryState c;
     c.id          = CountryId{id};
@@ -39,23 +46,29 @@ CountryState make_country(int id, const std::string& code,
     c.legitimacy  = 0.55;
     c.government_authority.intelligence_capability =
         intelligence_capability;
+    c.government_authority.media_control = media_control;
     c.budget.intelligence = budget_intelligence;
     return c;
 }
 
-// Reproduce the M6.7 formula in the test file so assertions pin
-// concrete numeric values rather than inequalities. If the header
-// constants are rebalanced in a future M-driver the expected
-// value tracks them automatically.
+// Reproduce the M6 closeout-audit formula in the test file so
+// assertions pin concrete numeric values rather than inequalities.
+// If the header constants are rebalanced in a future M-driver the
+// expected value tracks them automatically.
 double expected_accuracy(double cap, double bud,
-                         double corruption = 0.0) {
+                         double corruption    = 0.0,
+                         double media_control = 0.0) {
     const double intel_score =
         ia::kInformationAccuracyCapabilityWeight * cap +
         ia::kInformationAccuracyBudgetWeight     * bud;
-    const double m6_6_base =
+    const double media_freedom = 1.0 - media_control;
+    const double positive_axis =
+        (1.0 - ia::kInformationAccuracyMediaFreedomWeight) * intel_score +
+        ia::kInformationAccuracyMediaFreedomWeight         * media_freedom;
+    const double base =
         ia::kMinInformationAccuracy +
-        (1.0 - ia::kMinInformationAccuracy) * intel_score;
-    return m6_6_base -
+        (1.0 - ia::kMinInformationAccuracy) * positive_axis;
+    return base -
            ia::kInformationAccuracyCorruptionWeight * corruption;
 }
 
@@ -65,31 +78,37 @@ double expected_accuracy(double cap, double bud,
 // M6.6 baseline (carried into M6.7 with corruption = 0)
 // =====================================================================
 
-TEST_CASE("M6.7 compute_for_country: maxed intel + zero corruption returns kPlaceholderInformationAccuracy (= 1.0)") {
-    // Per the M6.7 header doc-comment: the "no-distortion ceiling"
-    // is reached only when intelligence is maxed AND corruption is
-    // zero. Numeric value 1.0 is unchanged from M6.6.
+TEST_CASE("M6 closeout-audit compute_for_country: maxed intel + free media + zero corruption returns kPlaceholderInformationAccuracy (= 1.0)") {
+    // Per the closeout-audit header doc-comment: the "no-distortion
+    // ceiling" is reached only when intelligence is maxed AND
+    // corruption is zero AND media_control is zero (free press, so
+    // MediaFreedomSignal = 1). Numeric value 1.0 is unchanged from
+    // M6.6 / M6.7 — only the conditions to reach it widened.
     GameState s;
     s.countries.push_back(make_country(0, "GER",
                                        /*intelligence_capability*/1.0,
                                        /*budget_intelligence*/   1.0,
-                                       /*corruption*/            0.0));
+                                       /*corruption*/            0.0,
+                                       /*media_control*/         0.0));
     const auto r = ia::compute_for_country(s, CountryId{0});
     REQUIRE(r);
     CHECK(r.value() == doctest::Approx(ia::kPlaceholderInformationAccuracy));
     CHECK(ia::kPlaceholderInformationAccuracy == doctest::Approx(1.0));
 }
 
-TEST_CASE("M6.7 compute_for_country: zero intel + zero corruption returns kMinInformationAccuracy (= 0.4)") {
-    // The M6.6 contribution floor — preserved in M6.7 when
-    // corruption is zero. M6.7's corruption subtraction can push
+TEST_CASE("M6 closeout-audit compute_for_country: zero intel + max media-control + zero corruption returns kMinInformationAccuracy (= 0.4)") {
+    // The positive-axis contribution floor — preserved when
+    // corruption is zero. The corruption subtraction can push
     // the total below this floor; the constant itself documents
-    // the M6.6 baseline term alone.
+    // the positive-axis baseline term alone. Reached when both
+    // intel inputs are zero AND media_control is fully one (no
+    // MediaFreedomSignal contribution).
     GameState s;
     s.countries.push_back(make_country(0, "GER",
                                        /*intelligence_capability*/0.0,
                                        /*budget_intelligence*/   0.0,
-                                       /*corruption*/            0.0));
+                                       /*corruption*/            0.0,
+                                       /*media_control*/         1.0));
     const auto r = ia::compute_for_country(s, CountryId{0});
     REQUIRE(r);
     CHECK(r.value() == doctest::Approx(ia::kMinInformationAccuracy));
@@ -241,16 +260,20 @@ TEST_CASE("M6.7 corruption: zero corruption preserves M6.6 baseline") {
     CHECK(r.value() == doctest::Approx(expected_accuracy(0.6, 0.4, 0.0)));
 }
 
-TEST_CASE("M6.7 corruption: max corruption + zero intel = 0.0 (full blackout)") {
+TEST_CASE("M6 closeout-audit corruption: max corruption + zero intel + max media-control = 0.0 (full blackout)") {
     // The chosen weight `kInformationAccuracyCorruptionWeight =
     // 0.4` is symmetric to `kMinInformationAccuracy = 0.4`. At
-    // max corruption + zero intelligence, the M6.6 baseline (0.4)
-    // is fully cancelled.
+    // max corruption + zero intelligence + max media-control, the
+    // positive-axis baseline (0.4) is fully cancelled. The new
+    // condition (media_control = 1.0, suppressing
+    // MediaFreedomSignal entirely) is what makes the corruption
+    // subtraction able to drive the total all the way to zero.
     GameState s;
     s.countries.push_back(make_country(0, "GER",
                                        /*intelligence_capability*/0.0,
                                        /*budget_intelligence*/   0.0,
-                                       /*corruption*/            1.0));
+                                       /*corruption*/            1.0,
+                                       /*media_control*/         1.0));
     const auto r = ia::compute_for_country(s, CountryId{0});
     REQUIRE(r);
     CHECK(r.value() == doctest::Approx(0.0));
@@ -337,16 +360,19 @@ TEST_CASE("M6.7 corruption: DOES consult corruption (strictly different accuracy
         ia::kInformationAccuracyCorruptionWeight * (0.95 - 0.05)));
 }
 
-TEST_CASE("M6.7 corruption: can push effective accuracy below kMinInformationAccuracy") {
-    // With non-zero corruption, the M6.6 floor is NOT a lower
-    // bound on the total. Pin that explicitly so a future edit
-    // that tries to re-add a defensive `std::max(_, kMin)` would
-    // be caught.
+TEST_CASE("M6 closeout-audit corruption: can push effective accuracy below kMinInformationAccuracy") {
+    // With non-zero corruption, the positive-axis floor is NOT
+    // a lower bound on the total. Pin that explicitly so a
+    // future edit that tries to re-add a defensive
+    // `std::max(_, kMin)` would be caught. Use max media-control
+    // so the positive axis stays at its floor regardless of the
+    // MediaFreedomSignal contribution.
     GameState s;
     s.countries.push_back(make_country(0, "GER",
                                        /*intelligence_capability*/0.0,
                                        /*budget_intelligence*/   0.0,
-                                       /*corruption*/            0.5));
+                                       /*corruption*/            0.5,
+                                       /*media_control*/         1.0));
     const auto r = ia::compute_for_country(s, CountryId{0});
     REQUIRE(r);
     CHECK(r.value() < ia::kMinInformationAccuracy);
@@ -682,8 +708,171 @@ TEST_CASE("M6.7 intelligence weights: sum to 1") {
 
 TEST_CASE("M6.7 kInformationAccuracyCorruptionWeight: stable public constant") {
     // Symmetric to kMinInformationAccuracy so the zero-intel +
-    // max-corruption corner produces exactly 0.0.
+    // max-corruption + max media-control corner produces exactly 0.0.
     CHECK(ia::kInformationAccuracyCorruptionWeight == doctest::Approx(0.4));
     CHECK(ia::kInformationAccuracyCorruptionWeight ==
           doctest::Approx(ia::kMinInformationAccuracy));
+}
+
+// =====================================================================
+// M6 closeout-audit MediaFreedomSignal term
+// (RFC-080 §8 `+ MediaFreedomSignal`)
+// =====================================================================
+
+TEST_CASE("M6 closeout-audit MediaFreedomSignal: DOES consult government_authority.media_control") {
+    // Holding intel + corruption fixed, raising media_control
+    // (state suppression of media) must strictly lower accuracy.
+    GameState s_free;
+    s_free.countries.push_back(make_country(0, "GER",
+                                            /*intelligence_capability*/0.5,
+                                            /*budget_intelligence*/   0.5,
+                                            /*corruption*/            0.0,
+                                            /*media_control*/         0.0));
+    GameState s_controlled;
+    s_controlled.countries.push_back(make_country(0, "GER",
+                                                  /*intelligence_capability*/0.5,
+                                                  /*budget_intelligence*/   0.5,
+                                                  /*corruption*/            0.0,
+                                                  /*media_control*/         1.0));
+    const auto r_free       = ia::compute_for_country(s_free, CountryId{0});
+    const auto r_controlled = ia::compute_for_country(s_controlled, CountryId{0});
+    REQUIRE(r_free);
+    REQUIRE(r_controlled);
+    CHECK(r_free.value() > r_controlled.value());
+}
+
+TEST_CASE("M6 closeout-audit MediaFreedomSignal: monotonically NON-increasing in media_control") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER",
+                                       /*intelligence_capability*/0.5,
+                                       /*budget_intelligence*/   0.3));
+
+    double prev = std::numeric_limits<double>::infinity();
+    for (double mc = 0.0; mc <= 1.001; mc += 0.1) {
+        s.countries[0].government_authority.media_control = mc;
+        const auto r = ia::compute_for_country(s, CountryId{0});
+        REQUIRE(r);
+        CHECK(r.value() <= prev);
+        prev = r.value();
+    }
+}
+
+TEST_CASE("M6 closeout-audit MediaFreedomSignal: free press lifts accuracy by exactly kInformationAccuracyMediaFreedomWeight × (1 - kMinInformationAccuracy)") {
+    // Author intel inputs zero so the only positive-axis
+    // contributor is MediaFreedomSignal. With intel_score = 0:
+    //   positive_axis = w_media × (1 - media_control)
+    //   base          = kMin + (1 - kMin) × positive_axis
+    //   accuracy      = base
+    GameState s;
+    s.countries.push_back(make_country(0, "GER",
+                                       /*intelligence_capability*/0.0,
+                                       /*budget_intelligence*/   0.0,
+                                       /*corruption*/            0.0,
+                                       /*media_control*/         0.0));
+    const auto r_free = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r_free);
+
+    s.countries[0].government_authority.media_control = 1.0;
+    const auto r_controlled = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r_controlled);
+
+    const double lift =
+        ia::kInformationAccuracyMediaFreedomWeight *
+        (1.0 - ia::kMinInformationAccuracy);
+    CHECK((r_free.value() - r_controlled.value()) == doctest::Approx(lift));
+}
+
+TEST_CASE("M6 closeout-audit MediaFreedomSignal: formula matches documented expression across (cap, bud, corr, media_control) samples") {
+    GameState s;
+    s.countries.push_back(make_country(0, "GER"));
+
+    struct Sample {
+        double cap; double bud; double corr; double mc;
+    };
+    const Sample samples[] = {
+        {0.0, 0.0, 0.0, 0.0},   // floor + free press → 0.4 + media uplift
+        {0.0, 0.0, 0.0, 1.0},   // exactly kMin
+        {1.0, 1.0, 0.0, 0.0},   // ceiling
+        {1.0, 1.0, 0.0, 1.0},   // ceiling minus full media discount
+        {0.5, 0.3, 0.10, 0.25},
+        {0.7, 0.1, 0.20, 0.75},
+        {0.2, 0.8, 0.50, 0.50},
+    };
+    for (const auto& sample : samples) {
+        s.countries[0].government_authority.intelligence_capability = sample.cap;
+        s.countries[0].budget.intelligence = sample.bud;
+        s.countries[0].corruption          = sample.corr;
+        s.countries[0].government_authority.media_control = sample.mc;
+        const auto r = ia::compute_for_country(s, CountryId{0});
+        REQUIRE(r);
+        CHECK(r.value() == doctest::Approx(
+            expected_accuracy(sample.cap, sample.bud, sample.corr, sample.mc)));
+    }
+}
+
+TEST_CASE("M6 closeout-audit kInformationAccuracyMediaFreedomWeight: stable public constant") {
+    CHECK(ia::kInformationAccuracyMediaFreedomWeight == doctest::Approx(0.20));
+    CHECK(ia::kInformationAccuracyMediaFreedomWeight > 0.0);
+    CHECK(ia::kInformationAccuracyMediaFreedomWeight < 1.0);
+}
+
+TEST_CASE("M6 closeout-audit media_control validation: non-finite rejected") {
+    GameState s;
+    auto c = make_country(0, "GER", 0.5, 0.3, 0.0, 0.5);
+    c.government_authority.media_control =
+        std::numeric_limits<double>::quiet_NaN();
+    s.countries.push_back(c);
+    const auto r_nan = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r_nan.failed());
+    CHECK(r_nan.error().find("media_control") != std::string::npos);
+    CHECK(r_nan.error().find("finite ratio in [0, 1]") != std::string::npos);
+
+    s.countries[0].government_authority.media_control =
+        std::numeric_limits<double>::infinity();
+    const auto r_inf = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r_inf.failed());
+    CHECK(r_inf.error().find("media_control") != std::string::npos);
+
+    s.countries[0].government_authority.media_control =
+        -std::numeric_limits<double>::infinity();
+    const auto r_ninf = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r_ninf.failed());
+    CHECK(r_ninf.error().find("media_control") != std::string::npos);
+}
+
+TEST_CASE("M6 closeout-audit media_control validation: out-of-range rejected") {
+    GameState s_under;
+    auto c_under = make_country(0, "GER", 0.5, 0.3, 0.0, 0.5);
+    c_under.government_authority.media_control = -0.1;
+    s_under.countries.push_back(c_under);
+    const auto r_under = ia::compute_for_country(s_under, CountryId{0});
+    REQUIRE(r_under.failed());
+    CHECK(r_under.error().find("media_control") != std::string::npos);
+
+    GameState s_over;
+    auto c_over = make_country(0, "GER", 0.5, 0.3, 0.0, 0.5);
+    c_over.government_authority.media_control = 1.5;
+    s_over.countries.push_back(c_over);
+    const auto r_over = ia::compute_for_country(s_over, CountryId{0});
+    REQUIRE(r_over.failed());
+    CHECK(r_over.error().find("media_control") != std::string::npos);
+}
+
+TEST_CASE("M6 closeout-audit media_control validation: cap/bud/corr checked before media_control (deterministic short-circuit)") {
+    // All four bad simultaneously — the helper short-circuits in
+    // order: cap → bud → corr → media_control. Pin that media_control
+    // is LAST (no earlier short-circuit names it).
+    GameState s;
+    auto c = make_country(0, "GER", 0.5, 0.3, 0.10, 0.50);
+    c.government_authority.intelligence_capability =
+        std::numeric_limits<double>::quiet_NaN();
+    c.budget.intelligence              = std::numeric_limits<double>::quiet_NaN();
+    c.corruption                       = std::numeric_limits<double>::quiet_NaN();
+    c.government_authority.media_control =
+        std::numeric_limits<double>::quiet_NaN();
+    s.countries.push_back(c);
+    const auto r = ia::compute_for_country(s, CountryId{0});
+    REQUIRE(r.failed());
+    CHECK(r.error().find("intelligence_capability") != std::string::npos);
+    CHECK(r.error().find("media_control") == std::string::npos);
 }

@@ -156,7 +156,14 @@ struct FireOutcome {
 // composes the M6.3 / M6.6 / M6.7 `information_accuracy`
 // helper with the M6.4 `reported_value` helper and the M6.5
 // `bias_noise` helper to emit additional metadata keys per
-// `event_fired` LogEntry:
+// `event_fired` LogEntry. The M6 closeout-audit PR
+// (`docs/m6-closeout-audit.md`) extended this surface with
+// the RFC-080 §8 `+ PropagandaBias` term (a new
+// `propaganda_bias_sample` metadata key) sourced from
+// `propaganda_bias::compute_for_country`, and added the
+// MediaFreedomSignal positive term to the
+// `information_accuracy` helper itself (no new metadata key
+// — the value still surfaces through `information_accuracy`).
 //
 //   `publicText`            — verbatim string sourced from
 //                             the M6.2 EventDefinition.
@@ -169,6 +176,7 @@ struct FireOutcome {
 //                             event_fired LogEntry.
 //
 //   `information_accuracy`,
+//   `propaganda_bias_sample`,
 //   `reported_intensity`,
 //   `noise_sample`          — country-anchored numeric
 //                             distortion fields, present
@@ -184,10 +192,13 @@ struct FireOutcome {
 //                             match has no country anchor
 //                             for `information_accuracy::
 //                             compute_for_country`, so the
-//                             three numeric keys are
+//                             four numeric keys are
 //                             SKIPPED for that degenerate
 //                             case; `publicText` is still
-//                             emitted.
+//                             emitted. `propaganda_bias_
+//                             sample` was added by the M6
+//                             closeout-audit PR; the other
+//                             three keys ship under M6.9.
 //
 // The numeric anchor is `TrueValue = 1.0` per fired event
 // ("the event happened with intensity 1.0"); the
@@ -202,14 +213,23 @@ struct FireOutcome {
 // distortion numerics) sit alongside each other in
 // `state.logs`.
 //
-// Failure cases (M6.9):
+// Failure cases (M6.9 + M6 closeout audit):
 //   - `information_accuracy::compute_for_country` rejects a
 //     non-finite or out-of-range ratio input
 //     (intelligence_capability / budget.intelligence /
-//     corruption). M6.7 strict validation surfaces here.
+//     corruption / media_control). M6.7 strict validation +
+//     M6 closeout-audit MediaFreedomSignal validation surface
+//     here.
 //   - `reported_value::from_true_value` rejects a non-finite
 //     accuracy or true_value (cannot happen in M6.9's
 //     `(1.0, accuracy)` call as long as accuracy is valid).
+//   - `propaganda_bias::compute_for_country` rejects a
+//     non-finite or out-of-range media_control input
+//     (the same field already validated by
+//     information_accuracy — a double-check at the bias
+//     surface is intentional, mirroring the per-helper
+//     defense pattern established by the M6.5 / M6.7
+//     helpers; cost is one comparison).
 //   - `bias_noise::sample_for_event` rejects an empty
 //     event_id_code or country_id_code, or a non-finite /
 //     out-of-range amplitude.
