@@ -63,18 +63,24 @@
 > execution has returned to the M-numbered milestone
 > sequence. **M6.9** (RFC-090 §6.9 "非 debug 模式隱藏真相")
 > is the latest shipped sub-milestone — every `event_fired`
-> LogEntry in events.jsonl now carries the player-facing
-> `visible_report` (M6.2) text PLUS the
-> `information_accuracy` / `reported_intensity` /
-> `noise_sample` numerics composed from the M6.3 / M6.6 /
-> M6.7 + M6.4 + M6.5 helper pipeline; the M6.8 `true_cause`
-> reveal continues to be `--debug`-gated. RFC-060 §3
-> `EventLogEntry { ... publicText; debugTruth }` is now
-> complete (M6.8 ships `debugTruth`; M6.9 ships
-> `publicText`). Predecessor **M6.8** (`debug 模式顯示真相`)
-> added the `--debug` runner flag. **There is no RCR-2
-> track.** Issues #105 / #108 / #110 / #112 stay open
-> until the reviewer confirms strict compliance.
+> LogEntry in events.jsonl now carries a `publicText`
+> metadata key sourced verbatim from
+> `EventDefinition.visible_report` (M6.2). Country-anchored
+> events additionally carry `information_accuracy` /
+> `reported_intensity` / `noise_sample` numerics composed
+> from the M6.3 / M6.6 / M6.7 + M6.4 + M6.5 helper pipeline.
+> The metadata key follows the RFC-060 §3 `publicText`
+> vocabulary; the schema-level field keeps its M6.2 name
+> (`visible_report`). The M6.8 `true_cause` reveal continues
+> to be `--debug`-gated. With M6.9 the RFC-060 §3
+> `EventLogEntry { ... publicText; debugTruth }` shape is
+> structurally satisfied: M6.8 emits `true_cause` (the
+> `debugTruth` side) and M6.9 emits `publicText` (the
+> player-facing side). Predecessor **M6.8**
+> (`debug 模式顯示真相`) added the `--debug` runner flag.
+> **There is no RCR-2 track.** Issues #105 / #108 / #110 /
+> #112 stay open until the reviewer confirms strict
+> compliance.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
@@ -128,19 +134,30 @@
     names this the `debugTruth` side of the
     `EventLogEntry` shape.
   - **M6.9** adds the `publicText` side. Every
-    `event_fired` LogEntry now carries four extra
-    metadata keys sourced from the M6 helper family
-    composition: `visible_report` (M6.2 string
-    verbatim), `information_accuracy` (M6.3 / M6.6 /
-    M6.7), `reported_intensity` (M6.4
+    `event_fired` LogEntry now carries a `publicText`
+    metadata key sourced verbatim from
+    `EventDefinition.visible_report` (M6.2). The
+    metadata key follows the RFC-060 §3
+    `EventLogEntry.publicText` vocabulary; the
+    schema-level field keeps its M6.2 name. **Country-
+    anchored events** (everything the M5.1 schema
+    accepts at load time, because triggers must bind
+    to a country / interest-group entity) additionally
+    carry three numeric distortion keys composed from
+    the M6 helper family: `information_accuracy`
+    (M6.3 / M6.6 / M6.7), `reported_intensity` (M6.4
     `reported_value::from_true_value(1.0, accuracy)`),
     and `noise_sample` (M6.5
     `bias_noise::sample_for_event(event_id,
-    country_id, fired_on, 1 - accuracy)`). The M6.8
+    country_id, fired_on, 1 - accuracy)`). Vacuous-
+    actor hand-built matches (test-only degenerate
+    case) carry `publicText` only and skip the
+    numeric distortion because there is no country
+    anchor for `information_accuracy`. The M6.8
     `true_cause` reveal stays `--debug`-gated; the
-    four M6.9 keys are emitted in BOTH modes (they
-    are the player-facing public surface, not the
-    debug-side truth). RFC-080 §8 anchor: `ReportedValue
+    M6.9 keys are emitted in BOTH modes (they are
+    the player-facing public surface, not the debug-
+    side truth). RFC-080 §8 anchor: `ReportedValue
     = TrueValue + Bias + Noise` with `TrueValue = 1.0`
     per fired event and `Noise` amplitude `1 -
     InformationAccuracy`. Bias is not yet modelled.
@@ -186,49 +203,66 @@
   helper and the M6.5 `bias_noise::sample_for_event`
   helper inside `event_firer::record_match` /
   `record_followup`. Every `event_fired` LogEntry now
-  carries four new metadata keys: `visible_report` (M6.2
-  string verbatim — the public-facing text per RFC-050
-  §5), `information_accuracy` (numeric in `[0, 1]`),
-  `reported_intensity` (= `1.0 × accuracy` per the M6.4
-  formula with `TrueValue = 1.0` anchor), and
-  `noise_sample` (in `[-(1-accuracy), +(1-accuracy)]`
-  per the M6.5 deterministic hash; `state.rng` is NEVER
-  consumed). RFC-080 §8 numeric model:
+  carries a **`publicText` metadata key sourced
+  verbatim from `EventDefinition.visible_report`** (M6.2)
+  — the metadata key uses the RFC-060 §3
+  `EventLogEntry.publicText` vocabulary; the schema-
+  level field keeps its M6.2 name. **Country-anchored
+  events** (everything the M5.1 schema accepts at load
+  time, because triggers must bind to a country /
+  interest-group entity) additionally carry three
+  numeric distortion keys: `information_accuracy`
+  (numeric in `[0, 1]`), `reported_intensity`
+  (= `1.0 × accuracy` per the M6.4 formula with
+  `TrueValue = 1.0` anchor), and `noise_sample`
+  (in `[-(1-accuracy), +(1-accuracy)]` per the M6.5
+  deterministic hash; `state.rng` is NEVER consumed).
+  **Vacuous-actor hand-built matches** (test-only
+  degenerate case; not reachable through scenario
+  load) carry `publicText` only and skip the numeric
+  distortion because there is no country anchor for
+  `information_accuracy::compute_for_country`. RFC-080
+  §8 numeric model:
   `ReportedValue = TrueValue + Bias + Noise` with
   `Noise = RandomNormal(0, 1 - InformationAccuracy)`;
   M6.9 ships `Noise` (`Bias` is RFC-090 backlog with no
   §6.x task today). M6.8's `true_cause` reveal remains
-  `--debug`-gated; the four M6.9 keys are emitted in
-  BOTH debug and non-debug modes — they are the
-  player-facing surface, not the debug-side truth.
+  `--debug`-gated; the M6.9 keys are emitted in BOTH
+  debug and non-debug modes — they are the player-
+  facing surface, not the debug-side truth.
   `event_firer::record_match` and `record_followup`
   promoted to `Result<bool>`; failure from any of the
   three helpers propagates with **per-event atomicity**
   (the LogEntry is NOT appended on failure;
   state.event_history is NOT mutated). RFC-060 §3
-  `EventLogEntry { ... publicText; debugTruth }` is now
-  complete: M6.8 ships `debugTruth`; M6.9 ships
-  `publicText`. **No save schema bump** —
+  `EventLogEntry { ... publicText; debugTruth }` shape
+  is now structurally satisfied: M6.8 emits
+  `true_cause` (the `debugTruth` side) and M6.9 emits
+  `publicText` verbatim. **No save schema bump** —
   `state.logs.metadata` is a flexible kv list; M6.9
-  adds keys, not persistent struct fields. Save format
-  stays at **v18**; artefact contract stays at **11**.
+  adds keys, not persistent struct fields; the
+  `EventDefinition.visible_report` schema field also
+  keeps its M6.2 name. Save format stays at **v18**;
+  artefact contract stays at **11**.
   **No `state.rng` consumption** — same-seed two-run
   byte-identical determinism preserved across
   events.jsonl AND save.json. Canonical
   `1930_minimal` 365-day events.jsonl is **byte-
   identical to the PR #116 (M6.8) baseline** because
   no events fire on the canonical scenario (M5
-  invariant preserved); zero LogEntries, zero
-  distortion-key emissions. Compliance
-  `1930_rfc_compliance` 25 567-day (1930→2000) sweep
-  completes with `Sanity issues : 0` on both debug
-  and non-debug runs; events.jsonl gains four M6.9
-  keys per fired event (41 events × 4 keys = 164 new
-  metadata entries). **9 new doctest cases (1272
-  total, 96 004 assertions, verified via direct
+  invariant preserved); zero LogEntries, zero M6.9
+  key emissions. Compliance `1930_rfc_compliance`
+  25 567-day (1930→2000) sweep completes with
+  `Sanity issues : 0` on both debug and non-debug
+  runs; events.jsonl gains four M6.9 keys per fired
+  event line on the country-anchored compliance
+  events (41 events × 4 keys = 164 new metadata
+  entries). **9 new doctest cases (1272 total,
+  96 004 assertions, verified via direct
   `leviathan_tests.exe` run** per
   `feedback_ctest_masks_doctest`): 6 unit cases
-  (`record_match` visible_report verbatim;
+  (`record_match` `publicText` mirrors
+  `EventDefinition.visible_report` verbatim;
   high-accuracy maxed-corner; low-accuracy + high-
   corruption noise envelope; same-seed deterministic
   noise; non-finite intelligence FAILS LOUDLY;

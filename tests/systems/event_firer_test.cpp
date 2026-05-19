@@ -534,15 +534,18 @@ TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insert
     // Stable insertion order (post-M6.9):
     //   event_id_code, actor_kind, actor_id_code, country_id_code,
     //   true_cause (M6.8),
-    //   visible_report, information_accuracy, reported_intensity,
-    //   noise_sample (M6.9).
+    //   publicText, information_accuracy, reported_intensity,
+    //   noise_sample (M6.9). The publicText key uses the
+    //   RFC-060 §3 vocabulary; the source field is M6.2's
+    //   EventDefinition.visible_report, which keeps its
+    //   schema-level name.
     REQUIRE(entry->metadata.size() == 9u);
     CHECK(entry->metadata[0].first == "event_id_code");
     CHECK(entry->metadata[1].first == "actor_kind");
     CHECK(entry->metadata[2].first == "actor_id_code");
     CHECK(entry->metadata[3].first == "country_id_code");
     CHECK(entry->metadata[4].first == "true_cause");
-    CHECK(entry->metadata[5].first == "visible_report");
+    CHECK(entry->metadata[5].first == "publicText");
     CHECK(entry->metadata[6].first == "information_accuracy");
     CHECK(entry->metadata[7].first == "reported_intensity");
     CHECK(entry->metadata[8].first == "noise_sample");
@@ -552,12 +555,25 @@ TEST_CASE("M6.8 + M6.9 record_match: metadata keys land in the documented insert
 // M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") — record_match emits
 // the player-facing distortion fields sourced from the M6.3 / M6.6
 // / M6.7 information_accuracy + M6.4 reported_value + M6.5
-// bias_noise composition. The fields are emitted UNCONDITIONALLY
-// in state.logs; logging::write_jsonl_line filters only the M6.8
-// true_cause key out of the events.jsonl artefact in non-debug
-// mode. RFC-060 §3 EventLogEntry.publicText is the
-// visible_report; RFC-080 §8 ReportedValue = TrueValue + Bias +
-// Noise lives in (information_accuracy, reported_intensity,
+// bias_noise composition. `publicText` is emitted on EVERY
+// `event_fired` LogEntry (sourced verbatim from M6.2
+// `EventDefinition.visible_report` — the metadata key follows
+// the RFC-060 §3 `EventLogEntry.publicText` vocabulary; the
+// schema field keeps its M6.2 name). The three numeric
+// distortion keys (`information_accuracy`,
+// `reported_intensity`, `noise_sample`) appear ONLY when the
+// event has a first-actor country (country-anchored events,
+// which is every event the M5.1 schema accepts at load
+// time). Vacuous-actor hand-built matches still emit
+// `publicText` but skip the numeric distortion fields —
+// there is no country anchor for
+// `information_accuracy::compute_for_country` in that
+// degenerate case.
+// `logging::write_jsonl_line` filters only the M6.8
+// `true_cause` key out of the events.jsonl artefact in
+// non-debug mode; the M6.9 keys are not filtered.
+// RFC-080 §8 `ReportedValue = TrueValue + Bias + Noise`
+// lives in (information_accuracy, reported_intensity,
 // noise_sample).
 // =====================================================================
 
@@ -581,7 +597,7 @@ CountryState make_m69_country(int id, const std::string& code,
 
 }  // namespace
 
-TEST_CASE("M6.9 record_match: visible_report metadata mirrors EventDefinition.visible_report verbatim") {
+TEST_CASE("M6.9 record_match: publicText metadata mirrors EventDefinition.visible_report verbatim") {
     GameState s;
     s.countries.push_back(
         make_m69_country(0, "GER", /*cap*/0.5, /*bud*/0.0, /*corr*/0.0));
@@ -597,10 +613,16 @@ TEST_CASE("M6.9 record_match: visible_report metadata mirrors EventDefinition.vi
 
     const auto* entry = find_event_fired_log(s);
     REQUIRE(entry != nullptr);
-    const auto* vr = metadata_value(*entry, "visible_report");
-    REQUIRE(vr != nullptr);
-    CHECK(*vr ==
+    // RFC-060 §3 EventLogEntry.publicText: the events.jsonl
+    // metadata key uses the RFC vocabulary; the schema field
+    // keeps its M6.2 name (EventDefinition.visible_report).
+    const auto* pt = metadata_value(*entry, "publicText");
+    REQUIRE(pt != nullptr);
+    CHECK(*pt ==
           "Reports describe a stability concern in the capital district.");
+    // No `visible_report` key on the emitted entry — only
+    // `publicText` (the RFC-060 name).
+    CHECK(metadata_value(*entry, "visible_report") == nullptr);
 }
 
 TEST_CASE("M6.9 record_match: high accuracy -> reported_intensity close to 1.0 and small noise envelope") {
@@ -766,11 +788,11 @@ TEST_CASE("M6.9 record_followup: distortion uses parent's first-actor country") 
 
     const auto* entry = find_event_fired_log(s);
     REQUIRE(entry != nullptr);
-    const auto* vr  = metadata_value(*entry, "visible_report");
+    const auto* pt  = metadata_value(*entry, "publicText");
     const auto* acc = metadata_value(*entry, "information_accuracy");
-    REQUIRE(vr  != nullptr);
+    REQUIRE(pt  != nullptr);
     REQUIRE(acc != nullptr);
-    CHECK(*vr == "Follow-up report on the original disturbance.");
+    CHECK(*pt == "Follow-up report on the original disturbance.");
     // Same accuracy as the parent country (GER's cap=0.5 / bud=0
     // / corr=0 -> 0.4 + 0.6×0.35 = 0.61).
     CHECK(std::stod(*acc) == doctest::Approx(0.61));

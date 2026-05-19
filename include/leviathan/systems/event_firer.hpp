@@ -155,19 +155,50 @@ struct FireOutcome {
 // M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") additionally
 // composes the M6.3 / M6.6 / M6.7 `information_accuracy`
 // helper with the M6.4 `reported_value` helper and the M6.5
-// `bias_noise` helper to emit four extra metadata keys per
-// `event_fired` LogEntry — `visible_report` (verbatim M6.2
-// string), `information_accuracy`, `reported_intensity`, and
-// `noise_sample`. The numeric anchor is `TrueValue = 1.0` per
-// fired event ("the event happened with intensity 1.0"); the
+// `bias_noise` helper to emit additional metadata keys per
+// `event_fired` LogEntry:
+//
+//   `publicText`            — verbatim string sourced from
+//                             the M6.2 EventDefinition.
+//                             visible_report field. The
+//                             metadata key uses the
+//                             RFC-060 §3 `EventLogEntry.
+//                             publicText` vocabulary; the
+//                             schema field keeps its M6.2
+//                             name. Emitted on EVERY
+//                             event_fired LogEntry.
+//
+//   `information_accuracy`,
+//   `reported_intensity`,
+//   `noise_sample`          — country-anchored numeric
+//                             distortion fields, present
+//                             ONLY when the event has a
+//                             first-actor country (i.e.
+//                             actor-anchored events, which
+//                             is every event that came from
+//                             scenario load — the M5.1
+//                             schema rejects events whose
+//                             triggers don't bind to a
+//                             country / interest_group). A
+//                             vacuous-actor hand-built
+//                             match has no country anchor
+//                             for `information_accuracy::
+//                             compute_for_country`, so the
+//                             three numeric keys are
+//                             SKIPPED for that degenerate
+//                             case; `publicText` is still
+//                             emitted.
+//
+// The numeric anchor is `TrueValue = 1.0` per fired event
+// ("the event happened with intensity 1.0"); the
 // reported_intensity is `1.0 × accuracy` and the noise sample
 // is drawn from `bias_noise::sample_for_event(..., 1 - accuracy)`
 // so distortion magnitude grows as accuracy shrinks (RFC-080
 // §8 `ReportedValue = TrueValue + Bias + Noise` with `Noise =
-// RandomNormal(0, 1 - InformationAccuracy)`). The four M6.9
-// keys are emitted in BOTH debug and non-debug modes — only
-// the M6.8 `true_cause` key is debug-gated. The truth side
-// (true_cause) and the player-facing side (visible_report +
+// RandomNormal(0, 1 - InformationAccuracy)`). The M6.9 keys
+// are emitted in BOTH debug and non-debug modes — only the
+// M6.8 `true_cause` key is debug-gated. The truth side
+// (true_cause) and the player-facing side (publicText +
 // distortion numerics) sit alongside each other in
 // `state.logs`.
 //
@@ -246,7 +277,8 @@ core::Result<FireOutcome> record_matches(
 // `event_engine::tick_events`.
 // M6.9: same Result-bearing shape and same distortion-key
 // emission as record_match (using the followup
-// EventDefinition's own true_cause + visible_report, and the
+// EventDefinition's own true_cause + visible_report (the
+// publicText source), and the
 // parent's first-actor country for accuracy / noise).
 core::Result<bool> record_followup(
     core::GameState&             state,

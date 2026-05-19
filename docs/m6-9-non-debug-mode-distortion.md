@@ -18,23 +18,47 @@
 ## 1. What M6.9 ships
 
 `event_firer::record_match` and `event_firer::record_followup`
-compose the three M6 helpers into four metadata keys per
-`event_fired` LogEntry, sourced from the matching
-`EventDefinition` and the first-actor country:
+compose the three M6 helpers into metadata keys per
+`event_fired` LogEntry. The keys split into two groups —
+**`publicText` is always emitted**, while the **numeric
+distortion fields are country-anchored**:
 
-| Metadata key | Source | Range |
-|---|---|---|
-| `visible_report` | M6.2 `EventDefinition.visible_report` (verbatim) | non-empty string |
-| `information_accuracy` | M6.3 / M6.6 / M6.7 `information_accuracy::compute_for_country` | `[0, 1]` |
-| `reported_intensity` | M6.4 `reported_value::from_true_value(1.0, accuracy)` | `[0, 1]` |
-| `noise_sample` | M6.5 `bias_noise::sample_for_event(event_id, country_id, fired_on, 1 - accuracy)` | `[-amplitude, +amplitude]` |
+| Metadata key | Source | Range | Emission |
+|---|---|---|---|
+| `publicText` | M6.2 `EventDefinition.visible_report` (verbatim) | non-empty string | every `event_fired` |
+| `information_accuracy` | M6.3 / M6.6 / M6.7 `information_accuracy::compute_for_country` | `[0, 1]` | country-anchored only |
+| `reported_intensity` | M6.4 `reported_value::from_true_value(1.0, accuracy)` | `[0, 1]` | country-anchored only |
+| `noise_sample` | M6.5 `bias_noise::sample_for_event(event_id, country_id, fired_on, 1 - accuracy)` | `[-amplitude, +amplitude]` | country-anchored only |
 
-All four keys are appended UNCONDITIONALLY at fire time (per-
-event atomicity: if any helper fails, the EventInstance + the
-LogEntry are NOT appended; see §3). The M6.8 `true_cause` key
-continues to be filtered out of the events.jsonl artefact in
-non-debug mode; the four M6.9 keys are emitted in BOTH debug
-and non-debug modes.
+The metadata key uses the RFC-060 §3 `EventLogEntry.publicText`
+vocabulary; the schema-level field on `EventDefinition` keeps
+its M6.2 name (`visible_report`). Renaming the schema field
+would be a save-format bump for no functional gain; renaming
+the per-entry metadata key follows the RFC-named contract
+without touching persistent state.
+
+**Country-anchored entries** carry all four keys. Every event
+that came from scenario load is country-anchored — the M5.1
+schema rejects events whose triggers do not bind to a country
+or interest-group entity, so the first actor's
+`country_id_code` is always populated.
+
+**Vacuous-actor entries** (a degenerate / test-only hand-built
+match with no first-actor country) carry **only `publicText`**
+and skip the three numeric distortion keys, because there is no
+country anchor for `information_accuracy::compute_for_country`.
+This case does not occur in scenario-loaded simulation; the
+M5.1 schema rejects events whose triggers don't bind to a
+country / interest-group entity, so the first-actor
+`country_id_code` is always populated in production. Per-event
+atomicity is preserved either way: if any composed helper
+fails, the EventInstance and the LogEntry are NOT appended
+(see §3).
+
+The M6.8 `true_cause` key continues to be filtered out of the
+events.jsonl artefact in non-debug mode; the M6.9 keys are
+NOT filtered — they are the player-facing public surface, not
+the debug-side truth.
 
 ## 2. Numeric anchor for the M6 distortion model
 
@@ -94,21 +118,24 @@ context. No silent fallback per
 
 Vacuous-actor case: if the match has no first-actor country
 (`inst.actors.empty()` OR `first_actor.country_id_code.empty()`),
-the distortion fields are SKIPPED but the call still
-succeeds. The `visible_report` key is always emitted
+the three numeric distortion keys are SKIPPED but the call
+still succeeds. The `publicText` key is always emitted
 regardless. This is not a silent degradation — vacuous events
 are degenerate, not malformed; the M5.1 schema rejects them
 at load time, so the firer can only see them via hand-built
-test fixtures.
+test fixtures. The skip is documented and pinned in tests
+(see `M5.5 record_match: empty-triggers match becomes
+EventInstance with empty actors`).
 
 ## 4. M6.8 invariants preserved
 
 - The M6.8 `true_cause` metadata key is still attached
   unconditionally at fire time.
 - `logging::write_jsonl_line` still filters `true_cause` from
-  the events.jsonl artefact in non-debug mode; the four M6.9
-  keys are NOT filtered (they are the player-facing surface,
-  not the debug-side truth).
+  the events.jsonl artefact in non-debug mode; the M6.9 keys
+  (`publicText` plus the three numeric distortion fields on
+  country-anchored entries) are NOT filtered (they are the
+  player-facing surface, not the debug-side truth).
 - `save.json` is byte-identical across the `--debug` toggle:
   state.logs.metadata contains the truth AND the distortion
   fields regardless of debug_mode; only the events.jsonl
@@ -129,17 +156,22 @@ test fixtures.
   `event_fired` LogEntries means no distortion fields are
   ever appended, and the canonical artefact is unchanged.
 - Compliance `1930_rfc_compliance` 25 567-day events.jsonl
-  gains the four M6.9 keys per fired event line (41 events
-  fire over 1930→2000; each gains four keys). Save.json gains
-  the same metadata in `state.logs` serialisation. Sanity
-  issues = 0 on both debug and non-debug runs.
+  gains the M6.9 keys on every country-anchored
+  `event_fired` line (41 events fire over 1930→2000 — all
+  country-anchored under the M5.1 schema; each gains
+  `publicText` + the three numeric distortion keys).
+  Save.json gains the same metadata in `state.logs`
+  serialisation. Sanity issues = 0 on both debug and non-
+  debug runs.
 
 ## 6. What M6.9 deliberately does NOT do
 
-- **No save schema bump.** The four new metadata keys live in
+- **No save schema bump.** The new metadata keys live in
   `state.logs.metadata`, which is already a flexible key-value
   list; no new persistent struct field is added. Save format
-  stays at `v18`.
+  stays at `v18`. The `EventDefinition.visible_report` schema
+  field also keeps its M6.2 name; only the per-entry events.jsonl
+  metadata key follows the RFC-060 §3 `publicText` vocabulary.
 - **No new artefact.** Artefact contract stays at 11.
 - **No new player-facing command.** No new `PlayerCommandKind`.
 - **No new save-layer surface.**
@@ -166,9 +198,11 @@ test fixtures.
 
 ### Unit (`tests/systems/event_firer_test.cpp`)
 
-- `M6.9 record_match: visible_report metadata mirrors
+- `M6.9 record_match: publicText metadata mirrors
   EventDefinition.visible_report verbatim` — RFC-060 §3
-  publicText source pin.
+  `EventLogEntry.publicText` vocabulary pin; also asserts
+  that the legacy `visible_report` key is NOT present on
+  the emitted entry.
 - `M6.9 record_match: high accuracy -> reported_intensity
   close to 1.0 and small noise envelope` — RFC-080 §8 maxed-
   accuracy corner.

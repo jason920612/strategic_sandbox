@@ -407,14 +407,30 @@ M6 read-only helpers into `event_firer::record_match` /
    M6.5 deterministic-hash formula. `state.rng` is NEVER
    consumed.
 
-The composition emits four new metadata keys per
-`event_fired` LogEntry: `visible_report` (M6.2 string
-verbatim — the **publicText** side of RFC-060 §3
-`EventLogEntry`), `information_accuracy`, `reported_intensity`,
-`noise_sample`. The keys are emitted in **both debug and
-non-debug modes**; only the M6.8 `true_cause` key remains
+The composition emits new metadata keys per `event_fired`
+LogEntry:
+
+- **`publicText`** — verbatim string from M6.2
+  `EventDefinition.visible_report`. The metadata key uses
+  the RFC-060 §3 `EventLogEntry.publicText` vocabulary; the
+  schema-level field keeps its M6.2 name. **Emitted on every
+  `event_fired` LogEntry.**
+- **`information_accuracy`, `reported_intensity`,
+  `noise_sample`** — numeric distortion fields. **Emitted
+  only on country-anchored events** (which is every event
+  the M5.1 schema accepts at load time, because triggers
+  must bind to a country / interest-group entity). The
+  vacuous-actor hand-built test-only case has no country
+  anchor for `information_accuracy::compute_for_country`,
+  so these three keys are skipped while `publicText` is
+  still emitted.
+
+The M6.9 keys are emitted in **both debug and non-debug
+modes**; only the M6.8 `true_cause` key remains
 `--debug`-gated. RFC-060 §3 `EventLogEntry { publicText;
-debugTruth }` is now structurally complete.
+debugTruth }` shape is now structurally satisfied: M6.8
+emits `true_cause` (the `debugTruth` side) and M6.9 emits
+`publicText`.
 
 RFC-080 §8 anchor: `ReportedValue = TrueValue + Bias + Noise`
 with `Noise = RandomNormal(0, 1 - InformationAccuracy)`.
@@ -443,9 +459,11 @@ Determinism contract:
   so no `event_fired` LogEntries land, so no M6.9 keys are
   appended.
 - **Compliance `1930_rfc_compliance` 25 567-day** events.jsonl
-  gains the four M6.9 keys per fired event line (41 events
-  × 4 keys = 164 new metadata entries). `Sanity issues : 0`
-  on both debug and non-debug runs.
+  gains the four M6.9 keys per fired event line on the
+  country-anchored compliance events (41 events × 4 keys =
+  164 new metadata entries; every compliance event is
+  country-anchored under the M5.1 schema). `Sanity issues
+  : 0` on both debug and non-debug runs.
 - **Same seed → byte-identical artefacts.** `bias_noise` is
   pure hash; no `state.rng` consumption means same-input
   same-output across runs. Pinned by a new integration test

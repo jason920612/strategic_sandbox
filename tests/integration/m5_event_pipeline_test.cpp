@@ -501,12 +501,14 @@ TEST_CASE("M6.8 integration: --debug does NOT advance state.rng.counter or chang
 // =====================================================================
 // M6.9 (RFC-090 §6.9 "非 debug 模式隱藏真相") — end-to-end
 // integration. The non-debug events.jsonl artefact emits a
-// distorted player-facing surface (visible_report +
-// information_accuracy + reported_intensity + noise_sample);
-// the truth (true_cause) is filtered. In debug mode all five
-// keys appear. The save.json `logs` array is byte-identical
-// across the debug toggle because state.logs is identical
-// either way — only the events.jsonl writer branches.
+// player-facing surface — `publicText` (RFC-060 §3
+// EventLogEntry.publicText, sourced from M6.2 visible_report)
+// PLUS `information_accuracy` + `reported_intensity` +
+// `noise_sample` on country-anchored events; the truth
+// (`true_cause`) is filtered. In debug mode all five keys
+// appear. The save.json `logs` array is byte-identical across
+// the debug toggle because state.logs is identical either way
+// — only the events.jsonl writer branches.
 // =====================================================================
 
 TEST_CASE("M6.9 integration: non-debug events.jsonl emits distorted publicText; --debug additionally reveals true_cause") {
@@ -551,12 +553,17 @@ TEST_CASE("M6.9 integration: non-debug events.jsonl emits distorted publicText; 
     // events.jsonl is the only artefact that differs).
     CHECK(save_nodbg == save_dbg);
 
-    // M6.9 NEW: visible_report appears in BOTH modes (the
-    // public-facing text — the M6.2 string verbatim).
-    CHECK(log_nodbg.find("\"visible_report\":\"M6.9 PUBLIC REPORT\"")
+    // M6.9 NEW: publicText appears in BOTH modes (the
+    // public-facing text — RFC-060 §3 EventLogEntry.publicText,
+    // sourced verbatim from M6.2 EventDefinition.visible_report).
+    CHECK(log_nodbg.find("\"publicText\":\"M6.9 PUBLIC REPORT\"")
           != std::string::npos);
-    CHECK(log_dbg.find("\"visible_report\":\"M6.9 PUBLIC REPORT\"")
+    CHECK(log_dbg.find("\"publicText\":\"M6.9 PUBLIC REPORT\"")
           != std::string::npos);
+    // The metadata key is `publicText`, NOT `visible_report` —
+    // the events.jsonl artefact follows the RFC-060 vocabulary.
+    CHECK(log_nodbg.find("\"visible_report\":") == std::string::npos);
+    CHECK(log_dbg.find("\"visible_report\":")   == std::string::npos);
 
     // M6.9 NEW: distortion numerics appear in BOTH modes.
     CHECK(log_nodbg.find("\"information_accuracy\"") != std::string::npos);

@@ -309,7 +309,13 @@ core::Result<bool> record_match(
     const auto& dist = dist_r.value();
     // visible_report is always emitted (player-facing text;
     // present even on vacuous-actor events for grep'ability).
-    entry.metadata.push_back({"visible_report", dist.visible_report});
+    // M6.9: emit as `publicText` per RFC-060 §3
+    // EventLogEntry.publicText (the canonical RFC-named
+    // surface). The string is sourced verbatim from the M6.2
+    // `EventDefinition.visible_report` field — the schema
+    // field keeps its M6.2 name; only the per-entry metadata
+    // key on events.jsonl follows the RFC-060 vocabulary.
+    entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
             {"information_accuracy", format_double(dist.information_accuracy)});
@@ -392,7 +398,13 @@ core::Result<bool> record_followup(
         return core::Result<bool>::failure(std::move(dist_r.error()));
     }
     const auto& dist = dist_r.value();
-    entry.metadata.push_back({"visible_report", dist.visible_report});
+    // M6.9: emit as `publicText` per RFC-060 §3
+    // EventLogEntry.publicText (the canonical RFC-named
+    // surface). The string is sourced verbatim from the M6.2
+    // `EventDefinition.visible_report` field — the schema
+    // field keeps its M6.2 name; only the per-entry metadata
+    // key on events.jsonl follows the RFC-060 vocabulary.
+    entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
             {"information_accuracy", format_double(dist.information_accuracy)});

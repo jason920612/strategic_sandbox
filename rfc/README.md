@@ -157,22 +157,31 @@ sequence:
   the M6.4 `reported_value::from_true_value` helper and
   the M6.5 `bias_noise::sample_for_event` helper inside
   `event_firer::record_match` / `record_followup`. Every
-  `event_fired` LogEntry now carries four new metadata
-  keys: `visible_report` (M6.2 string verbatim — the
-  public-facing text per RFC-050 §5's "government
-  report" layer), `information_accuracy`,
-  `reported_intensity` (= `1 × accuracy` under the M6.9
-  `TrueValue = 1.0` anchor), and `noise_sample` (in
-  `[-(1-accuracy), +(1-accuracy)]`). RFC-080 §8
+  `event_fired` LogEntry gains a `publicText` metadata
+  key sourced verbatim from
+  `EventDefinition.visible_report` (M6.2). The metadata
+  key uses the RFC-060 §3 `EventLogEntry.publicText`
+  vocabulary; the schema-level field keeps its M6.2
+  name. Country-anchored events (which is every event
+  the M5.1 schema accepts at load time, because
+  triggers must bind to a country / interest-group
+  entity) additionally gain three numeric distortion
+  keys: `information_accuracy`, `reported_intensity` (=
+  `1 × accuracy` under the M6.9 `TrueValue = 1.0`
+  anchor), and `noise_sample` (in `[-(1-accuracy),
+  +(1-accuracy)]`). Vacuous-actor hand-built matches
+  (test-only) carry `publicText` only and skip the
+  three numeric distortion keys. RFC-080 §8
   `ReportedValue = TrueValue + Bias + Noise` with
   `Noise = RandomNormal(0, 1 - InformationAccuracy)` —
   M6.9 ships Noise; Bias remains backlog. RFC-060 §3
-  `EventLogEntry { publicText; debugTruth }` is now
-  complete: M6.8 shipped `debugTruth`; M6.9 ships
-  `publicText`. The four M6.9 keys are emitted in BOTH
-  debug and non-debug modes; only the M6.8 `true_cause`
-  remains `--debug`-gated. `event_firer::record_match`
-  and `record_followup` promoted to `Result<bool>` with
+  `EventLogEntry { publicText; debugTruth }` shape is
+  now structurally satisfied: M6.8 emits `true_cause`
+  (the `debugTruth` side) and M6.9 emits `publicText`.
+  The M6.9 keys are emitted in BOTH debug and non-debug
+  modes; only the M6.8 `true_cause` remains
+  `--debug`-gated. `event_firer::record_match` and
+  `record_followup` promoted to `Result<bool>` with
   per-event atomicity (LogEntry NOT appended on failure
   per `feedback_no_silent_degradation` +
   `feedback_api_signature_expresses_failure`). No save
@@ -498,20 +507,28 @@ M0 / M1 中落地，部分仍是未來工作：
   `information_accuracy::compute_for_country` 與 M6.4
   的 `reported_value::from_true_value` 與 M6.5 的
   `bias_noise::sample_for_event` 三個 helper 組起來，
-  讓每筆 `event_fired` LogEntry 多帶四個 metadata key：
-  `visible_report`（M6.2 字串逐字 — RFC-050 §5
-  「政府報告」層 / RFC-060 §3 `publicText`）、
+  讓每筆 `event_fired` LogEntry 都多帶 `publicText`
+  metadata key（M6.2 `EventDefinition.visible_report`
+  字串逐字 — metadata key 採用 RFC-060 §3
+  `EventLogEntry.publicText` 命名，schema 欄位保留
+  M6.2 命名）。Country-anchored 事件（M5.1 schema 接受
+  的所有事件 — trigger 一定 bind 到 country / IG）
+  另外多帶三個 numeric distortion key：
   `information_accuracy`、`reported_intensity`
   （= `reported_value::from_true_value(1.0, accuracy)`
   = `accuracy`，採用 `TrueValue = 1.0` 的事件 anchor）、
   `noise_sample`（在 `[-(1-accuracy), +(1-accuracy)]`，
   amplitude 隨 accuracy 反向縮放，符合 RFC-080 §8
   `Noise = RandomNormal(0, 1 - InformationAccuracy)`）。
-  M6.8 的 `true_cause` reveal 仍由 `--debug` 控制；
-  M6.9 的四個 key 在 debug / 非 debug 都 emit
-  （他們是 player-facing surface，不是 debug 側 truth）。
+  Vacuous-actor hand-built match（test-only degenerate
+  case，scenario load 不會走到）只帶 `publicText`，
+  skip 三個 numeric distortion key。M6.8 的
+  `true_cause` reveal 仍由 `--debug` 控制；M6.9 的
+  key 在 debug / 非 debug 都 emit（他們是 player-
+  facing surface，不是 debug 側 truth）。
   RFC-060 §3 `EventLogEntry { publicText; debugTruth }`
-  在 M6.9 後完整：M6.8 ship `debugTruth`，M6.9 ship
+  的 shape 在 M6.9 後 structurally 滿足：M6.8 emit
+  `true_cause`（`debugTruth` 側），M6.9 emit
   `publicText`。**`event_firer::record_match` 與
   `record_followup` 升級成 `Result<bool>`**；任一
   helper 失敗（per-country 非有限 ratio / 空 id_code /
