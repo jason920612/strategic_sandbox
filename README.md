@@ -265,6 +265,13 @@
   `tests/systems/asymptotic_add_trajectory_test.cpp`.
   Design note:
   [`docs/hardening-strict-numeric-validation.md`](docs/hardening-strict-numeric-validation.md).
+  Companion CI: `.github/workflows/random-player-intervention.yml`
+  runs a 70-year compliance simulation, randomly picks a pending
+  player event + option from the resulting `pending_player_events`,
+  and re-runs the same scenario with a `--commands` script
+  containing a `ChooseEventOption` entry — exercising the
+  production gameplay path. Local invocation:
+  `python tools/random_player_intervention.py --binary build/bin/Debug/leviathan.exe --seed N --days 25567`.
 - Previously shipped: **M6.6 — intelligence-
   budget influence on `information_accuracy`.** Sixth M6
   PR. Implements RFC-090 §6.6 (`6.6 加入情報預算影響`).
