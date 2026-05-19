@@ -223,6 +223,38 @@
       ]
     },
     {
+      "id": "intelligence_agency_expansion",
+      "name": "Intelligence Agency Expansion",
+      "description": "The intelligence apparatus is exploiting a stability slip to seize new authority.",
+      "visible_report": "Intelligence-services budgets and remit appear to be widening in step with rising domestic unrest.",
+      "true_cause": "Combined stability slip + low bureaucratic-compliance satisfy the M7.7 intelligence-expansion trigger (RFC-090 §7.7).",
+      "category": "intelligence",
+      "triggers": [
+        {
+          "target": "country.stability",
+          "op": "lt",
+          "value": 0.35
+        },
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "lt",
+          "value": 0.50
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.government_authority.bureaucratic_compliance",
+          "op": "add",
+          "value": -0.01
+        },
+        {
+          "target": "country.budget_balance",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
       "id": "economic_slowdown_warning",
       "name": "Economic Slowdown Warning",
       "description": "A combined stability + legitimacy slip signals economic confidence loss.",
