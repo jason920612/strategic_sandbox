@@ -47,36 +47,58 @@
 // authority sub-field, no country state field beyond compliance,
 // and no interest-group field is touched.
 //
-// Issue #110 lays out the two final global steps AFTER M3.4:
+// The two final global steps AFTER M3.4 (issue #112 semantics):
 //
 //   7.  ai_policy::apply_selected_policies (state)
 //   8.  event_engine::tick_events            (state)
 //
-// Step 7 picks one policy per non-player country via the
-// deterministic scorer (`ai_policy::select_policies`) and applies
-// it through the M1.5 `apply_policy_effects` path. Each successful
-// apply appends one ActivePolicy entry to
-// `country.active_policies` (the M1.15 active-policy contract).
-// The scorer reads RFC-090 §3.5 / §3.6 / §3.7 / §3.8 inputs:
-// CountryState fields (stability / legitimacy / corruption /
-// budget_balance / threat_perception / military_strength),
-// `state.relationships` for inbound threat + military-strength
-// disparity, `state.interest_groups` for IG-radicalism /
-// loyalty pressure, plus PolicyData category + effects shape.
+// Step 7 — AI policy selection (RFC-090 §3.5 / RFC-040 §4):
+//   - PRESSURE-gated: countries whose `compute_total_pressure`
+//     (sum of normalised stability / legitimacy / corruption /
+//     budget / threat / IG-radicalism terms) falls below
+//     `ai_policy::kPressureThreshold = 0.80` emit ZERO selections
+//     that tick. `MonthlyOutcome.ai_policies_*` counters expose
+//     the gate result.
+//   - CAPACITY-bounded: countries above the gate emit 1 / 2 / 3
+//     picks based on
+//     `0.5×admin_efficiency + 0.3×bcomp + 0.2×budget_headroom`.
+//   - The scorer reads CountryState pressures, `state.relationships`
+//     inbound threat + hostile-neighbour military_strength gap,
+//     `state.interest_groups` influence-weighted radicalism /
+//     loyalty, and PolicyData category + effects.
+//   - No-stacking rule: candidates already active+unexpired are
+//     excluded; chooser picks next-best.
+//   - Player country always skipped.
 //
-// Step 8 (`tick_events`) evaluates all `state.events` against the
-// post-step-7 snapshot, fires every matching event in
-// descending `rank_weighted_events` weight order (stable
-// tie-break on event vector index), and routes each fire
-// through option-default (`apply_default_option_effects`) or
-// base (`apply_event_effects`) — never both. Followups
-// (`followup_event_ids`) execute depth-1: each resolved
-// followup id is recorded via `record_followup` and its own
-// effects applied; the followup's own `followup_event_ids` is
-// NOT recursed. `record_match` and `record_followup` append
-// one `LogEntry{category="event_fired", source="event_firer"}`
-// to `state.logs` per fire — that's what surfaces in
-// `events.jsonl`.
+// Step 8 — `tick_events` (RFC-090 §5.6 / §5.7 / §5.8 / §5.12,
+// RFC-050 §3):
+//   - PER-COUNTRY / PER-CATEGORY weighted-random draw via
+//     `random::weighted_choice(state.rng, …)`. ONE event fires
+//     per (country, category) per tick. Same template MAY fire
+//     for multiple countries in the same tick — each country
+//     rolls independently.
+//   - Trigger scoping is strictly per-country (`country.*` and
+//     `interest_group.*` both bind within the named country).
+//   - For NON-player countries with options, the state-based
+//     option chooser (`select_best_option_for_country`) picks
+//     and `apply_option_effects_with_mode` applies per the
+//     event's author-controlled `option_effect_mode` (OptionOnly
+//     / BaseThenOption / OptionThenBase). Events without options
+//     fall through to `apply_event_effects`.
+//   - For PLAYER country with options, the parent EventInstance
+//     is recorded but effects are deferred to a
+//     `PlayerCommandKind::ChooseEventOption` command — NO
+//     effects and NO followups during this tick.
+//   - Followups are CONDITIONAL (RFC-050 §3 "條件連鎖"): each
+//     followup must satisfy its own triggers AFTER the parent
+//     applies. Multiple matching followups → weighted draw one.
+//     Recursion runs depth-N up to
+//     `event_engine::kMaxFollowupDepth = 5` with a visited-
+//     id_code cycle guard.
+//   - `record_match` and `record_followup` append one
+//     `LogEntry{category="event_fired", source="event_firer"}`
+//     to `state.logs` per fire — that's what surfaces in
+//     `events.jsonl`.
 //
 // The order is observable: `stability::tick` reads the faction
 // support / radicalism that `faction::react` just wrote, and

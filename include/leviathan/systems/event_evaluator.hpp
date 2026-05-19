@@ -197,10 +197,12 @@ std::vector<EventMatch>
 match_events_for_country(const core::GameState& state,
                          core::CountryId        country_id);
 
-// RCR-1: RFC-090 §5.3 / §5.6 / §5.7 — deterministic weighted
-// ranker. For each event in `state.events`, compute a numeric
-// `weight` as `kBaseWeight + sum(modifier.weight_delta)` over
-// every `WeightModifier` whose `target` / `op` / `value`
+// RFC-090 §5.3 / §5.6 — deterministic weighted RANKER (the
+// underlying weight computation; the §5.7 DRAW that consumes
+// these weights is wired in `event_engine::tick_events` —
+// see below). For each event in `state.events`, compute a
+// numeric `weight` as `kBaseWeight + sum(modifier.weight_delta)`
+// over every `WeightModifier` whose `target` / `op` / `value`
 // comparison currently holds against any country / interest
 // group in `state` (same ANY-entity-satisfies aggregation as
 // `trigger_matches`). Modifiers with unrecognised targets / ops
@@ -211,12 +213,16 @@ match_events_for_country(const core::GameState& state,
 // lower priority from there. Empty `weight_modifiers` keeps
 // the event at base weight.
 //
-// RCR-1 is RNG-free: no random draw, no `state.rng` consumption.
-// A future weighted-random-draw extension would sit on top of
-// this ranker (consume `state.rng` and pick from the ranked
-// candidates); that extension is explicitly out of scope here
-// to preserve M1.17 / M2 / M3 / M4 / M5 byte-identical
-// determinism baselines.
+// **`rank_weighted_events` itself is RNG-free** — it produces
+// the per-event weight vector that the §5.7 weighted-random
+// draw consumes. The draw lives one level up in
+// `event_engine::tick_events`, which feeds the weights into
+// `random::weighted_choice(state.rng, …)` per
+// (country, category) bucket. So the canonical M1.17 / M2 /
+// M3 / M4 / M5 byte-identical baselines are preserved only
+// while the canonical scenario has zero events matching their
+// triggers (no matches → no draws → no RNG consumption); any
+// scenario that produces matches WILL consume `state.rng`.
 //
 // Returns one entry per event in `state.events`, even when an
 // event's weight is exactly the base weight. Callers that only
@@ -233,26 +239,18 @@ inline constexpr double kBaseWeight = 1.0;
 std::vector<WeightedEventCandidate>
 rank_weighted_events(const core::GameState& state);
 
-// RCR-1: RFC-090 §5.7 — deterministic weighted selector. Calls
-// `rank_weighted_events` and returns the **highest-weight
-// candidate whose triggers currently match** (the intersection
-// of "weighted ranking" with M5.2's `match_events`). When the
-// intersection is empty — no event currently matches, or
-// `state.events` is empty — returns `std::nullopt`.
-//
-// Selection rule:
-//   1. Build the M5.2 match set (vector of EventMatch for events
-//      whose triggers currently fire).
-//   2. Walk the M5.3-shaped ranked list in descending-weight
-//      order; return the first candidate that is in the match set.
-//   3. Ties between candidates with the same weight resolve to
-//      the lower event vector index (deterministic via
-//      stable_sort in `rank_weighted_events`).
-//
-// RNG-free; no `state.rng` consumption. A future weighted-random-
-// draw extension would consume `state.rng` and pick stochastically
-// among the top-weight candidates; that extension is out of scope
-// for RCR-1 to preserve M1–M5 byte-identical determinism baselines.
+// `select_weighted_event` — DEPRECATED for engine use as of
+// issue #112. Retained as a deterministic single-pick helper
+// (highest-weight currently-matched event with stable
+// tie-break on event vector index, RNG-free) for ad-hoc
+// callers that genuinely want top-1 selection without the
+// state.rng dependency. NOTE: `event_engine::tick_events` no
+// longer calls this — RFC-090 §5.7 "事件抽選" requires a
+// weighted RANDOM draw, which the engine does directly via
+// `random::weighted_choice` using `state.rng` on each
+// (country, category) bucket. Use this helper only when you
+// want a deterministic top-pick (e.g. tests / diagnostics);
+// do NOT use it as the §5.7 implementation.
 std::optional<WeightedEventCandidate>
 select_weighted_event(const core::GameState& state);
 

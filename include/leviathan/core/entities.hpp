@@ -298,18 +298,30 @@ struct WeightModifier {
     double      weight_delta = 0.0;
 };
 
-// RCR-1: RFC-090 §5.4 EventOption. One author-defined choice on
-// an event. `id_code` is the stable identifier; `label` is the
+// RFC-090 §5.4 EventOption. One author-defined choice on an
+// event. `id_code` is the stable identifier; `label` is the
 // human-readable button text; `effects` is the per-option effect
 // list (same shape as `EventDefinition::effects`, applied via
 // the same `policy::apply_effects_to_actor` path).
 //
-// RCR-1 ships the schema + a deterministic default-option helper
-// (`event_effects::select_default_option` returns the first
-// option, or std::nullopt for an empty list). No UI prompt path;
-// no player-choice command kind. Empty `options` is allowed at
-// load — events that don't offer choices behave exactly like
-// pre-RCR-1 events did.
+// Selection semantics (issue #112):
+//   - For NON-player countries `event_engine::tick_events` picks
+//     an option via `event_effects::select_best_option_for_country`
+//     — a state-based scorer that ranks options by their effects'
+//     desire-alignment with the country's pressures. Ties resolve
+//     to the lower vector index.
+//   - For the PLAYER country `tick_events` defers the choice: the
+//     parent EventInstance is recorded but NO effects apply and
+//     NO followups process until the player issues
+//     `PlayerCommandKind::ChooseEventOption` (reachable through
+//     the existing `--commands` script / `apply_pending` path).
+//   - The legacy `event_effects::select_default_option` helper
+//     still exists as a deterministic-first-option primitive but
+//     is NOT what tick_events uses for non-player firing.
+//
+// Empty `options` is allowed at load — events that don't offer
+// choices fall through to the base `apply_event_effects` path
+// (no `option_effect_mode` field on those definitions).
 struct EventOption {
     std::string               id_code;
     std::string               label;

@@ -94,16 +94,29 @@ The corrective batch ships:
   §3.5 / RFC-010 §2.2).
 - New `leviathan::systems::annual_stats` module.
 - `event_evaluator::rank_weighted_events` deterministic
-  weighted ranker (RFC-090 §5.6) **plus
-  `event_evaluator::select_weighted_event`** which picks
-  the highest-weight currently-matched candidate (RFC-090
-  §5.7); both RNG-free.
-- `event_effects::select_default_option` (returns first
-  option) **plus `event_effects::apply_default_option_effects`**
-  which routes the first option's effects through the
-  M1.5 / M5.6 `policy::apply_effects_to_actor` path
-  (RFC-090 §5.4 / §5.8). Two extended event fixtures
-  (`legitimacy_crisis`, `corruption_scandal`) author
+  weighted ranker (RFC-090 §5.6) — produces the per-event
+  weight vector. **The RFC-090 §5.7 weighted DRAW is wired
+  in `event_engine::tick_events`** (issue #112), which feeds
+  these weights into `random::weighted_choice(state.rng, …)`
+  on each (country, category) bucket. `select_weighted_event`
+  still exists as a deterministic top-pick helper for ad-hoc /
+  diagnostic callers but is NOT the §5.7 implementation —
+  `tick_events` is.
+- **Event option flow (issue #112)**: for non-player
+  countries `event_effects::select_best_option_for_country`
+  scores options by their effects' desire-alignment with the
+  country's pressures (NOT options[0]) and
+  `event_effects::apply_option_effects_with_mode` applies in
+  the author-controlled `EventOptionEffectMode` (OptionOnly /
+  BaseThenOption / OptionThenBase, a NEW required v18 field).
+  For the player country `tick_events` defers — appends a
+  `core::PendingPlayerEvent` and waits for
+  `PlayerCommandKind::ChooseEventOption` (reachable via the
+  existing `--commands` script / `apply_pending` channel). The
+  legacy `event_effects::select_default_option` /
+  `apply_default_option_effects` helpers are retained for
+  tests but are NOT the engine path. Two extended event
+  fixtures (`legitimacy_crisis`, `corruption_scandal`) author
   representative options to exercise this path.
 - `event_effects::resolve_followup_ids` (resolves ids to
   `state.events` indices) **plus `event_firer::record_followup`**

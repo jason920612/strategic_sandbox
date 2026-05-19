@@ -85,16 +85,28 @@ double compute_total_pressure(const core::CountryState& c,
             effective_threat = rel.threat;
         }
     }
+    // Military-disparity pressure from HOSTILE neighbours only:
+    // an ally (positive relationship, zero threat) being militarily
+    // stronger does NOT raise pressure on this country. Same
+    // hostility rule used by `effect_desire::for_country` for the
+    // policy.military_power desire term so the gate and the
+    // picker stay aligned.
     double max_neighbour_str = 0.0;
     for (const auto& rel : state.relationships) {
-        if (rel.to == c.id && rel.from.valid()) {
-            const auto fidx =
-                static_cast<std::size_t>(rel.from.value());
-            if (fidx < state.countries.size()) {
-                const double sval = state.countries[fidx].military_strength;
-                if (sval > max_neighbour_str) {
-                    max_neighbour_str = sval;
-                }
+        if (rel.to != c.id || !rel.from.valid()) {
+            continue;
+        }
+        const bool hostile =
+            rel.threat > 0.0 || rel.relationship < 0.0;
+        if (!hostile) {
+            continue;
+        }
+        const auto fidx =
+            static_cast<std::size_t>(rel.from.value());
+        if (fidx < state.countries.size()) {
+            const double sval = state.countries[fidx].military_strength;
+            if (sval > max_neighbour_str) {
+                max_neighbour_str = sval;
             }
         }
     }

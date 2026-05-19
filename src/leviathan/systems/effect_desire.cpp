@@ -61,19 +61,29 @@ double for_country(const core::CountryState& c,
                 effective_threat = rel.threat;
             }
         }
-        // Plus military_strength disparity: hostile neighbour
-        // stronger than us → desire to militarise rises (RFC-090
-        // §3.8 — the load-bearing read of military_strength).
+        // Plus military_strength disparity from HOSTILE neighbours
+        // only: a stronger neighbour we share a positive
+        // relationship and zero threat with (an ally) does NOT
+        // produce militarisation pressure. A neighbour counts as
+        // hostile if `rel.threat > 0` OR `rel.relationship < 0`
+        // (RFC-090 §3.6 / §3.7 / §3.8 read together — only
+        // adversaries drive defence spending).
         double max_neighbour_str = 0.0;
         for (const auto& rel : state.relationships) {
-            if (rel.to == c.id && rel.from.valid()) {
-                const auto fidx =
-                    static_cast<std::size_t>(rel.from.value());
-                if (fidx < state.countries.size()) {
-                    const double s = state.countries[fidx].military_strength;
-                    if (s > max_neighbour_str) {
-                        max_neighbour_str = s;
-                    }
+            if (rel.to != c.id || !rel.from.valid()) {
+                continue;
+            }
+            const bool hostile =
+                rel.threat > 0.0 || rel.relationship < 0.0;
+            if (!hostile) {
+                continue;
+            }
+            const auto fidx =
+                static_cast<std::size_t>(rel.from.value());
+            if (fidx < state.countries.size()) {
+                const double s = state.countries[fidx].military_strength;
+                if (s > max_neighbour_str) {
+                    max_neighbour_str = s;
                 }
             }
         }
