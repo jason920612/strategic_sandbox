@@ -50,6 +50,7 @@ add_executable(leviathan_tests
     systems/information_accuracy_test.cpp
     systems/interest_group_system_test.cpp
     systems/logging_system_test.cpp
+    systems/m7_5_military_pressure_test.cpp
     systems/monthly_pipeline_test.cpp
     systems/order_execution_test.cpp
     systems/policy_system_test.cpp
