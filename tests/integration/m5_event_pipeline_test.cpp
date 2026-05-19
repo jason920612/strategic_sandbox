@@ -522,8 +522,14 @@ TEST_CASE("M6.9 integration: non-debug events.jsonl emits distorted publicText; 
         // Use distinctive intelligence settings so distortion is
         // observable. GER (the firing country) gets cap=0.5,
         // budget.intelligence=0.0, corruption=0.0 from
-        // make_m5_firing_state's defaults; that maps to accuracy
-        // ≈ 0.61. We pin THAT below as a regression marker.
+        // make_m5_firing_state's defaults; post M6 closeout audit
+        // (which added MediaFreedomSignal as a positive
+        // information_accuracy contributor and PropagandaBias as a
+        // new bias-side metadata key), the firing country also
+        // inherits GovernmentAuthorityState's media_control default
+        // of 0.5. The exact accuracy value is not pinned here;
+        // this test asserts only that the distortion metadata keys
+        // are present in the artefact.
         return s;
     };
 
@@ -572,6 +578,15 @@ TEST_CASE("M6.9 integration: non-debug events.jsonl emits distorted publicText; 
     CHECK(log_dbg.find("\"information_accuracy\"")   != std::string::npos);
     CHECK(log_dbg.find("\"reported_intensity\"")     != std::string::npos);
     CHECK(log_dbg.find("\"noise_sample\"")           != std::string::npos);
+
+    // M6 closeout audit NEW (RFC-080 §8 `+ PropagandaBias` Bias
+    // term): a `propaganda_bias_sample` metadata key now appears
+    // on country-anchored fires in BOTH modes, alongside the
+    // M6.9 distortion keys.
+    CHECK(log_nodbg.find("\"propaganda_bias_sample\"")
+          != std::string::npos);
+    CHECK(log_dbg.find("\"propaganda_bias_sample\"")
+          != std::string::npos);
 
     // M6.8 carry-over: true_cause appears only in debug mode.
     CHECK(log_nodbg.find("M6.9 SECRET TRUTH") == std::string::npos);

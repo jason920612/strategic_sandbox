@@ -151,8 +151,8 @@ sequence:
   (out-of-range / non-finite ratios reject with
   `Result::failure` naming country `id_code` + field +
   numeric value; no silent clamping).
-- **M6.9** (RFC-090 §6.9 "非 debug 模式隱藏真相", current
-  PR) composes the M6.3 / M6.6 / M6.7
+- **M6.9** (RFC-090 §6.9 "非 debug 模式隱藏真相", PR
+  #117) composes the M6.3 / M6.6 / M6.7
   `information_accuracy::compute_for_country` helper with
   the M6.4 `reported_value::from_true_value` helper and
   the M6.5 `bias_noise::sample_for_event` helper inside
@@ -168,28 +168,48 @@ sequence:
   entity) additionally gain three numeric distortion
   keys: `information_accuracy`, `reported_intensity` (=
   `1 × accuracy` under the M6.9 `TrueValue = 1.0`
-  anchor), and `noise_sample` (in `[-(1-accuracy),
-  +(1-accuracy)]`). Vacuous-actor hand-built matches
-  (test-only) carry `publicText` only and skip the
-  three numeric distortion keys. RFC-080 §8
-  `ReportedValue = TrueValue + Bias + Noise` with
-  `Noise = RandomNormal(0, 1 - InformationAccuracy)` —
-  M6.9 ships Noise; Bias remains backlog. RFC-060 §3
+  anchor), and `noise_sample`. RFC-060 §3
   `EventLogEntry { publicText; debugTruth }` shape is
-  now structurally satisfied: M6.8 emits `true_cause`
-  (the `debugTruth` side) and M6.9 emits `publicText`.
-  The M6.9 keys are emitted in BOTH debug and non-debug
-  modes; only the M6.8 `true_cause` remains
-  `--debug`-gated. `event_firer::record_match` and
-  `record_followup` promoted to `Result<bool>` with
-  per-event atomicity (LogEntry NOT appended on failure
-  per `feedback_no_silent_degradation` +
-  `feedback_api_signature_expresses_failure`). No save
-  bump (still v18); no artefact contract change (still
-  11); no `state.rng` consumption (bias_noise is
-  hash-deterministic per M6.5); canonical
-  `1930_minimal` events.jsonl byte-identical to the
-  PR #116 baseline (no events fire on canonical).
+  now structurally satisfied. PR #117 LANDED; the M6
+  closeout audit ran AFTER PR #117 and EXTENDED this
+  metadata set (see next entry).
+- **M6 closeout audit (current PR)** — NOT an RFC-090
+  numbered sub-milestone; explicitly the closeout-
+  audit PR per `docs/m6-closeout-audit.md`. Ships TWO
+  representative RFC-080 §8 residuals:
+  1. **`+ MediaFreedomSignal`** in
+     `information_accuracy::compute_for_country`.
+     Outer-blend composition keeps the inner
+     intel-pair weight sum-to-1 invariant; reads
+     `government_authority.media_control`; new
+     constant `kInformationAccuracyMediaFreedomWeight
+     = 0.20` (game-model coefficient per RFC-080 §11;
+     direction grounded in V-Dem + Egorov-Guriev-
+     Sonin QJP 2009). "No-distortion ceiling" now
+     reached only with maxed intel AND zero
+     corruption AND zero media_control.
+  2. **`+ PropagandaBias`** as a new
+     `leviathan::systems::propaganda_bias` helper
+     emitted as a `propaganda_bias_sample` metadata
+     key on every country-anchored fire (between
+     `information_accuracy` and `reported_intensity`).
+     Body: `kPropagandaBiasMaxMagnitude × media_control`
+     with max = 0.3 (game-model coefficient; cited
+     direction grounding: V-Dem propaganda
+     indicators, King-Pan-Roberts APSR 2013,
+     DellaVigna-Kaplan QJE 2007).
+  Metadata count on country-anchored fires: 10 keys
+  (was 9; the new key sits at position 7). Vacuous-
+  actor fires unchanged. **No save schema bump (still
+  v18); no artefact contract change (still 11); no
+  `state.rng` consumption; no new player-facing
+  command; no new RFC-090 milestone feature; no per-
+  event TrueValue source (still 1.0); no separate
+  EventReport artefact (designed in audit doc but
+  not shipped).** **M6 REMAINS OPEN.** The audit
+  classifies remaining RFC-080 §8 residuals as
+  closure blockers and reserves the closure decision
+  for Jason.
 - **M6.8** (RFC-090 §6.8 "debug 模式顯示真相", prior PR)
   adds a `--debug` runner flag plus the matching
   `RunnerOptions::debug_mode` field. When the flag is on,
@@ -239,8 +259,14 @@ sequence:
 
 `RCR` is **not** an RFC milestone number and does not
 consume M0–M9 numbering. **There is no RCR-2 track and no
-planned recovery follow-up.** Issues #105 / #108 / #110 /
-#112 stay open until the reviewer confirms strict compliance.
+planned recovery follow-up.** The current PR is the M6
+closeout audit (named "M6 closeout audit", NOT M7 / NOT
+RCR-2 per `feedback_milestone_direction_gate` +
+`feedback_rcr_recovery_track`), and it explicitly does NOT
+close M6; see `docs/m6-closeout-audit.md` for the audit's
+executive decision and remaining-blockers list. Issues
+#105 / #108 / #110 / #112 stay open until the reviewer
+confirms strict compliance.
 
 What RCR-1 shipped (NOTE: some early helpers below were
 later superseded by issue #112 — see the recovery
@@ -497,8 +523,20 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.9
-  （非 debug 模式隱藏真相）** 是 M6 的第九個
+  information distortion）** — RFC-090 §6.x
+  sub-milestones M6.1 – M6.9 all shipped through PRs
+  #100 – #117. **目前 PR 是 M6 closeout audit**
+  （見 `docs/m6-closeout-audit.md`），名稱維持 "M6
+  closeout audit"（不是 M7，不是 RCR-2，per
+  `feedback_milestone_direction_gate` +
+  `feedback_rcr_recovery_track`）。Audit ships TWO
+  representative RFC-080 §8 residuals
+  (`+ MediaFreedomSignal` accuracy positive term;
+  `+ PropagandaBias` Bias term) and classifies
+  remaining residuals as M6 closure blockers. **M6
+  REMAINS OPEN** — only Jason may declare it closed.
+
+  **M6.9 （非 debug 模式隱藏真相）** 是 M6 的第九個
   sub-milestone（也是 RFC-090 §6.x 列表中目前已知的
   最後一個）。完全照 RFC-090 §6.9
   （`6.9 非 debug 模式隱藏真相`）實作：在

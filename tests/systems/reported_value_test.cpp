@@ -160,20 +160,21 @@ TEST_CASE("M6.4 from_true_value: deterministic — repeated calls return the sam
 // M6.4 composition with M6.6 information_accuracy
 // =====================================================================
 
-TEST_CASE("M6.4 + M6.6 composition: with maxed intelligence accuracy=1.0 reported equals true_value") {
-    // Pin the M6 pipeline composition: pull the M6.6 accuracy
-    // for a country with full intelligence (capability=1.0,
-    // budget.intelligence=1.0), feed it into M6.4 along with a
-    // true_value, get the true_value back verbatim. Under M6.6
-    // the helper only returns 1.0 when both intelligence inputs
-    // are at 1.0 — the M6.3 "any country returns 1.0" placeholder
-    // is gone.
+TEST_CASE("M6.4 + M6.6 + M6 closeout-audit composition: maxed intelligence + free press accuracy=1.0 reported equals true_value") {
+    // Pin the M6 pipeline composition: pull the accuracy for a
+    // country with full intelligence AND fully free press (so
+    // MediaFreedomSignal = 1.0), zero corruption — feed it into
+    // M6.4 along with a true_value, get the true_value back
+    // verbatim. Post M6 closeout audit the helper only returns
+    // 1.0 when intel is maxed AND corruption is zero AND
+    // media_control is zero.
     GameState s;
     CountryState ger;
     ger.id      = CountryId{0};
     ger.id_code = "GER";
     ger.name    = "GER";
     ger.government_authority.intelligence_capability = 1.0;
+    ger.government_authority.media_control           = 0.0;
     ger.budget.intelligence                          = 1.0;
     s.countries.push_back(ger);
 
@@ -187,18 +188,22 @@ TEST_CASE("M6.4 + M6.6 composition: with maxed intelligence accuracy=1.0 reporte
     CHECK(rep.value() == doctest::Approx(0.30));
 }
 
-TEST_CASE("M6.4 + M6.6 composition: degraded intelligence damps the reported_value") {
-    // The M6.6 damping case the previous test's comment promised:
+TEST_CASE("M6.4 + M6.6 + M6 closeout-audit composition: degraded intelligence + max media control damps the reported_value") {
+    // The damping case the previous test's comment promised:
     // a country with zero intelligence_capability AND zero
-    // budget.intelligence sits at the M6.6 accuracy floor
-    // (kMinInformationAccuracy = 0.4); M6.4 multiplies the
-    // true_value by that floor verbatim.
+    // budget.intelligence AND max media_control sits at the
+    // positive-axis floor (kMinInformationAccuracy = 0.4); M6.4
+    // multiplies the true_value by that floor verbatim. (Pre-M6
+    // closeout audit the test only had to author the intel
+    // inputs because there was no MediaFreedomSignal term; the
+    // closeout audit added the third condition.)
     GameState s;
     CountryState ger;
     ger.id      = CountryId{0};
     ger.id_code = "GER";
     ger.name    = "GER";
     ger.government_authority.intelligence_capability = 0.0;
+    ger.government_authority.media_control           = 1.0;
     ger.budget.intelligence                          = 0.0;
     s.countries.push_back(ger);
 

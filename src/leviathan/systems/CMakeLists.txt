@@ -49,6 +49,7 @@ add_library(leviathan_systems STATIC
     monthly_pipeline.cpp
     order_execution.cpp
     policy_system.cpp
+    propaganda_bias.cpp
     random_service.cpp
     reported_value.cpp
     runner.cpp

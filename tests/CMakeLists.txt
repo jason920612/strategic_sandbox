@@ -53,6 +53,7 @@ add_executable(leviathan_tests
     systems/monthly_pipeline_test.cpp
     systems/order_execution_test.cpp
     systems/policy_system_test.cpp
+    systems/propaganda_bias_test.cpp
     systems/random_service_test.cpp
     systems/reported_value_test.cpp
     systems/runner_test.cpp

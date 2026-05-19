@@ -18,7 +18,8 @@ Per-milestone design notes and PR description drafts.
 
 | File | Covers |
 |------|--------|
-| [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 originally closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. The compliance recovery sequence (RCR-1 PR #107 → issue #108 fix PR #109 → issue #110 / #112 strict-RFC corrective PR #111) closed the RFC-090 §M3 / §M5 + RFC-010 v0.1 floor gap end-to-end: 20-country / 20-policy / 10-event / 10-cross-country-IG `1930_rfc_compliance.json` scenario, wired AI policy selection, weighted-RNG event draw via `state.rng`, recursive conditional followups, author-controlled event-option mode + player-command surface, annual-stats CSV as the 11th artefact, save v16 → v17 → v18. The audit doc remains the canonical reference for what shipped vs. is still genuinely deferred (RFC-090 §6.8 / §6.9 hidden-truth wiring, full RFC-080 §8 negative terms beyond corruption, war / full diplomacy AI, UI, etc.). **Read this before opening any new milestone work.** Companion to issue #105. |
+| [`rfc-090-010-compliance-audit.md`](rfc-090-010-compliance-audit.md) | **RFC governance audit.** Canonical reference for which original RFC-090 / RFC-010 scope items have shipped vs. been deferred. M3 and M5 originally closed as *implementation milestones*, not as full RFC-090 §M3 / §M5 acceptance. The compliance recovery sequence (RCR-1 PR #107 → issue #108 fix PR #109 → issue #110 / #112 strict-RFC corrective PR #111) closed the RFC-090 §M3 / §M5 + RFC-010 v0.1 floor gap end-to-end. RFC-090 §6.8 / §6.9 hidden-truth wiring then shipped through M6.1 – M6.9 (PRs #100 – #117). The audit doc remains the canonical reference for what shipped vs. is still genuinely deferred (full RFC-080 §8 residuals — see the M6 closeout-audit entry below — plus war / full diplomacy AI, UI, etc.). **Read this before opening any new milestone work.** Companion to issue #105. |
+| [`m6-closeout-audit.md`](m6-closeout-audit.md) | **M6 closeout audit.** Canonical reference for the M6 closure decision and the remaining RFC-080 §8 residual backlog. M6.1 – M6.9 all shipped as implementation milestones (PRs #100 – #117). The closeout audit ran *after* M6.9 and explicitly does NOT close M6: 2/3 RFC-080 §8 Bias terms remain (`FactionInterestBias`, `BureaucraticSelfProtection`); 5/9 accuracy modifiers remain (`-FactionCapture`, `-LeaderIsolation`, `-LocalAutonomyOpacity`, `+BureaucraticProfessionalism`, `+AuditCapacity`); per-event TrueValue source still pinned at 1.0 in event_firer; separate player-facing `event_reports.jsonl` artefact still TBD. The audit ships TWO representative residuals (`+ MediaFreedomSignal` in `information_accuracy::compute_for_country`; `+ PropagandaBias` as a new sibling helper emitted as `propaganda_bias_sample` metadata). **Only Jason may declare M6 closed.** |
 
 ## Index of design notes
 
@@ -178,23 +179,16 @@ If you're new to the codebase:
 > compliance scenario. Together they fix the spots where
 > RCR-1 had initially stopped at "helper only". After issue
 > #108 / #110 / #112 landed, execution returned to the
-> M-numbered milestone sequence; M6.7 is the latest
-> shipped sub-milestone, then a **post-M6.7 hardening
-> sweep** (NOT a milestone) applied
-> `feedback_no_silent_degradation` project-wide and
-> migrated ratio-target `add` from linear to asymptotic
-> — see `docs/hardening-strict-numeric-validation.md`.
-> The hardening PR explicitly does NOT advance M6.x.
-> **M6.6** (RFC-090 §6.6
-> "加入情報預算影響") then shipped the
-> `information_accuracy::compute_for_country` body that
-> reads `government_authority.intelligence_capability` and
-> `budget.intelligence`, replacing the M6.3 constant-1.0
-> placeholder with the affine
-> `accuracy = 0.4 + 0.6 × (0.7×capability + 0.3×budget)`
-> formula in range `[0.4, 1.0]`. See audit doc §1.1 for the
-> issue-#108 fix summary and §6 for the per-item status.
-> **There is no RCR-2 track.**
+> M-numbered milestone sequence; the RFC-090 §6.x
+> sub-milestones M6.1 – M6.9 then all shipped through PRs
+> #100 – #117. **An M6 closeout audit has now run**
+> (`docs/m6-closeout-audit.md`): the audit shipped two
+> representative RFC-080 §8 residuals
+> (`+ MediaFreedomSignal` accuracy positive term;
+> `+ PropagandaBias` Bias term) and classified the
+> remaining residuals as M6 closure blockers. **M6
+> REMAINS OPEN.** Only Jason may declare it closed.
+> **There is no RCR-2 track and no M7 work started.**
 
 **M2 closed.** M2.1–M2.22 shipped. See `milestone-2-result.md`
 for the full M2 exit ledger.

@@ -16,6 +16,7 @@
 #include "leviathan/core/log_entry.hpp"
 #include "leviathan/systems/bias_noise.hpp"
 #include "leviathan/systems/information_accuracy.hpp"
+#include "leviathan/systems/propaganda_bias.hpp"
 #include "leviathan/systems/reported_value.hpp"
 
 namespace leviathan::systems::event_firer {
@@ -79,17 +80,26 @@ core::EventInstanceActor to_actor(
     return a;
 }
 
-// M6.9 distortion result: the four numeric values + the
-// visible_report string a non-debug consumer needs. The four
-// pieces are emitted as four separate metadata keys so the
-// JSONL writer keeps each one greppable; lumping them into a
-// single composite string would hide the structure.
+// M6.9 distortion result: the numeric values + the
+// visible_report string a non-debug consumer needs. The
+// pieces are emitted as separate metadata keys so the JSONL
+// writer keeps each one greppable; lumping them into a single
+// composite string would hide the structure.
+//
+// M6 closeout audit added `propaganda_bias_sample` to this
+// struct. The new key sits between `information_accuracy` and
+// `reported_intensity` in the emitted metadata so a future
+// EventReport artefact (designed in
+// `docs/m6-closeout-audit.md`) can compose the RFC-080 §8
+// strict `TrueValue + Bias + Noise` expression directly from
+// the emitted keys.
 struct DistortionFields {
-    bool         emit_distortion = false;
+    bool         emit_distortion         = false;
     std::string  visible_report;
-    double       information_accuracy = 0.0;
-    double       reported_intensity   = 0.0;
-    double       noise_sample         = 0.0;
+    double       information_accuracy    = 0.0;
+    double       propaganda_bias_sample  = 0.0;   // M6 closeout audit
+    double       reported_intensity      = 0.0;
+    double       noise_sample            = 0.0;
 };
 
 // Compose the M6.3 / M6.4 / M6.5 pipeline into the
@@ -187,11 +197,39 @@ core::Result<DistortionFields> compute_distortion_fields(
 
     // M6.4 reported value: TrueValue = 1.0 anchor; reported
     // intensity = accuracy by direct multiplication.
+    //
+    // The fixed `TrueValue = 1.0` anchor is a known M6 closure
+    // blocker — `docs/m6-closeout-audit.md` §5 / §9 documents
+    // the per-event TrueValue design (an authored
+    // `true_intensity` field on EventDefinition with a save
+    // schema bump). M6 remains OPEN; this PR does not invent a
+    // per-event TrueValue source.
     auto rep_r = reported_value::from_true_value(1.0, accuracy);
     if (!rep_r) {
         return R::failure(
             "event_firer::record_match (M6.9 reported_value): " +
             std::move(rep_r.error()));
+    }
+
+    // M6 closeout-audit PropagandaBias (RFC-080 §8
+    // `Bias = ... + PropagandaBias`). Read-only deterministic
+    // helper over `government_authority.media_control`; same
+    // failure surface as `information_accuracy::
+    // compute_for_country`. Emitted as a separate metadata key
+    // (`propaganda_bias_sample`) so a future EventReport
+    // artefact can compose the RFC-080 §8 strict
+    // `TrueValue + Bias + Noise` expression directly. The
+    // current `reported_intensity` semantic stays at the M6.4
+    // placeholder (TrueValue × accuracy); replacing it with the
+    // additive RFC-strict form is documented as a separate
+    // remaining blocker in the audit doc.
+    auto bias_r =
+        propaganda_bias::compute_for_country(state, cid);
+    if (!bias_r) {
+        return R::failure(
+            "event_firer::record_match (M6 closeout-audit "
+            "propaganda_bias): " +
+            std::move(bias_r.error()));
     }
 
     // M6.5 noise: amplitude = 1 - accuracy. At accuracy 1.0
@@ -215,10 +253,11 @@ core::Result<DistortionFields> compute_distortion_fields(
             std::move(noise_r.error()));
     }
 
-    out.emit_distortion        = true;
-    out.information_accuracy   = accuracy;
-    out.reported_intensity     = rep_r.value();
-    out.noise_sample           = noise_r.value();
+    out.emit_distortion         = true;
+    out.information_accuracy    = accuracy;
+    out.propaganda_bias_sample  = bias_r.value();
+    out.reported_intensity      = rep_r.value();
+    out.noise_sample            = noise_r.value();
     return R::success(std::move(out));
 }
 
@@ -374,11 +413,18 @@ core::Result<bool> record_match(
     entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
-            {"information_accuracy", format_double(dist.information_accuracy)});
+            {"information_accuracy",   format_double(dist.information_accuracy)});
+        // M6 closeout-audit (RFC-080 §8 `+ PropagandaBias`):
+        // emitted between `information_accuracy` and
+        // `reported_intensity` so a future EventReport artefact
+        // can compose the strict `TrueValue + Bias + Noise`
+        // expression directly from the emitted keys.
         entry.metadata.push_back(
-            {"reported_intensity",   format_double(dist.reported_intensity)});
+            {"propaganda_bias_sample", format_double(dist.propaganda_bias_sample)});
         entry.metadata.push_back(
-            {"noise_sample",         format_double(dist.noise_sample)});
+            {"reported_intensity",     format_double(dist.reported_intensity)});
+        entry.metadata.push_back(
+            {"noise_sample",           format_double(dist.noise_sample)});
     }
     state.logs.push_back(std::move(entry));
 
@@ -480,11 +526,18 @@ core::Result<bool> record_followup(
     entry.metadata.push_back({"publicText", dist.visible_report});
     if (dist.emit_distortion) {
         entry.metadata.push_back(
-            {"information_accuracy", format_double(dist.information_accuracy)});
+            {"information_accuracy",   format_double(dist.information_accuracy)});
+        // M6 closeout-audit (RFC-080 §8 `+ PropagandaBias`):
+        // emitted between `information_accuracy` and
+        // `reported_intensity` so a future EventReport artefact
+        // can compose the strict `TrueValue + Bias + Noise`
+        // expression directly from the emitted keys.
         entry.metadata.push_back(
-            {"reported_intensity",   format_double(dist.reported_intensity)});
+            {"propaganda_bias_sample", format_double(dist.propaganda_bias_sample)});
         entry.metadata.push_back(
-            {"noise_sample",         format_double(dist.noise_sample)});
+            {"reported_intensity",     format_double(dist.reported_intensity)});
+        entry.metadata.push_back(
+            {"noise_sample",           format_double(dist.noise_sample)});
     }
     state.logs.push_back(std::move(entry));
 
