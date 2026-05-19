@@ -239,7 +239,7 @@ TEST_CASE("Hardening: rank_weighted_events REJECTS unrecognised modifier target"
     const auto r = ev_ev::rank_weighted_events(state);
     REQUIRE(r.failed());
     CHECK(r.error().find("country.notarealfield") != std::string::npos);
-    CHECK(r.error().find("not in the country/interest_group allowlist")
+    CHECK(r.error().find("not in the country / interest_group / faction allowlist")
           != std::string::npos);
 }
 
@@ -533,7 +533,7 @@ TEST_CASE("Hardening: select_weighted_event REJECTS unrecognised modifier target
 
     const auto r = ev_ev::select_weighted_event(state);
     REQUIRE(r.failed());
-    CHECK(r.error().find("not in the country/interest_group allowlist")
+    CHECK(r.error().find("not in the country / interest_group / faction allowlist")
           != std::string::npos);
 }
 

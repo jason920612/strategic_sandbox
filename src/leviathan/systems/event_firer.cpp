@@ -46,8 +46,10 @@ std::string country_id_code_for(const core::GameState& state,
 }
 
 // Convert one TriggerEvaluation into one EventInstanceActor.
-// kind string mapping: Country -> "country", InterestGroup ->
-// "interest_group" (matches the M5.4 save-layer allowlist).
+// kind string mapping (matches the save-layer allowlist):
+//   Country       -> "country"
+//   InterestGroup -> "interest_group"
+//   Faction       -> "faction"          (M7.2, RFC-090 §7.2)
 core::EventInstanceActor to_actor(
         const core::GameState&                          state,
         const event_evaluator::TriggerEvaluation&       te) {
@@ -72,6 +74,20 @@ core::EventInstanceActor to_actor(
             // lookup. If lookup fails (state internally
             // inconsistent), country_id_code stays empty and
             // the save layer rejects it on next round-trip.
+            a.country_id_code = country_id_code_for(state,
+                                                    te.actor.country);
+            break;
+        }
+        case event_evaluator::TriggerActorKind::Faction: {
+            // M7.2 (RFC-090 §7.2): a faction's owning country is
+            // its FactionState.country handle; same lookup shape
+            // as the InterestGroup case. If lookup fails, the
+            // save layer rejects the resulting actor record on
+            // round-trip (defense in depth — record_match also
+            // catches the empty-country_id_code malformed case
+            // and fails loudly via the M6.9 actor-binding
+            // preflight).
+            a.kind            = "faction";
             a.country_id_code = country_id_code_for(state,
                                                     te.actor.country);
             break;

@@ -173,10 +173,38 @@ sequence:
   now structurally satisfied. PR #117 LANDED; the M6
   closeout audit ran AFTER PR #117 and EXTENDED this
   metadata set (see next entry).
-- **M6 closeout audit (current PR)** — NOT an RFC-090
-  numbered sub-milestone; explicitly the closeout-
-  audit PR per `docs/m6-closeout-audit.md`. Ships TWO
-  representative RFC-080 §8 residuals:
+- **M7.2 加入派系激進度事件 (current PR)** — RFC-090 §7.2,
+  RFC-020 §6 / §7. Second M7 sub-milestone after M7.1
+  (PR #119, faction demands). Extends the event-engine
+  trigger-target allowlist with `faction.radicalism` so
+  events can fire on `FactionState.radicalism`
+  directly; adds the `TriggerActorKind::Faction`
+  variant + per-country scoping
+  (`faction_index_satisfying_for`); routes `Faction`
+  trigger actors through `event_firer::to_actor` as
+  the `"faction"` EventInstanceActor kind string;
+  extends the save-layer `event_history` allowlist
+  with `"faction"` (backward-compatible — no save
+  schema version bump in M7.2 itself). Authors one
+  canonical `faction_radicalism_crisis` event in
+  `data/events/1930_rfc_extended_events.json` firing
+  on `faction.radicalism > 0.85` (game-model threshold
+  per RFC-080 §1 / §11; direction grounding cited via
+  M7.1's design note: Alesina-Perotti). Canonical
+  `1930_minimal` and compliance `1930_rfc_compliance`
+  sweeps both `Sanity issues : 0`; neither fires the
+  new event (canonical factions never reach the
+  threshold in 70 years). 10 new unit tests +
+  4 stale-error-message tests updated for the new
+  allowlist strings. **M6 closeout-audit blockers
+  unaffected** — M6 REMAINS OPEN until Jason approves
+  closure. Design note:
+  `docs/m7-2-faction-radicalism-events.md`.
+
+- **M6 closeout audit (landed in main)** — NOT an
+  RFC-090 numbered sub-milestone; explicitly the
+  closeout-audit PR per `docs/m6-closeout-audit.md`.
+  Ships TWO representative RFC-080 §8 residuals:
   1. **`+ MediaFreedomSignal`** in
      `information_accuracy::compute_for_country`.
      Outer-blend composition keeps the inner

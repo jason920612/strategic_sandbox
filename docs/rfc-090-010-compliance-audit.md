@@ -481,6 +481,50 @@ save-layer surface; no new gameplay system module.
 Design note:
 [`m6-9-non-debug-mode-distortion.md`](m6-9-non-debug-mode-distortion.md).
 
+### 1.6 M7.2 — 加入派系激進度事件 (RFC-090 §7.2, RFC-020 §6 / §7)
+
+Second M7 sub-milestone. Extends the M5 event engine so
+events can fire on `FactionState.radicalism` directly,
+not just `interest_group.radicalism` (M5.1 allowlist) or
+`country.*` fields.
+
+What M7.2 ships:
+
+- `EventTrigger` target allowlist gains
+  `faction.radicalism` (scenario_loader + save_system).
+- `event_evaluator::TriggerActorKind` gains a `Faction`
+  variant; new helpers `pick_faction_value` /
+  `first_faction_index_satisfying` /
+  `faction_index_satisfying_for` mirror the M5.3 IG
+  surface so per-country scoping (issue #112) continues
+  to hold for the new actor kind.
+- `event_firer::to_actor` maps `Faction` actors to the
+  `"faction"` EventInstanceActor kind string; the
+  save-layer `event_history` allowlist gains
+  `"faction"` (backward-compatible — no save schema
+  version bump in M7.2 itself).
+- `rank_weighted_events` accepts `faction.radicalism`
+  in WeightModifier targets.
+- One canonical event `faction_radicalism_crisis` added
+  to `data/events/1930_rfc_extended_events.json`,
+  firing on `faction.radicalism > 0.85`. Effect:
+  `country.stability -0.01` (asymptotic-add convention).
+
+What M7.2 deliberately DOES NOT do:
+
+- Only `faction.radicalism` is added. `faction.loyalty`,
+  `faction.support`, and `faction.influence` are out of
+  scope until a future sub-milestone authorises them.
+- No save schema version bump. No new artefact. No new
+  player command. No new CLI flag.
+
+The canonical and compliance scenarios do not currently
+fire the new event (no GER faction reaches radicalism
+> 0.85 in 70 years), so canonical and compliance
+determinism are unaffected. The wiring is exercised by
+new unit tests in
+`tests/systems/faction_radicalism_events_test.cpp`.
+
 ### 1.5 M6 closeout audit (after M6.9)
 
 After M6.9 landed (PR #117), an **M6 closeout audit** ran on

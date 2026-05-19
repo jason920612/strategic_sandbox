@@ -1322,7 +1322,7 @@ TEST_CASE("M5.1 load_into_state: trigger target not in allowlist rejected") {
     GameState state;
     const auto r = sl::load_into_state(state, manifest_path);
     REQUIRE(r.failed());
-    CHECK(r.error().find("'country.gdp' is not in the M5.1 allowlist")
+    CHECK(r.error().find("'country.gdp' is not in the trigger-target allowlist")
           != std::string::npos);
 }
 

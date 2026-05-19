@@ -16,14 +16,14 @@
 // Semantics (unchanged from M5.2):
 //
 //   * Per-trigger evaluation is a small predicate (target + op +
-//     value) against a state slice. M5.2/M5.3 support exactly
-//     the M5.1 allowlist:
+//     value) against a state slice. The post-M7.2 allowlist:
 //
 //       country.stability                                          double
 //       country.legitimacy                                         double
 //       country.government_authority.bureaucratic_compliance       double
 //       interest_group.radicalism                                  double
 //       interest_group.loyalty                                     double
+//       faction.radicalism                                         double  (M7.2, RFC-090 §7.2)
 //
 //     Operators: lt / lte / gt / gte. NaN / +-Inf state values are
 //     treated as non-matching.
@@ -32,8 +32,10 @@
 //     country.* trigger matches when at least one country in
 //     state.countries satisfies it; an interest_group.* trigger
 //     matches when at least one interest group in
-//     state.interest_groups satisfies it. Empty country/IG list
-//     therefore evaluates the trigger as FALSE.
+//     state.interest_groups satisfies it; a faction.* trigger
+//     (M7.2) matches when at least one faction in
+//     state.factions satisfies it. Empty country / IG / faction
+//     list therefore evaluates the trigger as FALSE.
 //
 //   * Combination within one event is "ALL must match" (AND
 //     semantics across `def.triggers`). An empty triggers vector
@@ -105,9 +107,15 @@ namespace leviathan::systems::event_evaluator {
 // M5.3: classify a trigger actor by which state vector it lives
 // in. country.* triggers bind to `state.countries`;
 // interest_group.* triggers bind to `state.interest_groups`.
+// M7.2 (RFC-090 §7.2): faction.* triggers bind to
+// `state.factions`; the actor's `country` field carries the
+// FactionState.country handle so the event_firer / event_engine
+// can scope effects to the owning country exactly like an
+// interest-group actor.
 enum class TriggerActorKind {
     Country,
     InterestGroup,
+    Faction,
 };
 
 // M5.3: the entity that satisfied a trigger. For a country-scoped

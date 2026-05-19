@@ -189,13 +189,21 @@ parse_event_file(std::string_view json_text,
                     "'events' missing or not an array"));
     }
 
-    // M5.1 allowlists.
+    // Trigger-target allowlist. M5.1 seeded five targets;
+    // M7.2 (RFC-090 §7.2 `加入派系激進度事件`, RFC-020 §6 / §7)
+    // adds `faction.radicalism` so events can fire on
+    // `FactionState.radicalism` crossings directly — the
+    // `interest_group.*` targets cover the M3 political-actor
+    // surface but factions are a distinct M1-era data layer
+    // and event-engine triggers must be able to key off them
+    // per §7.2's strict reading.
     static const std::vector<std::string> kTriggerTargets = {
         "country.stability",
         "country.legitimacy",
         "country.government_authority.bureaucratic_compliance",
         "interest_group.radicalism",
         "interest_group.loyalty",
+        "faction.radicalism",  // M7.2 (RFC-090 §7.2)
     };
     static const std::vector<std::string> kTriggerOps = {
         "lt", "lte", "gt", "gte",
@@ -327,12 +335,13 @@ parse_event_file(std::string_view json_text,
                 return core::Result<std::vector<ManifestEvent>>::failure(
                     fmt_err(source_label,
                             tctx + ".target '" + trig.target +
-                            "' is not in the M5.1 allowlist"
+                            "' is not in the trigger-target allowlist"
                             " (country.stability, country.legitimacy,"
                             " country.government_authority"
                             ".bureaucratic_compliance,"
                             " interest_group.radicalism,"
-                            " interest_group.loyalty)"));
+                            " interest_group.loyalty,"
+                            " faction.radicalism)"));
             }
             // op: required string, allowlisted.
             if (!t.contains("op") || !t.at("op").is_string()) {
