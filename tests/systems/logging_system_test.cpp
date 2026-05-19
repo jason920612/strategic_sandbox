@@ -226,3 +226,117 @@ TEST_CASE("log() entries from across multiple ticks land in date order") {
     CHECK(state.logs.front().date == GameDate(1930, 12, 30));
     CHECK(state.logs.back().date  == GameDate(1931, 1, 3));
 }
+
+// =====================================================================
+// M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): export_jsonl /
+// write_jsonl_line filter the `true_cause` metadata key from
+// `event_fired` entries unless `debug_mode == true`. The truth
+// stays in `state.logs` (and therefore in the save.json `logs`
+// array) regardless of the flag — only the events.jsonl artefact
+// changes.
+// =====================================================================
+
+namespace {
+
+LogEntry make_event_fired_entry() {
+    LogEntry e;
+    e.date     = GameDate(1930, 4, 1);
+    e.category = "event_fired";
+    e.severity = LogSeverity::Info;
+    e.source   = "event_firer";
+    e.message  = "event low_stab fired";
+    e.metadata = {
+        {"event_id_code",  "low_stab"},
+        {"actor_kind",     "country"},
+        {"actor_id_code",  "GER"},
+        {"country_id_code","GER"},
+        {"true_cause",     "Local interest groups instigated unrest."},
+    };
+    return e;
+}
+
+}  // namespace
+
+TEST_CASE("M6.8 write_jsonl_line: default (debug_mode=false) FILTERS true_cause") {
+    auto entry = make_event_fired_entry();
+    std::ostringstream out;
+    lg::write_jsonl_line(out, entry);   // default arg = false
+    const std::string s = out.str();
+    CHECK(s.find("\"true_cause\"") == std::string::npos);
+    // Other metadata keys are still present.
+    CHECK(s.find("\"event_id_code\":\"low_stab\"") != std::string::npos);
+    CHECK(s.find("\"country_id_code\":\"GER\"") != std::string::npos);
+}
+
+TEST_CASE("M6.8 write_jsonl_line: debug_mode=true REVEALS true_cause verbatim") {
+    auto entry = make_event_fired_entry();
+    std::ostringstream out;
+    lg::write_jsonl_line(out, entry, /*debug_mode=*/true);
+    const std::string s = out.str();
+    CHECK(s.find("\"true_cause\":\"Local interest groups instigated unrest.\"")
+          != std::string::npos);
+    // Existing keys retained.
+    CHECK(s.find("\"event_id_code\":\"low_stab\"") != std::string::npos);
+}
+
+TEST_CASE("M6.8 write_jsonl_line: filter is local — entry.metadata is not mutated") {
+    auto entry = make_event_fired_entry();
+    const std::size_t before = entry.metadata.size();
+    std::ostringstream out;
+    lg::write_jsonl_line(out, entry, /*debug_mode=*/false);
+    CHECK(entry.metadata.size() == before);
+    // The true_cause key is still at the original index.
+    CHECK(entry.metadata.back().first == "true_cause");
+    CHECK(entry.metadata.back().second ==
+          "Local interest groups instigated unrest.");
+}
+
+TEST_CASE("M6.8 export_jsonl: debug_mode=true vs false differ ONLY on event_fired true_cause") {
+    GameState state;
+    state.logs.push_back(make_event_fired_entry());
+    // Append a non-event-fired entry — debug_mode must not affect it.
+    LogEntry lifecycle;
+    lifecycle.date     = GameDate(1930, 1, 1);
+    lifecycle.category = "lifecycle";
+    lifecycle.severity = LogSeverity::Info;
+    lifecycle.source   = "runner";
+    lifecycle.message  = "simulation start";
+    lifecycle.metadata = {{"days_requested", "365"}};
+    state.logs.push_back(lifecycle);
+
+    std::ostringstream a, b;
+    lg::export_jsonl(a, state, /*debug_mode=*/false);
+    lg::export_jsonl(b, state, /*debug_mode=*/true);
+
+    const std::string sa = a.str();
+    const std::string sb = b.str();
+    CHECK(sa != sb);
+    CHECK(sa.find("\"true_cause\"") == std::string::npos);
+    CHECK(sb.find("\"true_cause\"") != std::string::npos);
+    // The lifecycle line is identical across both — same byte
+    // sequence regardless of debug_mode.
+    const auto sa_lines = std::string_view(sa);
+    const auto sb_lines = std::string_view(sb);
+    CHECK(sa_lines.find("simulation start") != std::string_view::npos);
+    CHECK(sb_lines.find("simulation start") != std::string_view::npos);
+}
+
+TEST_CASE("M6.8 export_jsonl: non-event-fired entries with a `true_cause` key are unaffected (no such case occurs in practice but the filter is keyed on the metadata key, not the category)") {
+    // The filter is purposefully scoped narrowly to the metadata key
+    // name. We pin that scope here so a future refactor that key
+    // the filter on category (e.g. only filter when category ==
+    // "event_fired") doesn't accidentally bypass the filter when
+    // unexpected `true_cause` keys appear elsewhere.
+    GameState state;
+    LogEntry weird;
+    weird.date     = GameDate(1930, 1, 1);
+    weird.category = "diagnostic";
+    weird.source   = "ad_hoc";
+    weird.message  = "audit row";
+    weird.metadata = {{"true_cause", "DO NOT LEAK"}};
+    state.logs.push_back(weird);
+
+    std::ostringstream a;
+    lg::export_jsonl(a, state, /*debug_mode=*/false);
+    CHECK(a.str().find("DO NOT LEAK") == std::string::npos);
+}

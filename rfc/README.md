@@ -151,8 +151,28 @@ sequence:
   (out-of-range / non-finite ratios reject with
   `Result::failure` naming country `id_code` + field +
   numeric value; no silent clamping).
+- **M6.8** (RFC-090 §6.8 "debug 模式顯示真相", current PR)
+  adds a `--debug` runner flag plus the matching
+  `RunnerOptions::debug_mode` field. When the flag is on,
+  every `event_fired` LogEntry in events.jsonl gains a
+  `"true_cause": "<verbatim M6.1 string>"` metadata key
+  sourced from `EventDefinition.true_cause`. When the
+  flag is off, the `true_cause` metadata key is filtered
+  out of the artefact. The truth is recorded in
+  `state.logs` UNCONDITIONALLY (so it survives in
+  `save.json` regardless of the flag — two same-seed
+  runs are byte-identical in save.json across the
+  `--debug` toggle). Implements the `debugTruth` side
+  of RFC-060 §3's `EventLogEntry`; M6.9 will add the
+  `publicText` (M6.2 `visible_report`) flow with the
+  M6.4 `reported_value` and M6.5 `bias_noise`
+  distortion. No save bump (still v18); no artefact
+  contract change (still 11); no `state.rng`
+  consumption; no event-engine change; canonical
+  `1930_minimal` events.jsonl byte-identical with and
+  without `--debug` (no events fire on canonical).
 - **Post-M6.7 hardening sweep (NOT an RFC milestone,
-  current PR)** — branch
+  prior PR)** — branch
   `feature/hardening-strict-numeric-validation`.
   Applies `feedback_no_silent_degradation` project-wide
   (every silent `std::clamp` / NaN-tolerance / silent-
@@ -438,7 +458,35 @@ M0 / M1 中落地，部分仍是未來工作：
   formulas / 等）都移交給 M3+ 或獨立 post-M2 follow-up，
   M2 本身不再新增 sub-milestone。
 - **M6（進行中，RFC-090 §M6 hidden truth /
-  information distortion）** — **M6.7
+  information distortion）** — **M6.8
+  （debug 模式顯示真相）** 是 M6 的第八個
+  sub-milestone。完全照 RFC-090 §6.8
+  （`6.8 debug 模式顯示真相`）實作：新增
+  `--debug` runner flag 與對應的
+  `RunnerOptions::debug_mode = false` 欄位；當 flag
+  打開時，events.jsonl 的每筆 `event_fired` 多帶
+  `"true_cause": "<逐字 M6.1 string>"` metadata key，
+  從 `EventDefinition.true_cause` 直接取出。flag 關閉
+  （預設）時，`true_cause` metadata key 會在 events.jsonl
+  寫入路徑被過濾掉。真相在 `state.logs` 由
+  `event_firer::record_match` / `record_followup` 無條件
+  記錄，所以無論 flag 是否打開，`save.json` 都會保留
+  `true_cause`，**兩次同 seed 的執行在 `save.json`
+  byte-identical**（只有 events.jsonl artefact 會差）。
+  RFC-060 §3 的 `EventLogEntry { ... publicText; debugTruth }`
+  shape 在 M6.8 完成 `debugTruth` 側；`publicText`
+  （`visible_report` + M6.4 reported_value + M6.5
+  bias_noise 失真）留給 M6.9。**不做 save schema bump
+  （仍 v18）、不變 artefact contract（仍 11）、不消耗
+  `state.rng`、不改 event_engine / event_evaluator /
+  monthly_pipeline、不改 country / faction / IG 任何欄位。**
+  Canonical `1930_minimal` 365-day 因為 canonical events
+  不會 fire，events.jsonl 在 `--debug` on/off 下 byte-
+  identical；M1.17 / M2 / M3 / M4 / M5 baselines 保持綠。
+  Compliance `1930_rfc_compliance` 25 567-day 在 `--debug`
+  on/off 兩種模式下都 `Sanity issues : 0`。設計筆記：
+  `docs/m6-8-debug-mode-reveals-truth.md`。
+- **M6.7
   （corruption influence on
   `information_accuracy`）** 是 M6 的第七個
   sub-milestone。完全照 RFC-090 §6.7

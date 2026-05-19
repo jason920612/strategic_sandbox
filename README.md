@@ -61,21 +61,27 @@
 >
 > Issue #112 has now landed (PR #111 squash-merged) and
 > execution has returned to the M-numbered milestone
-> sequence. **M6.7** (RFC-090 §6.7 "加入腐敗影響") is the
-> latest shipped sub-milestone — the
-> `information_accuracy::compute_for_country` body now
-> implements an RFC-080 §8 subset (BaseAccuracy +
-> IntelligenceCapacity − Corruption) with function-level
-> range `[0.0, 1.0]`, and strictly validates each ratio
-> input per `feedback_no_silent_degradation`. **There is
-> no RCR-2 track.** Issues #105 / #108 / #110 / #112 stay
-> open until the reviewer confirms strict compliance.
+> sequence. **M6.8** (RFC-090 §6.8 "debug 模式顯示真相") is
+> the latest shipped sub-milestone — `--debug` reveals each
+> fired event's `EventDefinition.true_cause` (M6.1) in the
+> events.jsonl artefact; the truth is recorded in
+> `state.logs` (and therefore in `save.json`) regardless of
+> the flag, so two same-seed runs produce byte-identical
+> `save.json` across the `--debug` toggle. Predecessor
+> **M6.7** (RFC-090 §6.7 "加入腐敗影響") shipped the
+> `information_accuracy::compute_for_country` body as an
+> RFC-080 §8 subset (BaseAccuracy + IntelligenceCapacity −
+> Corruption) with function-level range `[0.0, 1.0]` and
+> strict ratio-input validation per
+> `feedback_no_silent_degradation`. **There is no RCR-2
+> track.** Issues #105 / #108 / #110 / #112 stay open
+> until the reviewer confirms strict compliance.
 
 - Phase: **Milestone 6 — Hidden truth /
   information distortion (IN PROGRESS, RFC-090 §M6).**
   M0 / M1 / M2 / M3 / M4 / M5 all closed; M6 in
-  progress at **M6.7**; next is RFC-090 §6.8
-  (`debug 模式顯示真相`). M6 follows RFC-090 §M6
+  progress at **M6.8**; next is RFC-090 §6.9
+  (`非 debug 模式隱藏真相`). M6 follows RFC-090 §M6
   (隱藏真相與資訊失真): the player will not always
   see the truth. Shipped so far:
   - **M6.1** added a required non-empty `true_cause`
@@ -112,11 +118,27 @@
     now strictly rejects out-of-range / non-finite
     ratio inputs with `Result::failure` (per
     `feedback_no_silent_degradation`).
+  - **M6.8** adds the `--debug` runner flag and the
+    `EventDefinition.true_cause` (M6.1) reveal on
+    every `event_fired` line of the events.jsonl
+    artefact when the flag is on. The truth is
+    recorded in `state.logs` unconditionally by
+    `event_firer::record_match` /
+    `record_followup`; `logging::write_jsonl_line`
+    filters the `true_cause` metadata key out of the
+    artefact when `debug_mode == false`. No save
+    schema bump (still v18); no artefact contract
+    change (still 11); no `state.rng` consumption;
+    no new player-facing command; no new save-layer
+    surface. RFC-060 §3 names this the `debugTruth`
+    side of the `EventLogEntry` shape; M6.9 will
+    add the `publicText` / distortion side.
 
-  **Still deferred** in M6: RFC-090 §6.8 (debug
-  mode displays the truth) and §6.9 (non-debug
+  **Still deferred** in M6: RFC-090 §6.9 (non-debug
   mode hides the truth — first downstream caller
-  of `compute_for_country` in normal play).
+  of `compute_for_country` / `reported_value` /
+  `bias_noise` in normal play; the player-facing
+  distortion lands here).
 
   **Canonical events still deliberately don't fire**
   on the canonical scenario; every M6.x sub-milestone
@@ -129,8 +151,36 @@
   `docs/milestone-3-result.md` /
   `docs/milestone-2-result.md` /
   `docs/milestone-1-result.md` for prior exit reports.
-- Latest shipped sub-milestone: **M6.7 — corruption
-  influence on `information_accuracy`.** Seventh M6 PR.
+- Latest shipped sub-milestone: **M6.8 — debug mode
+  reveals truth.** Eighth M6 PR. Implements RFC-090
+  §6.8 (`6.8 debug 模式顯示真相`). Adds the
+  `--debug` runner flag (and the matching
+  `RunnerOptions::debug_mode` field). When the flag is
+  on, every `event_fired` LogEntry in the events.jsonl
+  artefact gains a `"true_cause": "<verbatim M6.1
+  string>"` metadata key, sourced from the matching
+  `EventDefinition.true_cause` (M6.1; required non-
+  empty since the v14 → v15 save bump). When the flag
+  is off (the default), the `true_cause` metadata key
+  is filtered out of the events.jsonl artefact. The
+  truth is recorded in `state.logs` UNCONDITIONALLY by
+  `event_firer::record_match` / `record_followup` so
+  it survives in `save.json` regardless of the flag —
+  two same-seed runs produce **byte-identical
+  `save.json` across the `--debug` toggle**, only the
+  events.jsonl artefact differs. RFC-060 §3 names this
+  the `debugTruth` side of the `EventLogEntry` shape;
+  M6.9 will add the `publicText` / `reported_value` /
+  `bias_noise` distortion side. **No state mutation,
+  no event-engine change, no `state.rng` consumption,
+  no new player-facing command, no new save-layer
+  surface, no new gameplay system module, no save
+  schema bump (still v18), no artefact contract
+  change (still 11), no canonical determinism break
+  (canonical 1930_minimal 365-day events.jsonl is
+  byte-identical with and without `--debug`).**
+  Predecessor: **M6.7 — corruption influence on
+  `information_accuracy`.** Seventh M6 PR.
   Implements RFC-090 §6.7 (`6.7 加入腐敗影響`). Layers
   the RFC-080 §8 `-Corruption` term on top of the M6.6
   intelligence-budget baseline:

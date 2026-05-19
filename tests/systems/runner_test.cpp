@@ -171,6 +171,25 @@ TEST_CASE("parse_args: --seed with junk text is rejected") {
     CHECK(r.error().find("--seed") != std::string::npos);
 }
 
+// =====================================================================
+// M6.8 parse_args: --debug is a boolean toggle, default false
+// =====================================================================
+
+TEST_CASE("M6.8 parse_args: --debug is unset by default") {
+    Argv arg(std::array<const char*, 3>{"leviathan", "--days", "1"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK_FALSE(r.value().debug_mode);
+}
+
+TEST_CASE("M6.8 parse_args: --debug sets debug_mode true (no value follows)") {
+    Argv arg(std::array<const char*, 4>{
+        "leviathan", "--days", "1", "--debug"});
+    auto r = rn::parse_args(arg.argc, arg.argv());
+    REQUIRE(r.ok());
+    CHECK(r.value().debug_mode);
+}
+
 #ifdef LEVIATHAN_TEST_DATA_DIR
 
 // =====================================================================

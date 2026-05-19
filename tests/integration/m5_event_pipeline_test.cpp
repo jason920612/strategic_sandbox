@@ -403,3 +403,97 @@ TEST_CASE("M5 integration: bad event effect target fails the run; no artefacts w
     CHECK_FALSE(fs::exists(td.path / "provinces.svg"));
     CHECK_FALSE(fs::exists(td.path / "map.html"));
 }
+
+// =====================================================================
+// M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): end-to-end check that
+// --debug toggles the events.jsonl `true_cause` reveal while
+// leaving everything else (save.json, applied effects,
+// state.rng.counter, event_history) byte-identical.
+// =====================================================================
+
+TEST_CASE("M6.8 integration: --debug reveals true_cause in events.jsonl; same-seed save.json byte-identical to non-debug") {
+    TempDir td_nodbg("leviathan_m6_8_nodbg");
+    TempDir td_dbg  ("leviathan_m6_8_dbg");
+
+    auto build_state = []() {
+        GameState s = make_m5_firing_state();
+        // Author a distinctive true_cause so the test can search
+        // for the verbatim string in events.jsonl.
+        s.events[0].true_cause =
+            "M6.8 SECRET TRUTH FOR DEBUG REVEAL";
+        return s;
+    };
+
+    rn::RunnerOptions opts;
+    opts.days       = 31;     // crosses one month boundary; event fires
+    opts.output_dir = td_nodbg.path;
+    opts.debug_mode = false;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+
+    opts.output_dir = td_dbg.path;
+    opts.debug_mode = true;
+    {
+        GameState s = build_state();
+        REQUIRE(rn::run_state(s, opts).ok());
+    }
+
+    const std::string log_nodbg = read_file(td_nodbg.path / "events.jsonl");
+    const std::string log_dbg   = read_file(td_dbg.path   / "events.jsonl");
+    const std::string save_nodbg = read_file(td_nodbg.path / "save.json");
+    const std::string save_dbg   = read_file(td_dbg.path   / "save.json");
+
+    // Hard contract: the truth IS persisted in state.logs and the
+    // save.json `logs` array REGARDLESS of debug_mode. Two same-
+    // seed runs produce byte-identical save.json across the
+    // debug toggle.
+    CHECK(save_nodbg == save_dbg);
+
+    // events.jsonl divergence: with --debug, true_cause appears
+    // verbatim; without --debug, it is filtered out.
+    CHECK(log_dbg.find("M6.8 SECRET TRUTH FOR DEBUG REVEAL")
+          != std::string::npos);
+    CHECK(log_dbg.find("\"true_cause\":\"M6.8 SECRET TRUTH FOR DEBUG REVEAL\"")
+          != std::string::npos);
+    CHECK(log_nodbg.find("true_cause") == std::string::npos);
+    CHECK(log_nodbg.find("M6.8 SECRET TRUTH FOR DEBUG REVEAL")
+          == std::string::npos);
+
+    // The event_id_code IS visible on both sides — the M6.8
+    // filter is scoped narrowly to the true_cause key only.
+    CHECK(log_nodbg.find("low_stability_unrest_firing")
+          != std::string::npos);
+    CHECK(log_dbg.find("low_stability_unrest_firing")
+          != std::string::npos);
+}
+
+TEST_CASE("M6.8 integration: --debug does NOT advance state.rng.counter or change which events fire") {
+    GameState s_nodbg = make_m5_firing_state();
+    GameState s_dbg   = make_m5_firing_state();
+    const std::uint64_t before_counter = s_nodbg.rng.counter;
+    REQUIRE(before_counter == s_dbg.rng.counter);
+
+    TempDir td_a("leviathan_m6_8_rng_a");
+    TempDir td_b("leviathan_m6_8_rng_b");
+
+    rn::RunnerOptions opts;
+    opts.days       = 31;
+    opts.output_dir = td_a.path;
+    opts.debug_mode = false;
+    REQUIRE(rn::run_state(s_nodbg, opts).ok());
+
+    opts.output_dir = td_b.path;
+    opts.debug_mode = true;
+    REQUIRE(rn::run_state(s_dbg, opts).ok());
+
+    // No RNG-consumption divergence.
+    CHECK(s_nodbg.rng.counter == s_dbg.rng.counter);
+
+    // Same event_history (same event fired in both runs).
+    REQUIRE(s_nodbg.event_history.size() == s_dbg.event_history.size());
+    REQUIRE(s_nodbg.event_history.size() == 1u);
+    CHECK(s_nodbg.event_history[0].event_id_code ==
+          s_dbg.event_history[0].event_id_code);
+}

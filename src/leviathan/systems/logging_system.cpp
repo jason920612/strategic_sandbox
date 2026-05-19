@@ -121,7 +121,8 @@ std::vector<core::LogEntry> recent(const core::GameState& state,
                                        state.logs.end());
 }
 
-void write_jsonl_line(std::ostream& out, const core::LogEntry& entry) {
+void write_jsonl_line(std::ostream& out, const core::LogEntry& entry,
+                      bool debug_mode) {
     // Build the line in a buffer first so we can write it as a single
     // ostream operation - reduces interleaving risk if the same stream
     // is shared.
@@ -144,16 +145,37 @@ void write_jsonl_line(std::ostream& out, const core::LogEntry& entry) {
     append_json_string(line, entry.message);
 
     line += ",\"metadata\":";
-    append_metadata(line, entry.metadata);
+    // M6.8 (RFC-090 §6.8 "debug 模式顯示真相"): when debug_mode
+    // is false, strip the `true_cause` metadata key that
+    // event_firer attaches unconditionally to every event_fired
+    // entry. The filtered list is reconstructed as a temporary so
+    // the original `entry.metadata` (and therefore the source
+    // state.logs entry, and therefore the save.json `logs`
+    // serialisation) is unaffected — the truth stays available
+    // for inspection, replay, and debug tooling; only the
+    // events.jsonl artefact hides it.
+    if (debug_mode) {
+        append_metadata(line, entry.metadata);
+    } else {
+        core::LogMetadata filtered;
+        filtered.reserve(entry.metadata.size());
+        for (const auto& kv : entry.metadata) {
+            if (kv.first != "true_cause") {
+                filtered.push_back(kv);
+            }
+        }
+        append_metadata(line, filtered);
+    }
 
     line += "}\n";
 
     out.write(line.data(), static_cast<std::streamsize>(line.size()));
 }
 
-void export_jsonl(std::ostream& out, const core::GameState& state) {
+void export_jsonl(std::ostream& out, const core::GameState& state,
+                  bool debug_mode) {
     for (const auto& entry : state.logs) {
-        write_jsonl_line(out, entry);
+        write_jsonl_line(out, entry, debug_mode);
     }
 }
 
