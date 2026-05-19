@@ -223,6 +223,38 @@
       ]
     },
     {
+      "id": "technocrat_emigration",
+      "name": "Technocrat Emigration",
+      "description": "Skilled professionals leave the country in large numbers, dragging future growth.",
+      "visible_report": "Reports describe a sustained outflow of engineers, scientists, and managers seeking opportunities abroad.",
+      "true_cause": "Combined low legitimacy + interest-group radicalism rising satisfy the M7.10 technocrat-emigration trigger (RFC-090 §7.10).",
+      "category": "economic",
+      "triggers": [
+        {
+          "target": "country.legitimacy",
+          "op": "lt",
+          "value": 0.40
+        },
+        {
+          "target": "interest_group.radicalism",
+          "op": "gt",
+          "value": 0.60
+        }
+      ],
+      "effects": [
+        {
+          "target": "country.administrative_efficiency",
+          "op": "add",
+          "value": -0.02
+        },
+        {
+          "target": "country.budget_balance",
+          "op": "add",
+          "value": -0.02
+        }
+      ]
+    },
+    {
       "id": "economic_slowdown_warning",
       "name": "Economic Slowdown Warning",
       "description": "A combined stability + legitimacy slip signals economic confidence loss.",
